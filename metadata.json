@@ -1,0 +1,6 @@
+{
+  "name": "ColorLink - Ecosistema Inteligente de Pintura",
+  "description": "Plataforma de captura guiada, validación técnica, clasificación con IA y cálculo automatizado de pinturas y recubrimientos para ColorLink.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
