@@ -1,6 +1,10 @@
 export interface UserProfile {
   id: string;
   name: string;
+  firstName?: string;
+  lastName?: string;
+  documentId?: string;
+  address?: string;
   email: string;
   company: string;
   phone: string;
@@ -143,6 +147,7 @@ export interface CalculationBreakdown {
 }
 
 export type ActiveTab = 
+  | 'inicio'
   | 'registro'
   | 'captura'
   | 'validacion'

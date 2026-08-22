@@ -2,7 +2,11 @@ import { ColorTone, ProjectFormData, UserProfile, CalculationBreakdown } from '.
 
 export const INITIAL_USER: UserProfile = {
   id: 'USR-2026-0042',
-  name: 'Ing. Carlos Mendoza',
+  name: 'Carlos Mendoza',
+  firstName: 'Carlos',
+  lastName: 'Mendoza Gómez',
+  documentId: '901.458.789-3',
+  address: 'Calle 10A # 36-24, El Poblado',
   email: 'proyectos@constructorahorizonte.com.co',
   company: 'Constructora Horizonte S.A.S.',
   phone: '+57 (314) 789-2045',

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ActiveTab, ProjectFormData, UserProfile, AiDiagnosisResult, CalculationBreakdown } from './types';
 import { INITIAL_USER, INITIAL_SAMPLE_PROJECT, SAMPLE_CALCULATION } from './data/mockData';
 import { Navbar } from './components/Navbar';
+import { WelcomeLanding } from './components/WelcomeLanding';
 import { AuthModule } from './components/AuthModule';
 import { SmartCaptureForm } from './components/SmartCaptureForm';
 import { AutoValidationStep } from './components/AutoValidationStep';
@@ -11,7 +12,7 @@ import { PipelineTraceability } from './components/PipelineTraceability';
 import { TechnicalPdfModal } from './components/TechnicalPdfModal';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('captura');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('inicio');
   const [user, setUser] = useState<UserProfile>(INITIAL_USER);
   const [formData, setFormData] = useState<ProjectFormData>(INITIAL_SAMPLE_PROJECT);
   const [aiResult, setAiResult] = useState<AiDiagnosisResult | null>(null);
@@ -65,6 +66,14 @@ export default function App() {
     setActiveTab('captura');
   };
 
+  const handleLogout = () => {
+    setUser(prev => ({
+      ...prev,
+      isRegistered: false
+    }));
+    setActiveTab('registro');
+  };
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans selection:bg-cyan-500 selection:text-white">
       {/* Top Navigation */}
@@ -74,15 +83,37 @@ export default function App() {
         user={user}
         onLoadSampleCase={handleLoadSampleCase}
         hasValidatedData={Boolean(formData.id)}
+        onLogout={handleLogout}
       />
 
       {/* Main View Container */}
       <main className="flex-1 pb-16">
+        {activeTab === 'inicio' && (
+          <WelcomeLanding
+            onStartProject={() => setActiveTab('captura')}
+            onGoToLogin={() => setActiveTab('registro')}
+            onLoadDemo={handleLoadSampleCase}
+          />
+        )}
+
         {activeTab === 'registro' && (
           <AuthModule
             user={user}
-            setUser={setUser}
+            setUser={(newVal) => {
+              setUser(newVal);
+              const updatedUser = typeof newVal === 'function' ? newVal(user) : newVal;
+              if (updatedUser) {
+                setFormData(prev => ({
+                  ...prev,
+                  cliente: updatedUser.company || updatedUser.name || prev.cliente,
+                  emailContacto: updatedUser.email || prev.emailContacto,
+                  telefonoContacto: updatedUser.phone || prev.telefonoContacto,
+                  ciudad: updatedUser.city || prev.ciudad
+                }));
+              }
+            }}
             onContinueToCapture={() => setActiveTab('captura')}
+            onLogout={handleLogout}
           />
         )}
 
