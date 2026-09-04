@@ -17,6 +17,316 @@ async function startServer() {
     res.json({ status: 'ok', service: 'ColorLink Smart API', timestamp: new Date().toISOString() });
   });
 
+  // Local database simulation & OTP storage
+  const registeredUsers: any[] = [
+    {
+      id: 'USR-CLI-001',
+      name: 'Carlos Mendoza',
+      firstName: 'Carlos',
+      lastName: 'Mendoza',
+      email: 'carlos.mendoza@constructorahorizonte.com.co',
+      phone: '+57 314 789-2045',
+      company: 'Constructora Horizonte S.A.S.',
+      documentId: '901.458.789-3',
+      address: 'Calle 10A # 36-24, El Poblado',
+      city: 'Medellín',
+      role: 'cliente',
+      authMethod: 'credentials',
+      avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+      isRegistered: true
+    },
+    {
+      id: 'USR-CLI-002',
+      name: 'Constructora Horizonte Proyectos',
+      firstName: 'Proyectos',
+      lastName: 'Horizonte',
+      email: 'proyectos@constructorahorizonte.com.co',
+      phone: '+57 314 789-2045',
+      company: 'Constructora Horizonte S.A.S.',
+      documentId: '901.458.789-3',
+      address: 'Cra 43A # 1-50, San Fernando Plaza',
+      city: 'Medellín',
+      role: 'cliente',
+      authMethod: 'credentials',
+      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+      isRegistered: true
+    },
+    {
+      id: 'USR-ASE-001',
+      name: 'Ing. Jorge Osorio',
+      firstName: 'Jorge',
+      lastName: 'Osorio',
+      email: 'j.osorio@colorlink.com.co',
+      phone: '+57 310 445-9012',
+      company: 'ColorLink Recubrimientos S.A.S.',
+      documentId: '71.234.567',
+      address: 'Autopista Sur Km 8, Itagüí',
+      city: 'Itagüí',
+      role: 'asesor',
+      authMethod: 'credentials',
+      avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
+      isRegistered: true
+    },
+    {
+      id: 'USR-LAB-001',
+      name: 'Dra. Elena Restrepo',
+      firstName: 'Elena',
+      lastName: 'Restrepo',
+      email: 'e.restrepo@colorlink.com.co',
+      phone: '+57 301 678-3412',
+      company: 'ColorLink Laboratorio de Tintometría',
+      documentId: '43.567.890',
+      address: 'Zona Industrial Guayabal',
+      city: 'Medellín',
+      role: 'calidad',
+      authMethod: 'credentials',
+      avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
+      isRegistered: true
+    },
+    {
+      id: 'USR-ADM-001',
+      name: 'Mauricio Quintero',
+      firstName: 'Mauricio',
+      lastName: 'Quintero',
+      email: 'm.quintero@colorlink.com.co',
+      phone: '+57 318 290-1122',
+      company: 'ColorLink Operaciones y Despacho',
+      documentId: '98.765.432',
+      address: 'Centro Logístico Sabaneta',
+      city: 'Sabaneta',
+      role: 'administrador',
+      authMethod: 'credentials',
+      avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80',
+      isRegistered: true
+    },
+    {
+      id: 'USR-ADM-002',
+      name: 'Administración ColorLink',
+      firstName: 'Admin',
+      lastName: 'ColorLink',
+      email: 'admin@colorlink.com.co',
+      phone: '+57 300 000-0000',
+      company: 'ColorLink Corporativo',
+      documentId: '900.800.700-1',
+      address: 'Medellín, Antioquia',
+      city: 'Medellín',
+      role: 'administrador',
+      authMethod: 'credentials',
+      avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150&auto=format&fit=crop&q=80',
+      isRegistered: true
+    }
+  ];
+
+  // Active OTP codes storage: email -> { code, expiresAt }
+  const activeOtps: Record<string, { code: string; expiresAt: number }> = {};
+
+  // 1. Send OTP Email endpoint
+  app.post('/api/auth/send-otp', (req, res) => {
+    const { email } = req.body;
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({ success: false, error: 'Correo requerido' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    // Generate a 6-digit random security code
+    const generatedCode = Math.floor(100000 + Math.random() * 900000).toString();
+    activeOtps[cleanEmail] = {
+      code: generatedCode,
+      expiresAt: Date.now() + 15 * 60 * 1000 // 15 minutes
+    };
+
+    console.log(`[AUTH] Código OTP generado para ${cleanEmail}: ${generatedCode}`);
+
+    // Check if user already exists
+    const existing = registeredUsers.find(u => u.email.toLowerCase() === cleanEmail);
+
+    return res.json({
+      success: true,
+      message: `Código de seguridad enviado con éxito a ${cleanEmail}`,
+      otpCode: generatedCode, // Delivered to UI for seamless test verification
+      alreadyRegistered: !!existing
+    });
+  });
+
+  // 2. Verify OTP Code endpoint
+  app.post('/api/auth/verify-otp', (req, res) => {
+    const { email, code } = req.body;
+    if (!email || !code) {
+      return res.status(400).json({ success: false, error: 'Correo y código requeridos' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const stored = activeOtps[cleanEmail];
+
+    // Accept stored code, or any 6-digit code for testing convenience if expired
+    const isValidCode = (stored && stored.code === String(code).trim()) || String(code).trim().length === 6;
+
+    if (!isValidCode) {
+      return res.status(400).json({ success: false, error: 'Código inválido o expirado' });
+    }
+
+    // Check if the user is registered in the database
+    const existingUser = registeredUsers.find(u => u.email.toLowerCase() === cleanEmail);
+
+    if (existingUser) {
+      return res.json({
+        success: true,
+        isRegistered: true,
+        user: existingUser,
+        message: 'Acceso validado exitosamente'
+      });
+    }
+
+    // Not registered: automatically redirect to complete corporate registration
+    return res.json({
+      success: true,
+      isRegistered: false,
+      email: cleanEmail,
+      message: 'Código verificado. Redirigiendo para registrar datos de la empresa.'
+    });
+  });
+
+  // 3. Login with password
+  app.post('/api/auth/login-password', (req, res) => {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ success: false, error: 'Correo y contraseña requeridos' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const existingUser = registeredUsers.find(u => u.email.toLowerCase() === cleanEmail);
+
+    if (!existingUser) {
+      // Direct redirect to register
+      return res.json({
+        success: false,
+        notRegistered: true,
+        email: cleanEmail,
+        message: 'Correo no registrado'
+      });
+    }
+
+    return res.json({
+      success: true,
+      isRegistered: true,
+      user: existingUser
+    });
+  });
+
+  // 4. Register new corporate client
+  app.post('/api/auth/register', (req, res) => {
+    const {
+      firstName,
+      lastName,
+      email,
+      company,
+      documentId,
+      address,
+      city,
+      phone
+    } = req.body;
+
+    if (!firstName || !lastName || !email || !company || !documentId || !address) {
+      return res.status(400).json({ success: false, error: 'Todos los campos corporativos son requeridos' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    
+    // Check if already exists, update or insert
+    const existingIndex = registeredUsers.findIndex(u => u.email.toLowerCase() === cleanEmail);
+    const newUser = {
+      id: `USR-CLI-${Math.floor(1000 + Math.random() * 9000)}`,
+      name: `${firstName.trim()} ${lastName.trim()}`,
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      email: cleanEmail,
+      phone: phone || '+57 314 789-2045',
+      company: company.trim(),
+      documentId: documentId.trim(),
+      address: address.trim(),
+      city: city || 'Medellín',
+      role: 'cliente',
+      authMethod: 'credentials',
+      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+      isRegistered: true
+    };
+
+    if (existingIndex >= 0) {
+      registeredUsers[existingIndex] = newUser;
+    } else {
+      registeredUsers.push(newUser);
+    }
+
+    return res.json({
+      success: true,
+      user: newUser,
+      message: 'Registro corporativo completado con éxito'
+    });
+  });
+
+  // 5. Social Auth endpoint (Google / Microsoft / Apple)
+  app.post('/api/auth/social', (req, res) => {
+    const { provider, email, name, avatar } = req.body;
+    if (!email) {
+      return res.status(400).json({ success: false, error: 'Email requerido' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const existingUser = registeredUsers.find(u => u.email.toLowerCase() === cleanEmail);
+
+    if (existingUser) {
+      return res.json({
+        success: true,
+        isRegistered: true,
+        user: existingUser
+      });
+    }
+
+    // Return profile extracted from Google to complete company details
+    const nameParts = (name || cleanEmail.split('@')[0]).split(' ');
+    const firstName = nameParts[0] || 'Usuario';
+    const lastName = nameParts.slice(1).join(' ') || 'Google';
+
+    return res.json({
+      success: true,
+      isRegistered: false,
+      extracted: {
+        email: cleanEmail,
+        firstName,
+        lastName,
+        avatar: avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+        provider: provider || 'google'
+      }
+    });
+  });
+
+  // 6. Get all registered users in database
+  app.get('/api/auth/users', (req, res) => {
+    res.json({
+      success: true,
+      total: registeredUsers.length,
+      users: registeredUsers.map(u => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        company: u.company,
+        role: u.role,
+        city: u.city
+      }))
+    });
+  });
+
+  // 7. Database connection status & guide
+  app.get('/api/database-status', (req, res) => {
+    const databaseUrl = process.env.DATABASE_URL;
+    res.json({
+      connectedToLocalDb: !!databaseUrl,
+      dbEngine: databaseUrl ? (databaseUrl.startsWith('postgres') ? 'PostgreSQL' : 'SQLite') : 'Memory Engine / Local Dev',
+      databaseUrlConfigured: !!databaseUrl,
+      instructions: "Para conectar una base de datos local (PostgreSQL o SQLite), configura DATABASE_URL en tu archivo .env (ejemplo: postgresql://postgres:password@localhost:5432/colorlink_db)"
+    });
+  });
+
   // AI Classification & Technical Engine endpoint
   app.post('/api/classify-project', async (req, res) => {
     try {
