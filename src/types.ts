@@ -1,3 +1,5 @@
+export type AppRole = 'cliente' | 'asesor' | 'calidad' | 'administrador';
+
 export interface UserProfile {
   id: string;
   name: string;
@@ -6,13 +8,14 @@ export interface UserProfile {
   documentId?: string;
   address?: string;
   email: string;
-  company: string;
+  company?: string;
   phone: string;
   city: string;
-  role: 'constructora' | 'contratista' | 'arquitecto' | 'pintor' | 'compras' | 'administrador';
-  authMethod: 'google' | 'email_otp' | 'credentials';
+  role: AppRole;
+  authMethod: 'google' | 'microsoft' | 'apple' | 'email_otp' | 'credentials';
   avatar?: string;
   isRegistered: boolean;
+  department?: string; // Para staff interno (ej. "Comercial Antioquia", "Laboratorio Central")
 }
 
 export type SurfaceType = 
@@ -72,6 +75,16 @@ export interface ProjectFormData {
   }>;
   consentimientoDatos: boolean;
   timestamp: string;
+  // Campos de ajuste asesor / calidad
+  estadoPipeline?: 'capturado' | 'revision_asesor' | 'aprobado_calidad' | 'cotizado' | 'despachado';
+  descuentoAsesorPct?: number;
+  observacionesAsesor?: string;
+  dictamenCalidad?: {
+    aprobado: boolean;
+    perito: string;
+    fechaRevision: string;
+    observacionSustrato: string;
+  };
 }
 
 export interface ValidationResult {
@@ -146,11 +159,39 @@ export interface CalculationBreakdown {
   };
 }
 
+export interface ProductCatalogItem {
+  sku: string;
+  nombre: string;
+  categoria: 'pintura_exterior' | 'pintura_interior' | 'imprimante' | 'masilla_sellador' | 'herramienta';
+  presentacion: 'cuñete_5gal' | 'galon_1gal' | 'caneca_1gal' | 'unidad';
+  rendimientoM2Galon: number;
+  acabado: 'mate' | 'satinado' | 'brillante' | 'n/a';
+  precioBaseCOP: number;
+  descripcionCorta: string;
+}
+
+export interface WarehouseStockItem {
+  id: string;
+  sku: string;
+  bodegaNombre: string;
+  municipio: string;
+  numeroLote: string;
+  stockDisponible: number;
+  stockMinimoAlerta: number;
+  estado: 'disponible' | 'bajo_stock' | 'en_tintometria' | 'agotado';
+  tiempoDespachoHoras: number;
+  fechaLote: string;
+}
+
 export type ActiveTab = 
   | 'inicio'
-  | 'registro'
+  | 'dashboard'
   | 'captura'
+  | 'proyectos_asesor'
+  | 'calidad_revision'
+  | 'inventario'
   | 'validacion'
   | 'ia_clasificacion'
   | 'motor_tecnico'
-  | 'trazabilidad_arquitectura';
+  | 'trazabilidad_arquitectura'
+  | 'registro';
