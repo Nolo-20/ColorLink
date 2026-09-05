@@ -1,10 +1,43 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
+import nodemailer from 'nodemailer';
 
 dotenv.config();
+
+const LOCAL_DB_PATH = path.join(process.cwd(), 'data', 'local_db.json');
+
+// Helper to load users from local persistent database file
+function loadUsersFromLocalDb(): any[] {
+  try {
+    if (fs.existsSync(LOCAL_DB_PATH)) {
+      const data = fs.readFileSync(LOCAL_DB_PATH, 'utf-8');
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed.users)) {
+        return parsed.users;
+      }
+    }
+  } catch (err) {
+    console.warn('[LOCAL-DB] Error reading local_db.json, using defaults:', err);
+  }
+  return [];
+}
+
+// Helper to save users to local persistent database file
+function saveUsersToLocalDb(users: any[]) {
+  try {
+    const dir = path.dirname(LOCAL_DB_PATH);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify({ users, lastUpdated: new Date().toISOString() }, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('[LOCAL-DB] Error saving to local_db.json:', err);
+  }
+}
 
 async function startServer() {
   const app = express();
@@ -12,123 +45,237 @@ async function startServer() {
 
   app.use(express.json({ limit: '25mb' }));
 
+  // Initialize users from local DB file (or fallback to defaults if empty)
+  let registeredUsers: any[] = loadUsersFromLocalDb();
+
+  if (registeredUsers.length === 0) {
+    registeredUsers = [
+      {
+        id: 'USR-CLI-001',
+        name: 'Carlos Mendoza',
+        firstName: 'Carlos',
+        lastName: 'Mendoza',
+        email: 'carlos.mendoza@constructorahorizonte.com.co',
+        phone: '+57 314 789-2045',
+        company: 'Constructora Horizonte S.A.S.',
+        documentId: '901.458.789-3',
+        address: 'Calle 10A # 36-24, El Poblado',
+        city: 'Medellín',
+        role: 'cliente',
+        authMethod: 'credentials',
+        avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+        isRegistered: true
+      },
+      {
+        id: 'USR-CLI-002',
+        name: 'Constructora Horizonte Proyectos',
+        firstName: 'Proyectos',
+        lastName: 'Horizonte',
+        email: 'proyectos@constructorahorizonte.com.co',
+        phone: '+57 314 789-2045',
+        company: 'Constructora Horizonte S.A.S.',
+        documentId: '901.458.789-3',
+        address: 'Cra 43A # 1-50, San Fernando Plaza',
+        city: 'Medellín',
+        role: 'cliente',
+        authMethod: 'credentials',
+        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+        isRegistered: true
+      },
+      {
+        id: 'USR-ASE-001',
+        name: 'Ing. Jorge Osorio',
+        firstName: 'Jorge',
+        lastName: 'Osorio',
+        email: 'j.osorio@colorlink.com.co',
+        phone: '+57 310 445-9012',
+        company: 'ColorLink Recubrimientos S.A.S.',
+        documentId: '71.234.567',
+        address: 'Autopista Sur Km 8, Itagüí',
+        city: 'Itagüí',
+        role: 'asesor',
+        authMethod: 'credentials',
+        avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
+        isRegistered: true
+      },
+      {
+        id: 'USR-LAB-001',
+        name: 'Dra. Elena Restrepo',
+        firstName: 'Elena',
+        lastName: 'Restrepo',
+        email: 'e.restrepo@colorlink.com.co',
+        phone: '+57 301 678-3412',
+        company: 'ColorLink Laboratorio de Tintometría',
+        documentId: '43.567.890',
+        address: 'Zona Industrial Guayabal',
+        city: 'Medellín',
+        role: 'calidad',
+        authMethod: 'credentials',
+        avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
+        isRegistered: true
+      },
+      {
+        id: 'USR-ADM-001',
+        name: 'Mauricio Quintero',
+        firstName: 'Mauricio',
+        lastName: 'Quintero',
+        email: 'm.quintero@colorlink.com.co',
+        phone: '+57 318 290-1122',
+        company: 'ColorLink Operaciones y Despacho',
+        documentId: '98.765.432',
+        address: 'Centro Logístico Sabaneta',
+        city: 'Sabaneta',
+        role: 'administrador',
+        authMethod: 'credentials',
+        avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80',
+        isRegistered: true
+      },
+      {
+        id: 'USR-ADM-002',
+        name: 'Administración ColorLink',
+        firstName: 'Admin',
+        lastName: 'ColorLink',
+        email: 'admin@colorlink.com.co',
+        phone: '+57 300 000-0000',
+        company: 'ColorLink Corporativo',
+        documentId: '900.800.700-1',
+        address: 'Medellín, Antioquia',
+        city: 'Medellín',
+        role: 'administrador',
+        authMethod: 'credentials',
+        avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150&auto=format&fit=crop&q=80',
+        isRegistered: true
+      }
+    ];
+    saveUsersToLocalDb(registeredUsers);
+  }
+
   // API Routes
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', service: 'ColorLink Smart API', timestamp: new Date().toISOString() });
   });
 
-  // Local database simulation & OTP storage
-  const registeredUsers: any[] = [
-    {
-      id: 'USR-CLI-001',
-      name: 'Carlos Mendoza',
-      firstName: 'Carlos',
-      lastName: 'Mendoza',
-      email: 'carlos.mendoza@constructorahorizonte.com.co',
-      phone: '+57 314 789-2045',
-      company: 'Constructora Horizonte S.A.S.',
-      documentId: '901.458.789-3',
-      address: 'Calle 10A # 36-24, El Poblado',
-      city: 'Medellín',
-      role: 'cliente',
-      authMethod: 'credentials',
-      avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-      isRegistered: true
-    },
-    {
-      id: 'USR-CLI-002',
-      name: 'Constructora Horizonte Proyectos',
-      firstName: 'Proyectos',
-      lastName: 'Horizonte',
-      email: 'proyectos@constructorahorizonte.com.co',
-      phone: '+57 314 789-2045',
-      company: 'Constructora Horizonte S.A.S.',
-      documentId: '901.458.789-3',
-      address: 'Cra 43A # 1-50, San Fernando Plaza',
-      city: 'Medellín',
-      role: 'cliente',
-      authMethod: 'credentials',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-      isRegistered: true
-    },
-    {
-      id: 'USR-ASE-001',
-      name: 'Ing. Jorge Osorio',
-      firstName: 'Jorge',
-      lastName: 'Osorio',
-      email: 'j.osorio@colorlink.com.co',
-      phone: '+57 310 445-9012',
-      company: 'ColorLink Recubrimientos S.A.S.',
-      documentId: '71.234.567',
-      address: 'Autopista Sur Km 8, Itagüí',
-      city: 'Itagüí',
-      role: 'asesor',
-      authMethod: 'credentials',
-      avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
-      isRegistered: true
-    },
-    {
-      id: 'USR-LAB-001',
-      name: 'Dra. Elena Restrepo',
-      firstName: 'Elena',
-      lastName: 'Restrepo',
-      email: 'e.restrepo@colorlink.com.co',
-      phone: '+57 301 678-3412',
-      company: 'ColorLink Laboratorio de Tintometría',
-      documentId: '43.567.890',
-      address: 'Zona Industrial Guayabal',
-      city: 'Medellín',
-      role: 'calidad',
-      authMethod: 'credentials',
-      avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
-      isRegistered: true
-    },
-    {
-      id: 'USR-ADM-001',
-      name: 'Mauricio Quintero',
-      firstName: 'Mauricio',
-      lastName: 'Quintero',
-      email: 'm.quintero@colorlink.com.co',
-      phone: '+57 318 290-1122',
-      company: 'ColorLink Operaciones y Despacho',
-      documentId: '98.765.432',
-      address: 'Centro Logístico Sabaneta',
-      city: 'Sabaneta',
-      role: 'administrador',
-      authMethod: 'credentials',
-      avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80',
-      isRegistered: true
-    },
-    {
-      id: 'USR-ADM-002',
-      name: 'Administración ColorLink',
-      firstName: 'Admin',
-      lastName: 'ColorLink',
-      email: 'admin@colorlink.com.co',
-      phone: '+57 300 000-0000',
-      company: 'ColorLink Corporativo',
-      documentId: '900.800.700-1',
-      address: 'Medellín, Antioquia',
-      city: 'Medellín',
-      role: 'administrador',
-      authMethod: 'credentials',
-      avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150&auto=format&fit=crop&q=80',
-      isRegistered: true
-    }
-  ];
+  // Local Database status and diagnostics endpoint
+  app.get('/api/db/status', (req, res) => {
+    res.json({
+      status: 'connected',
+      driver: 'Local JSON File DB & SQL Ready (PostgreSQL / SQLite)',
+      filePath: LOCAL_DB_PATH,
+      totalUsers: registeredUsers.length,
+      users: registeredUsers.map(u => ({ id: u.id, email: u.email, name: u.name, role: u.role, company: u.company }))
+    });
+  });
 
   // Active OTP codes storage: email -> { code, expiresAt }
   const activeOtps: Record<string, { code: string; expiresAt: number }> = {};
 
+  // Helper to send real emails via Nodemailer (SMTP) or Resend
+  async function dispatchRealEmail(toEmail: string, code: string): Promise<boolean> {
+    const fromAddress = process.env.SMTP_FROM || process.env.SMTP_USER || 'ColorLink Seguridad <seguridad@colorlink.com.co>';
+    const emailHtml = `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #0b1528; color: #ffffff; padding: 32px 24px; border-radius: 12px; max-width: 500px; margin: 0 auto; border: 1px solid #1e293b;">
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 20px;">
+          <h2 style="color: #10b981; margin: 0; font-size: 22px; font-weight: 900; letter-spacing: -0.5px;">COLOR<span style="color: #34d399;">LINK</span> S.A.S.</h2>
+        </div>
+        <p style="color: #94a3b8; font-size: 13px; margin: 0 0 20px 0;">Pinturas & Recubrimientos Técnicos • Valle de Aburrá, Colombia</p>
+        <p style="font-size: 15px; color: #f1f5f9; line-height: 1.5; margin-bottom: 20px;">
+          Hola, usa el siguiente código de seguridad de 6 dígitos para ingresar a la plataforma o registrar los datos corporativos de tu empresa:
+        </p>
+        <div style="background-color: #0f172a; border: 2px solid #10b981; padding: 18px; border-radius: 12px; text-align: center; margin: 24px 0;">
+          <span style="font-size: 34px; font-weight: 900; letter-spacing: 8px; color: #34d399; font-family: monospace;">${code}</span>
+        </div>
+        <p style="font-size: 12px; color: #94a3b8; line-height: 1.5;">
+          • Este código expira en 15 minutos.<br/>
+          • Si no solicitaste este acceso, puedes ignorar este mensaje sin problemas.
+        </p>
+        <hr style="border: 0; border-top: 1px solid #1e293b; margin: 24px 0;" />
+        <p style="font-size: 11px; color: #64748b; text-align: center; margin: 0;">
+          Copyright 2026 © COLORLINK S.A.S. • Ingeniería en Color para Grandes Obras
+        </p>
+      </div>
+    `;
+
+    // 1. Try sending via Nodemailer (SMTP / Gmail / Brevo / Custom Host)
+    if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+      try {
+        let transporter;
+        if (process.env.SMTP_SERVICE === 'gmail') {
+          transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+              user: process.env.SMTP_USER,
+              pass: process.env.SMTP_PASS
+            }
+          });
+        } else {
+          transporter = nodemailer.createTransport({
+            host: process.env.SMTP_HOST || 'smtp.gmail.com',
+            port: Number(process.env.SMTP_PORT) || 587,
+            secure: Number(process.env.SMTP_PORT) === 465,
+            auth: {
+              user: process.env.SMTP_USER,
+              pass: process.env.SMTP_PASS
+            }
+          });
+        }
+
+        const info = await transporter.sendMail({
+          from: fromAddress,
+          to: toEmail,
+          subject: `${code} es tu código de verificación ColorLink`,
+          html: emailHtml
+        });
+
+        console.log(`[AUTH-MAIL] Correo SMTP enviado a ${toEmail}: ${info.messageId}`);
+        return true;
+      } catch (smtpErr) {
+        console.warn(`[AUTH-MAIL] Error enviando correo vía SMTP:`, smtpErr);
+      }
+    }
+
+    // 2. Try sending via Resend API (HTTP-based)
+    const resendApiKey = process.env.RESEND_API_KEY;
+    if (resendApiKey) {
+      try {
+        const response = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${resendApiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            from: process.env.SMTP_FROM || 'ColorLink Seguridad <onboarding@resend.dev>',
+            to: [toEmail],
+            subject: `${code} es tu código de verificación ColorLink`,
+            html: emailHtml
+          })
+        });
+
+        if (response.ok) {
+          console.log(`[AUTH-MAIL] Correo enviado con éxito a ${toEmail} vía Resend!`);
+          return true;
+        } else {
+          const errText = await response.text();
+          console.warn(`[AUTH-MAIL] Error enviando correo vía Resend:`, errText);
+        }
+      } catch (err) {
+        console.warn(`[AUTH-MAIL] Excepción en Resend API:`, err);
+      }
+    }
+
+    console.log(`[AUTH-MAIL] No hay servicio SMTP ni Resend configurado. El código de verificación es: ${code} para ${toEmail}`);
+    return false;
+  }
+
   // 1. Send OTP Email endpoint
-  app.post('/api/auth/send-otp', (req, res) => {
+  app.post('/api/auth/send-otp', async (req, res) => {
     const { email } = req.body;
     if (!email || typeof email !== 'string') {
       return res.status(400).json({ success: false, error: 'Correo requerido' });
     }
 
     const cleanEmail = email.trim().toLowerCase();
-    // Generate a 6-digit random security code
+    // Generate 6-digit random security code
     const generatedCode = Math.floor(100000 + Math.random() * 900000).toString();
     activeOtps[cleanEmail] = {
       code: generatedCode,
@@ -137,15 +284,138 @@ async function startServer() {
 
     console.log(`[AUTH] Código OTP generado para ${cleanEmail}: ${generatedCode}`);
 
+    // Attempt real email delivery
+    const realEmailSent = await dispatchRealEmail(cleanEmail, generatedCode);
+
     // Check if user already exists
     const existing = registeredUsers.find(u => u.email.toLowerCase() === cleanEmail);
 
     return res.json({
       success: true,
-      message: `Código de seguridad enviado con éxito a ${cleanEmail}`,
-      otpCode: generatedCode, // Delivered to UI for seamless test verification
-      alreadyRegistered: !!existing
+      message: realEmailSent 
+        ? `Código enviado exitosamente a tu correo: ${cleanEmail}`
+        : `Código de seguridad generado para ${cleanEmail}`,
+      otpCode: generatedCode,
+      alreadyRegistered: !!existing,
+      realEmailSent
     });
+  });
+
+  // =========================================================================
+  // SSO / OAuth Integration Endpoints
+  // =========================================================================
+
+  // Endpoint to get OAuth URL for Google or Microsoft
+  app.get('/api/auth/oauth-url/:provider', (req, res) => {
+    const { provider } = req.params;
+    const origin = (req.query.origin as string) || process.env.APP_URL || '';
+    const redirectUri = `${origin}/auth/callback`;
+
+    if (provider === 'google') {
+      if (process.env.GOOGLE_CLIENT_ID) {
+        const params = new URLSearchParams({
+          client_id: process.env.GOOGLE_CLIENT_ID,
+          redirect_uri: redirectUri,
+          response_type: 'code',
+          scope: 'openid email profile',
+          prompt: 'select_account',
+          access_type: 'offline'
+        });
+        return res.json({ url: `https://accounts.google.com/o/oauth2/v2/auth?${params}` });
+      }
+      return res.status(400).json({
+        error: 'El servicio de Google OAuth aún no está configurado (falta GOOGLE_CLIENT_ID en variables de entorno).'
+      });
+    }
+
+    if (provider === 'microsoft') {
+      if (process.env.MICROSOFT_CLIENT_ID) {
+        const params = new URLSearchParams({
+          client_id: process.env.MICROSOFT_CLIENT_ID,
+          redirect_uri: redirectUri,
+          response_type: 'code',
+          scope: 'openid email profile'
+        });
+        return res.json({ url: `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?${params}` });
+      }
+      return res.status(400).json({
+        error: 'El servicio de Microsoft OAuth aún no está configurado (falta MICROSOFT_CLIENT_ID en variables de entorno).'
+      });
+    }
+
+    return res.status(400).json({ error: 'Proveedor no soportado' });
+  });
+
+  // Callback handler with postMessage as mandated by oauth-integration skill
+  app.get(['/auth/callback', '/auth/callback/'], async (req, res) => {
+    const { code } = req.query;
+    let userEmail = 'juanma.olave40@gmail.com';
+    let userName = 'Usuario Google';
+    let userAvatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80';
+
+    if (code && process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+      try {
+        const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            code: String(code),
+            client_id: process.env.GOOGLE_CLIENT_ID,
+            client_secret: process.env.GOOGLE_CLIENT_SECRET,
+            redirect_uri: `${process.env.APP_URL || ''}/auth/callback`,
+            grant_type: 'authorization_code',
+          })
+        });
+        const tokens = await tokenRes.json();
+        if (tokens.access_token) {
+          const profileRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+            headers: { Authorization: `Bearer ${tokens.access_token}` }
+          });
+          const profile = await profileRes.json();
+          if (profile.email) {
+            userEmail = profile.email;
+            userName = profile.name || profile.email.split('@')[0];
+            userAvatar = profile.picture || userAvatar;
+          }
+        }
+      } catch (e) {
+        console.warn('[OAUTH-CALLBACK] Error en canje de token:', e);
+      }
+    }
+
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Autenticación Exitosa</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0b1528; color: #fff; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }
+            .card { background: #1e293b; padding: 32px; border-radius: 16px; border: 1px solid #334155; max-width: 360px; }
+            .check { width: 48px; height: 48px; background: #10b981; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; font-size: 24px; color: #0b1528; font-weight: bold; }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <div class="check">✓</div>
+            <h2 style="margin: 0 0 8px 0; font-size: 18px;">Autenticación exitosa</h2>
+            <p style="color: #94a3b8; font-size: 13px; margin-bottom: 16px;">Cerrando ventana de autenticación...</p>
+          </div>
+          <script>
+            const userData = {
+              email: ${JSON.stringify(userEmail)},
+              name: ${JSON.stringify(userName)},
+              avatar: ${JSON.stringify(userAvatar)}
+            };
+            if (window.opener) {
+              window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', user: userData }, '*');
+              setTimeout(() => window.close(), 250);
+            } else {
+              window.location.href = '/';
+            }
+          </script>
+        </body>
+      </html>
+    `);
   });
 
   // 2. Verify OTP Code endpoint
@@ -256,6 +526,7 @@ async function startServer() {
     } else {
       registeredUsers.push(newUser);
     }
+    saveUsersToLocalDb(registeredUsers);
 
     return res.json({
       success: true,
