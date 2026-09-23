@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { ProjectFormData, AiDiagnosisResult } from '../types';
-import { 
-  Sparkles, 
-  Cpu, 
-  AlertTriangle, 
-  CheckCircle2, 
-  ArrowRight, 
-  ShieldAlert, 
-  FileCode, 
-  UserCheck, 
-  RefreshCw, 
-  Layers, 
+import {
+  Sparkles,
+  Cpu,
+  AlertTriangle,
+  CheckCircle2,
+  ArrowRight,
+  ShieldAlert,
+  FileCode,
+  UserCheck,
+  RefreshCw,
+  Layers,
   Droplet,
   Sliders
 } from 'lucide-react';
@@ -21,6 +21,7 @@ interface AiClassificationStepProps {
   setAiResult: React.Dispatch<React.SetStateAction<AiDiagnosisResult | null>>;
   onProceedToTechnicalEngine: () => void;
   onBackToValidation: () => void;
+  onGoFixPhoto?: () => void;
 }
 
 export const AiClassificationStep: React.FC<AiClassificationStepProps> = ({
@@ -28,7 +29,8 @@ export const AiClassificationStep: React.FC<AiClassificationStepProps> = ({
   aiResult,
   setAiResult,
   onProceedToTechnicalEngine,
-  onBackToValidation
+  onBackToValidation,
+  onGoFixPhoto
 }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
@@ -51,7 +53,8 @@ export const AiClassificationStep: React.FC<AiClassificationStepProps> = ({
           color: formData.color,
           fechaRequerida: `${formData.fechaRequeridaDias} días`,
           descripcion: formData.descripcion,
-          ambiente: formData.ambiente
+          ambiente: formData.ambiente,
+          imageBase64: formData.fotos[0]?.base64 || null
         })
       });
 
@@ -139,15 +142,14 @@ export const AiClassificationStep: React.FC<AiClassificationStepProps> = ({
         </div>
       ) : aiResult ? (
         <div className="space-y-6">
-          
+
           {/* Top Metrics Row */}
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
               <span className="text-[10px] uppercase font-bold text-slate-400 block">Severidad Patológica</span>
               <div className="flex items-center gap-2 mt-1">
-                <span className={`w-2.5 h-2.5 rounded-full ${
-                  aiResult.severidad === 'Alta' ? 'bg-red-500' : aiResult.severidad === 'Media' ? 'bg-amber-500' : 'bg-emerald-500'
-                }`}></span>
+                <span className={`w-2.5 h-2.5 rounded-full ${aiResult.severidad === 'Alta' ? 'bg-red-500' : aiResult.severidad === 'Media' ? 'bg-amber-500' : 'bg-emerald-500'
+                  }`}></span>
                 <span className="text-base font-extrabold text-slate-900">{aiResult.severidad}</span>
               </div>
             </div>
@@ -187,6 +189,23 @@ export const AiClassificationStep: React.FC<AiClassificationStepProps> = ({
               </div>
             </div>
           </div>
+
+          {aiResult.imagen_coherente === false && (
+            <div className="bg-red-50 border border-red-300 rounded-2xl p-5 flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+              <div className="flex-1 space-y-2">
+                <h4 className="text-sm font-bold text-red-950">La imagen no parece coincidir con lo descrito</h4>
+                <p className="text-xs text-red-800">{aiResult.imagen_observacion}</p>
+                <button
+                  type="button"
+                  onClick={onGoFixPhoto}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl cursor-pointer"
+                >
+                  Cambiar Fotografía
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* 3-Step Recommended System */}
           <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">

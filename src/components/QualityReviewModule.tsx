@@ -1,16 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ProjectFormData, UserProfile } from '../types';
 import { ALL_MOCK_PROJECTS } from '../data/mockData';
-import { 
-  ShieldCheck, 
-  Droplet, 
-  AlertTriangle, 
-  CheckCircle2, 
-  FileBadge, 
-  Sparkles, 
-  Microscope, 
-  Search, 
-  Layers, 
+import {
+  ShieldCheck,
+  Droplet,
+  AlertTriangle,
+  CheckCircle2,
+  FileBadge,
+  Sparkles,
+  Microscope,
+  Search,
+  Layers,
   Save,
   Check
 } from 'lucide-react';
@@ -26,7 +26,22 @@ export const QualityReviewModule: React.FC<QualityReviewModuleProps> = ({
   formData,
   onUpdateQualityVerdict
 }) => {
-  const [selectedProjectId, setSelectedProjectId] = useState(formData.id || ALL_MOCK_PROJECTS[0].id);
+  const [projectsList, setProjectsList] = useState<any[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
+  const [loadingList, setLoadingList] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/projects/all')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          setProjectsList(data.projects);
+          if (data.projects.length > 0) setSelectedProjectId(data.projects[0].proyectoId);
+        }
+      })
+      .finally(() => setLoadingList(false));
+  }, []);
+
   const [moistureReading, setMoistureReading] = useState(18.5);
   const [crackSeverity, setCrackSeverity] = useState<'leve' | 'moderada' | 'critica'>('moderada');
   const [labNotes, setLabNotes] = useState(
@@ -35,23 +50,51 @@ export const QualityReviewModule: React.FC<QualityReviewModuleProps> = ({
   const [isApproved, setIsApproved] = useState(true);
   const [isSaved, setIsSaved] = useState(false);
 
-  const currentProject = ALL_MOCK_PROJECTS.find(p => p.id === selectedProjectId) || formData;
+  const currentProject = projectsList.find(p => p.proyectoId === selectedProjectId);
 
-  const handleSaveVerdict = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (currentProject?.diagnostico) {
+      setMoistureReading(currentProject.diagnostico.humedadRelativa ?? 18.5);
+      setCrackSeverity(currentProject.diagnostico.severidadFisuras ?? 'moderada');
+      setLabNotes(currentProject.diagnostico.notasPerito ?? '');
+      setIsApproved(currentProject.diagnostico.aprobadoCalidad ?? true);
+    } else if (currentProject) {
+      // Proyecto sin dictamen a\u00fan: valores neutros de partida
+      setMoistureReading(18.5);
+      setCrackSeverity('moderada');
+      setLabNotes('');
+      setIsApproved(true);
+    }
+  }, [selectedProjectId, projectsList]);
+
+  const handleSaveVerdict = async (e: React.FormEvent) => {
     e.preventDefault();
-    onUpdateQualityVerdict({
-      aprobado: isApproved,
-      perito: user.name,
-      fecha: new Date().toISOString().split('T')[0],
-      notas: labNotes
+    if (!currentProject) return;
+
+    const response = await fetch(`/api/projects/${currentProject.proyectoId}/quality-verdict`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        humedadRelativa: moistureReading,
+        severidadFisuras: crackSeverity,
+        notasPerito: labNotes,
+        aprobadoCalidad: isApproved
+      })
     });
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 3000);
+    const data = await response.json();
+
+    if (data.success) {
+      setProjectsList(prev => prev.map(p =>
+        p.proyectoId === currentProject.proyectoId ? { ...p, diagnostico: data.diagnostico } : p
+      ));
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 3000);
+    }
   };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-      
+
       {/* Header */}
       <div className="bg-gradient-to-r from-purple-950 via-slate-900 to-indigo-950 text-white rounded-3xl p-6 shadow-xl border border-purple-900 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="space-y-1">
@@ -74,7 +117,7 @@ export const QualityReviewModule: React.FC<QualityReviewModuleProps> = ({
 
       {/* Grid Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
+
         {/* Left Column: Project Selector */}
         <div className="lg:col-span-4 space-y-3">
           <span className="text-xs font-black text-slate-500 uppercase tracking-wider block">
@@ -82,27 +125,29 @@ export const QualityReviewModule: React.FC<QualityReviewModuleProps> = ({
           </span>
 
           <div className="space-y-2">
-            {ALL_MOCK_PROJECTS.map((proj) => {
-              const isSelected = proj.id === selectedProjectId;
+            {projectsList.map((proj) => {
+              const isSelected = proj.proyectoId === selectedProjectId;
+              if (loadingList) return <div className="text-center py-12 text-slate-400 text-sm">Cargando proyectos...</div>;
+              if (!currentProject) return <div className="text-center py-12 text-slate-400 text-sm">No hay proyectos pendientes de peritaje.</div>;
               return (
                 <div
-                  key={proj.id}
-                  onClick={() => setSelectedProjectId(proj.id)}
+                  key={proj.proyectoId}
+                  onClick={() => setSelectedProjectId(proj.proyectoId)}
                   className={`p-4 rounded-2xl border transition-all cursor-pointer space-y-1.5 ${isSelected ? 'bg-purple-50 border-purple-500 shadow-md ring-2 ring-purple-400/20' : 'bg-white border-slate-200 hover:border-purple-300'}`}
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-mono font-bold text-purple-700 bg-white px-2 py-0.5 rounded border border-purple-200">
-                      {proj.id}
+                      {proj.proyectoId.slice(0, 8)}
                     </span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full">
-                      ✓ NTC Apta
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${proj.diagnostico?.aprobadoCalidad ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                      {proj.diagnostico?.aprobadoCalidad ? '✓ NTC Apta' : 'Pendiente'}
                     </span>
                   </div>
-                  <h4 className="font-extrabold text-sm text-slate-900 truncate">{proj.proyecto}</h4>
-                  <p className="text-xs text-slate-600 truncate">{proj.cliente}</p>
+                  <h4 className="font-extrabold text-sm text-slate-900 truncate">{proj.nombreProyecto}</h4>
+                  <p className="text-xs text-slate-600 truncate">{proj.usuario?.nombre} {proj.usuario?.apellido}</p>
                   <div className="text-[11px] text-slate-500 pt-1 border-t border-slate-100 flex items-center justify-between">
-                    <span>{proj.areaM2} m²</span>
-                    <span className="text-purple-700 font-semibold">{proj.condiciones.join(', ')}</span>
+                    <span>{proj.area || 0} m²</span>
+                    <span className="text-purple-700 font-semibold">{proj.tipoSuperficie}</span>
                   </div>
                 </div>
               );
@@ -113,12 +158,12 @@ export const QualityReviewModule: React.FC<QualityReviewModuleProps> = ({
         {/* Right Column: Lab Form */}
         <div className="lg:col-span-8">
           <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-xs space-y-6">
-            
+
             <div className="flex items-center justify-between pb-4 border-b border-slate-100">
               <div>
                 <span className="text-[10px] font-black text-slate-400 uppercase">Inspeccionando Sustrato</span>
-                <h3 className="text-lg font-black text-slate-900">{currentProject.proyecto}</h3>
-                <p className="text-xs text-slate-600">{currentProject.cliente} • {currentProject.ciudad}</p>
+                <h3 className="text-lg font-black text-slate-900">{currentProject?.nombreProyecto || 'Selecciona un proyecto'}</h3>
+                <p className="text-xs text-slate-600">{currentProject?.usuario?.nombre} {currentProject?.usuario?.apellido} • {currentProject?.empresa?.ciudad?.ciudad}</p>
               </div>
 
               <div className="flex items-center gap-2">
@@ -136,7 +181,7 @@ export const QualityReviewModule: React.FC<QualityReviewModuleProps> = ({
             )}
 
             <form onSubmit={handleSaveVerdict} className="space-y-6">
-              
+
               {/* Moisture and crack parameters */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="p-4 bg-purple-50/60 rounded-2xl border border-purple-200 space-y-2">
@@ -157,7 +202,7 @@ export const QualityReviewModule: React.FC<QualityReviewModuleProps> = ({
                     className="w-full accent-purple-600 cursor-pointer"
                   />
                   <span className="text-[10px] text-purple-700 block">
-                    {moistureReading > 15 ? '⚠️ Requiere sellador antialcalino previo.' : '✓ Nivel óptimo para aplicación directa.'}
+                    {moistureReading > 15 ? 'Requiere sellador antialcalino previo.' : '✓ Nivel óptimo para aplicación directa.'}
                   </span>
                 </div>
 

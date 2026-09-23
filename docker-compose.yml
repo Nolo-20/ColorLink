@@ -1,0 +1,53 @@
+services:
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: colorlink-tailscale
+    hostname: colorlink-web
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "false"
+    volumes:
+      - ts_state:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    restart: always
+
+  colorlink:
+    build: .
+    container_name: colorlink
+    network_mode: service:tailscale
+    depends_on:
+      tailscale:
+        condition: service_started
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://colorlink_user:${POSTGRES_PASSWORD}@db:5432/colorlink_db
+    restart: always
+
+  db:
+    image: postgres:16-alpine
+    container_name: colorlink_db
+    environment:
+      POSTGRES_DB: colorlink_db
+      POSTGRES_USER: colorlink_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - colorlink_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U colorlink_user -d colorlink_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+volumes:
+  ts_state:
+  colorlink_pgdata:

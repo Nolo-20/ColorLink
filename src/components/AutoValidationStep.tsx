@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { ProjectFormData, ValidationResult } from '../types';
-import { 
-  CheckCircle2, 
-  AlertCircle, 
-  ShieldCheck, 
-  Sparkles, 
-  ArrowRight, 
-  FileSearch, 
-  Database, 
-  Cpu, 
+import {
+  CheckCircle2,
+  AlertCircle,
+  ShieldCheck,
+  Sparkles,
+  ArrowRight,
+  FileSearch,
+  Database,
+  Cpu,
   Layers,
   Clock,
   Fingerprint
@@ -25,54 +25,72 @@ export const AutoValidationStep: React.FC<AutoValidationStepProps> = ({
   onProceedToAi,
   onBackToCapture
 }) => {
-  const [isValidating, setIsValidating] = useState(true);
-  const [validationScore, setValidationScore] = useState(0);
+  const [duplicateFound, setDuplicateFound] = useState(false);
+  const [checkingDuplicates, setCheckingDuplicates] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/projects')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          const posibleDuplicado = data.projects.some((p: any) =>
+            p.nombreProyecto?.toLowerCase().trim() === formData.proyecto?.toLowerCase().trim()
+          );
+          setDuplicateFound(posibleDuplicado);
+        }
+      })
+      .finally(() => setCheckingDuplicates(false));
+  }, []);
+
+  const emailValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.emailContacto || '');
+  const areaCoherente = formData.areaM2 > 0 && formData.areaM2 <= 10000;
+  const fechaCoherente = formData.fechaRequeridaDias > 0 && formData.fechaRequeridaDias <= 365;
 
   const checks = [
     {
-      id: 'check-1',
-      title: 'Completitud de Campos Críticos',
-      desc: 'Cliente, Ciudad (Medellín), Área (85.00 m²), Superficie y Color definidos.',
-      passed: Boolean(formData.cliente && formData.ciudad && formData.areaM2 > 0 && formData.superficie),
+      id: 'completitud',
+      title: 'Completitud',
+      desc: '¿Faltan campos obligatorios? Cliente, ciudad, área, superficie y color deben estar definidos.',
+      passed: Boolean(formData.cliente && formData.ciudad && formData.areaM2 > 0 && formData.superficie && formData.color),
       severity: 'success'
     },
     {
-      id: 'check-2',
-      title: 'Validación de Evidencias Fotográficas',
-      desc: `${formData.fotos.length} archivo(s) fotográfico(s) adjunto(s) y procesables por visión computacional.`,
-      passed: formData.fotos.length > 0,
-      severity: formData.fotos.length > 0 ? 'success' : 'warning'
+      id: 'formato',
+      title: 'Formato',
+      desc: `Correo de contacto ${emailValido ? 'con formato válido' : 'con formato INVÁLIDO'}, área numérica, fecha requerida numérica.`,
+      passed: emailValido && typeof formData.areaM2 === 'number' && typeof formData.fechaRequeridaDias === 'number',
+      severity: emailValido ? 'success' : 'warning'
     },
     {
-      id: 'check-3',
-      title: 'Regla de Coherencia Técnica Sustrato - Patología',
-      desc: 'Sustrato de concreto en fachada exterior con reporte de humedad y fisuras es físicamente consistente.',
-      passed: true,
-      severity: 'success'
+      id: 'coherencia',
+      title: 'Coherencia',
+      desc: `Área (${formData.areaM2} m²) y plazo (${formData.fechaRequeridaDias} días) dentro de rangos lógicos de obra.`,
+      passed: areaCoherente && fechaCoherente,
+      severity: (areaCoherente && fechaCoherente) ? 'success' : 'warning'
     },
     {
-      id: 'check-4',
-      title: 'Auditoría Anti-Duplicidad en Supabase',
-      desc: 'No existen registros duplicados activos en la misma ubicación para Constructora Horizonte en los últimos 7 días.',
-      passed: true,
-      severity: 'success'
+      id: 'duplicidad',
+      title: 'Duplicidad',
+      desc: checkingDuplicates
+        ? 'Verificando contra tus proyectos existentes...'
+        : duplicateFound
+          ? 'Ya existe un proyecto con este mismo nombre en tu cuenta.'
+          : 'No se encontraron proyectos duplicados con el mismo nombre.',
+      passed: !checkingDuplicates && !duplicateFound,
+      severity: duplicateFound ? 'warning' : 'success'
     },
     {
-      id: 'check-5',
-      title: 'Consentimiento & Canal de Trazabilidad',
-      desc: `Origen validado: ${formData.canalOrigen} con autorización legal de tratamiento de datos.`,
+      id: 'trazabilidad',
+      title: 'Trazabilidad',
+      desc: `Origen: ${formData.canalOrigen || 'web_portal'} • Capturado: ${new Date().toLocaleString('es-CO')}`,
       passed: formData.consentimientoDatos,
       severity: 'success'
     }
   ];
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsValidating(false);
-      setValidationScore(98.5);
-    }, 700);
-    return () => clearTimeout(timer);
-  }, []);
+  const passedCount = checks.filter(c => c.passed).length;
+  const validationScore = Math.round((passedCount / checks.length) * 1000) / 10;
+  const isValidating = checkingDuplicates;
 
   return (
     <div className="max-w-4xl mx-auto py-6 px-4 sm:px-6 space-y-8">
@@ -138,6 +156,7 @@ export const AutoValidationStep: React.FC<AutoValidationStepProps> = ({
         </div>
 
         {/* Checks Table */}
+        {/* Checks Table */}
         <div className="mt-5 space-y-3">
           {checks.map((c) => (
             <div
@@ -145,41 +164,19 @@ export const AutoValidationStep: React.FC<AutoValidationStepProps> = ({
               className="p-3.5 rounded-xl border border-slate-200/80 bg-slate-50/60 flex items-start justify-between gap-4"
             >
               <div className="flex items-start gap-3">
-                <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 mt-0.5">
-                  <CheckCircle2 className="w-4 h-4" />
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${c.passed ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                  {c.passed ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
                 </div>
                 <div>
                   <h4 className="text-xs font-bold text-slate-900">{c.title}</h4>
                   <p className="text-[11px] text-slate-500 mt-0.5">{c.desc}</p>
                 </div>
               </div>
-              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full shrink-0">
-                Aprobado
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${c.passed ? 'text-emerald-700 bg-emerald-100' : 'text-amber-700 bg-amber-100'}`}>
+                {c.passed ? 'Aprobado' : 'Atención'}
               </span>
             </div>
           ))}
-        </div>
-
-        {/* Structured Data Preview for the next step */}
-        <div className="mt-6 p-4 rounded-xl bg-slate-900 text-slate-100 font-mono text-xs overflow-x-auto">
-          <div className="flex items-center justify-between text-[11px] text-slate-400 pb-2 mb-2 border-b border-slate-800">
-            <span>JSON Estructurado Listo para Clasificación con Gemini</span>
-            <span className="text-cyan-400">Schema v1.2</span>
-          </div>
-          <pre className="text-[11px] leading-relaxed text-cyan-300">
-{JSON.stringify({
-  proyecto_id: formData.id || 'CLK-PRJ-2026-MED-085',
-  cliente: formData.cliente,
-  ciudad: formData.ciudad,
-  area_m2: formData.areaM2,
-  superficie: formData.superficie,
-  condicion: formData.condiciones.join(' + '),
-  color: formData.color,
-  fotos_adjuntas: formData.fotos.length,
-  fecha_requerida_dias: formData.fechaRequeridaDias,
-  validacion_calidad_score: 98.5
-}, null, 2)}
-          </pre>
         </div>
       </div>
 

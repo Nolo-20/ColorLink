@@ -1,16 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ActiveTab, UserProfile } from '../types';
-import { 
+import {
   Droplet,
   Home,
-  Layers, 
-  CheckCircle2, 
-  Cpu, 
-  Calculator, 
-  Network, 
-  User, 
+  Layers,
+  CheckCircle2,
+  Cpu,
+  Calculator,
+  Network,
+  User,
   Search,
-  Menu, 
+  Menu,
   X,
   LogOut,
   ChevronDown,
@@ -31,7 +31,20 @@ interface NavbarProps {
   hasValidatedData: boolean;
   onLogout?: () => void;
   onOpenVirtualAssistant?: () => void;
+  onOpenProfile?: () => void;
+  onStartNewAiQuote?: () => void;
 }
+
+const UserAvatarImg: React.FC<{ avatar?: string | null; name: string; sizeClass?: string }> = ({ avatar, name, sizeClass = 'w-7 h-7' }) => {
+  if (avatar) {
+    return <img src={avatar} alt={name} className={`${sizeClass} rounded-full object-cover border border-emerald-400`} />;
+  }
+  return (
+    <div className={`${sizeClass} rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center border border-emerald-400`}>
+      <User className="w-1/2 h-1/2" />
+    </div>
+  );
+};
 
 export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
@@ -40,11 +53,13 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLoadSampleCase,
   hasValidatedData,
   onLogout,
-  onOpenVirtualAssistant
+  onOpenVirtualAssistant,
+  onOpenProfile,
+  onStartNewAiQuote
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
-  
+
   // Dynamic Collapsible Search State
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -66,7 +81,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     if (user.role === 'cliente') {
       base.push(
         { id: 'captura', label: 'Mis Proyectos', icon: Layers },
-        { id: 'motor_tecnico', label: 'Cotización & Cuñetes', icon: Calculator }
+        { id: 'nueva_cotizacion_ia', label: 'Nueva Cotización IA', icon: Sparkles }
       );
     } else if (user.role === 'asesor') {
       base.push(
@@ -102,7 +117,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     <header className="sticky top-0 z-50 bg-[#0F224A] text-white shadow-md font-sans border-b border-blue-900/60">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 gap-2 sm:gap-4">
-          
+
           {/* 1. Brand Logo */}
           <button
             onClick={() => setActiveTab('dashboard')}
@@ -173,7 +188,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                   Accesos Rápidos Encontrados:
                 </span>
-                
+
                 <button
                   onClick={() => handleSearchResultClick('captura')}
                   className="w-full text-left p-2 rounded-xl hover:bg-slate-800 text-white flex items-center justify-between"
@@ -209,12 +224,11 @@ export const Navbar: React.FC<NavbarProps> = ({
               return (
                 <button
                   key={item.id}
-                  onClick={() => setActiveTab(item.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                    isActive 
-                      ? 'bg-emerald-500 text-slate-950 shadow-md font-black' 
+                  onClick={() => item.id === 'nueva_cotizacion_ia' && onStartNewAiQuote ? onStartNewAiQuote() : setActiveTab(item.id)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${isActive
+                      ? 'bg-emerald-500 text-slate-950 shadow-md font-black'
                       : 'text-blue-100 hover:bg-blue-900/60 hover:text-white'
-                  }`}
+                    }`}
                 >
                   <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-slate-950' : 'text-blue-300'}`} />
                   <span>{item.label}</span>
@@ -225,7 +239,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* 4. Right Controls: Max Assistant & User Profile Dropdown */}
           <div className="flex items-center gap-2 sm:gap-3">
-            
+
             {/* Asistente Virtual Button in Navbar */}
             <button
               onClick={onOpenVirtualAssistant}
@@ -242,11 +256,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
                 className="flex items-center gap-2 p-1 pl-2 pr-2.5 rounded-full bg-blue-950 border border-blue-800 hover:border-emerald-400 transition-all cursor-pointer group"
               >
-                <img 
-                  src={user.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'} 
-                  alt={user.name} 
-                  className="w-7 h-7 rounded-full object-cover border border-emerald-400" 
-                />
+                <UserAvatarImg avatar={user.avatar} name={user.name} sizeClass="w-7 h-7" />
                 <div className="hidden sm:block text-left">
                   <span className="text-xs font-bold text-white block leading-tight truncate max-w-[120px]">
                     {user.firstName || user.name.split(' ')[0]}
@@ -263,11 +273,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <div className="absolute right-0 mt-2 w-64 bg-white text-slate-900 rounded-2xl shadow-2xl border border-slate-200 py-3 px-4 z-50 space-y-3 animate-in fade-in zoom-in duration-100">
                   <div className="pb-3 border-b border-slate-100">
                     <div className="flex items-center gap-2">
-                      <img 
-                        src={user.avatar} 
-                        alt={user.name} 
-                        className="w-9 h-9 rounded-full object-cover border-2 border-emerald-500" 
-                      />
+                      <UserAvatarImg avatar={user.avatar} name={user.name} sizeClass="w-9 h-9" />
                       <div>
                         <h4 className="font-extrabold text-xs text-slate-900 truncate">{user.name}</h4>
                         <p className="text-[10px] text-slate-500 truncate">{user.email}</p>
@@ -298,6 +304,14 @@ export const Navbar: React.FC<NavbarProps> = ({
                     >
                       <Sparkles className="w-3.5 h-3.5 text-amber-500" />
                       <span>Recargar Caso Demo 85m²</span>
+                    </button>
+
+                    <button
+                      onClick={() => { onOpenProfile?.(); setIsUserDropdownOpen(false); }}
+                      className="w-full text-left p-2 rounded-xl hover:bg-slate-100 text-slate-700 flex items-center gap-2 cursor-pointer"
+                    >
+                      <User className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Ver Perfil</span>
                     </button>
                   </div>
 
@@ -339,12 +353,15 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   key={item.id}
                   onClick={() => {
-                    setActiveTab(item.id);
+                    if (item.id === 'nueva_cotizacion_ia' && onStartNewAiQuote) {
+                      onStartNewAiQuote();
+                    } else {
+                      setActiveTab(item.id);
+                    }
                     setIsMobileMenuOpen(false);
                   }}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold ${
-                    isActive ? 'bg-emerald-500 text-slate-950 font-black' : 'text-blue-100 hover:bg-blue-900/60'
-                  }`}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold ${isActive ? 'bg-emerald-500 text-slate-950 font-black' : 'text-blue-100 hover:bg-blue-900/60'
+                    }`}
                 >
                   <Icon className="w-4 h-4" />
                   <span>{item.label}</span>

@@ -18,7 +18,7 @@ export interface UserProfile {
   department?: string; // Para staff interno (ej. "Comercial Antioquia", "Laboratorio Central")
 }
 
-export type SurfaceType = 
+export type SurfaceType =
   | 'concreto'
   | 'revoque'
   | 'ladrillo'
@@ -26,14 +26,14 @@ export type SurfaceType =
   | 'metal'
   | 'madera';
 
-export type SpaceEnvironment = 
+export type SpaceEnvironment =
   | 'exterior_fachada'
   | 'interior_muros'
   | 'zona_humeda'
   | 'trafico_pesado_piso'
   | 'cubierta_techo';
 
-export type SurfaceCondition = 
+export type SurfaceCondition =
   | 'humedad'
   | 'fisuras'
   | 'descascaramiento'
@@ -66,12 +66,15 @@ export interface ProjectFormData {
   fechaRequeridaDias: number;
   canalOrigen: 'web_portal' | 'whatsapp' | 'asesor_comercial' | 'correo' | 'linea_directa';
   descripcion: string;
+  imagen_coherente?: boolean;
+  imagen_observacion?: string;
   fotos: Array<{
     id: string;
     url: string;
     name: string;
     size: string;
     isPreloaded?: boolean;
+    base64?: string;
   }>;
   consentimientoDatos: boolean;
   timestamp: string;
@@ -183,7 +186,7 @@ export interface WarehouseStockItem {
   fechaLote: string;
 }
 
-export type ActiveTab = 
+export type ActiveTab =
   | 'inicio'
   | 'dashboard'
   | 'captura'
@@ -193,5 +196,6 @@ export type ActiveTab =
   | 'validacion'
   | 'ia_clasificacion'
   | 'motor_tecnico'
+  | 'nueva_cotizacion_ia'
   | 'trazabilidad_arquitectura'
   | 'registro';

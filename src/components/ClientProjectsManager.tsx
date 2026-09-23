@@ -1,22 +1,22 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ProjectFormData, CalculationBreakdown, UserProfile, SurfaceType, SpaceEnvironment, SurfaceCondition, ColorTone } from '../types';
 import { COLOR_PALETTES } from '../data/mockData';
-import { 
-  Building2, 
-  MapPin, 
-  Layers, 
-  Ruler, 
-  Palette, 
-  Calendar, 
-  Plus, 
-  FileText, 
-  Download, 
-  Phone, 
-  CheckCircle2, 
-  Clock, 
-  Droplet, 
-  Sparkles, 
-  ArrowRight, 
+import {
+  Building2,
+  MapPin,
+  Layers,
+  Ruler,
+  Palette,
+  Calendar,
+  Plus,
+  FileText,
+  Download,
+  Phone,
+  CheckCircle2,
+  Clock,
+  Droplet,
+  Sparkles,
+  ArrowRight,
   ArrowLeft,
   UploadCloud,
   Trash2,
@@ -45,59 +45,17 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
   const [activeStep, setActiveStep] = useState<1 | 2 | 3>(1);
 
   // Sample client projects list (realistic for Colombian construction)
-  const [clientProjects, setClientProjects] = useState([
-    {
-      id: formData.id || 'CLK-PRJ-2026-MED-085',
-      nombre: formData.proyecto || 'Torre Residencial Poblado - Fachada Sur',
-      ciudad: formData.ciudad || 'Medellín',
-      areaM2: formData.areaM2 || 85,
-      superficie: 'Revoque / Pañete',
-      ambiente: 'Exterior Fachada',
-      linea: 'Koraza Tech 100% Acrílica',
-      color: formData.color || 'Blanco Nieve',
-      colorHex: formData.colorHex || '#F8FAFC',
-      cunetes: 1,
-      galones: 2,
-      totalCOP: calculation.costoEstimadoCOP.totalCOP || 826931,
-      estado: 'Cotizado / Listo para Despacho',
-      fecha: '28 Feb 2026',
-      asesor: 'Juan David Osorio (+57 314 789-2045)'
-    },
-    {
-      id: 'CLK-PRJ-2026-MED-042',
-      nombre: 'Edificio Laureles Park - Cielos Rasos & Pasillos',
-      ciudad: 'Medellín',
-      areaM2: 160,
-      superficie: 'Drywall / Yeso',
-      ambiente: 'Interior Habitacional',
-      linea: 'Vinilo Tipo 1 Blanco Hielo',
-      color: 'Blanco Puro',
-      colorHex: '#FFFFFF',
-      cunetes: 2,
-      galones: 1,
-      totalCOP: 980500,
-      estado: 'En Producción Tintometría',
-      fecha: '24 Feb 2026',
-      asesor: 'Juan David Osorio (+57 314 789-2045)'
-    },
-    {
-      id: 'CLK-PRJ-2026-ENV-019',
-      nombre: 'Parqueadero Subterráneo Torre Envigado',
-      ciudad: 'Envigado',
-      areaM2: 320,
-      superficie: 'Concreto Vaciado',
-      ambiente: 'Pisos & Tráfico Pesado',
-      linea: 'Esmalte Epóxico Alto Tráfico',
-      color: 'Gris Cemento',
-      colorHex: '#94A3B8',
-      cunetes: 4,
-      galones: 2,
-      totalCOP: 2640000,
-      estado: 'Aprobado en Obra',
-      fecha: '18 Feb 2026',
-      asesor: 'Juan David Osorio (+57 314 789-2045)'
-    }
-  ]);
+  const [clientProjects, setClientProjects] = useState<any[]>([]);
+  const [loadingProjects, setLoadingProjects] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/projects')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) setClientProjects(data.projects);
+      })
+      .finally(() => setLoadingProjects(false));
+  }, []);
 
   const surfaces: Array<{ id: SurfaceType; label: string; desc: string; icon: string }> = [
     { id: 'revoque', label: 'Revoque / Pañete', desc: 'Mortero tradicional o afinado', icon: '🏗️' },
@@ -114,33 +72,42 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
     { id: 'trafico_pesado_piso', label: 'Pisos & Tráfico Pesado', desc: 'Parqueaderos y zonas de alto flujo' }
   ];
 
-  const handleSaveAndCalculate = () => {
-    // Add current formData as a new project in the list
-    const newProject = {
-      id: `CLK-PRJ-2026-${Math.floor(100 + Math.random() * 900)}`,
-      nombre: formData.proyecto || 'Nueva Obra Cotizada',
-      ciudad: formData.ciudad || 'Medellín',
-      areaM2: formData.areaM2 || 50,
-      superficie: formData.superficie,
-      ambiente: formData.ambiente,
-      linea: formData.ambiente === 'exterior_fachada' ? 'Koraza Tech 100% Acrílica' : 'Vinilo Tipo 1 Alta Lavabilidad',
-      color: formData.color || 'Blanco Nieve',
-      colorHex: formData.colorHex || '#F8FAFC',
-      cunetes: calculation.cunetesPintura5Gal,
-      galones: calculation.galonesPintura1Gal,
-      totalCOP: calculation.costoEstimadoCOP.totalCOP,
-      estado: 'Cotizado / Listo para Despacho',
-      fecha: 'Hoy',
-      asesor: 'Juan David Osorio (+57 314 789-2045)'
-    };
+  const handleSaveAndCalculate = async () => {
+    try {
+      const response = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nombreProyecto: formData.proyecto || 'Nueva Obra Cotizada',
+          ciudad: formData.ciudad,
+          area: formData.areaM2,
+          tipoSuperficie: formData.superficie,
+          ambiente: formData.ambiente,
+          color: formData.color,
+          colorHex: formData.colorHex,
+          cunetes5g: calculation.cunetesPintura5Gal,
+          galones1g: calculation.galonesPintura1Gal,
+          total: calculation.costoEstimadoCOP.totalCOP
+        })
+      });
+      const data = await response.json();
 
-    setClientProjects(prev => [newProject, ...prev]);
-    setViewMode('list');
+      if (!data.success) {
+        alert(data.error || 'No se pudo guardar el proyecto');
+        return;
+      }
+
+      setClientProjects(prev => [data.project, ...prev]);
+      setViewMode('list');
+    } catch (err) {
+      console.error('Error guardando proyecto:', err);
+      alert('Error de conexión al guardar el proyecto');
+    }
   };
 
   return (
     <div className="max-w-6xl mx-auto py-6 px-4 sm:px-6 space-y-6">
-      
+
       {/* 1. Header Banner */}
       <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1.5">
@@ -152,7 +119,7 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
             {viewMode === 'list' ? 'Mis Proyectos & Cotizaciones' : 'Nueva Cotización de Pintura'}
           </h1>
           <p className="text-slate-300 text-xs sm:text-sm max-w-xl">
-            {viewMode === 'list' 
+            {viewMode === 'list'
               ? 'Consulta el estado de tus obras, rendimiento de cuñetes calculados y descarga cotizaciones comerciales con IVA.'
               : 'Ingresa los metros cuadrados y características de la obra para calcular los cuñetes y galones exactos.'}
           </p>
@@ -185,94 +152,104 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
       {/* ========================================================================= */}
       {viewMode === 'list' && (
         <div className="space-y-4">
-          
+
           <div className="flex items-center justify-between">
             <h2 className="text-base font-extrabold text-slate-800 flex items-center gap-2">
               <Layers className="w-4 h-4 text-emerald-600" />
-              <span>Proyectos Registrados ({clientProjects.length})</span>
+              <span>Proyectos Registrados ({loadingProjects ? '...' : clientProjects.length})</span>
             </h2>
             <span className="text-xs text-slate-500">Valle de Aburrá • Despacho directo a obra</span>
           </div>
 
+          {!loadingProjects && clientProjects.length === 0 && (
+            <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-300">
+              <Layers className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+              <p className="text-sm text-slate-500 font-medium">Aún no tienes proyectos registrados.</p>
+              <p className="text-xs text-slate-400">Crea tu primera cotización con el botón de arriba.</p>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {clientProjects.map((prj, idx) => (
-              <div 
-                key={prj.id || idx}
-                className="bg-white rounded-2xl p-5 shadow-xs border border-slate-200/80 hover:shadow-md transition-all flex flex-col justify-between space-y-4 relative group"
-              >
-                {/* Card Top */}
-                <div className="space-y-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200">
-                      {prj.id}
-                    </span>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                      prj.estado.includes('Listo') 
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
-                        : prj.estado.includes('Producción')
-                        ? 'bg-amber-50 text-amber-700 border-amber-200'
-                        : 'bg-blue-50 text-blue-700 border-blue-200'
-                    }`}>
-                      {prj.estado}
-                    </span>
-                  </div>
+            {clientProjects.map((prj, idx) => {
+              const cot = prj.cotizaciones?.[0]; // cotización más reciente de este proyecto
+              return (
+                <div
+                  key={prj.proyectoId || idx}
+                  className="bg-white rounded-2xl p-5 shadow-xs border border-slate-200/80 hover:shadow-md transition-all flex flex-col justify-between space-y-4 relative group"
+                >
+                  {/* Card Top */}
+                  <div className="space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200">
+                        {prj.proyectoId?.slice(0, 8)}
+                      </span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${prj.estadoPipeline?.includes('cotizado')
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : prj.estadoPipeline?.includes('produccion')
+                          ? 'bg-amber-50 text-amber-700 border-amber-200'
+                          : 'bg-blue-50 text-blue-700 border-blue-200'
+                        }`}>
+                        {prj.estadoPipeline || 'Nuevo'}
+                      </span>
+                    </div>
 
-                  <h3 className="font-bold text-sm text-slate-900 leading-snug">
-                    {prj.nombre}
-                  </h3>
+                    <h3 className="font-bold text-sm text-slate-900 leading-snug">
+                      {prj.nombreProyecto}
+                    </h3>
 
-                  <div className="flex items-center gap-2 text-xs text-slate-500">
-                    <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    <span>{prj.ciudad} • {prj.superficie}</span>
-                  </div>
-                </div>
-
-                {/* Paint Spec & Calculated Buckets */}
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-500 font-medium">Área a pintar:</span>
-                    <span className="font-extrabold text-slate-900">{prj.areaM2} m²</span>
-                  </div>
-
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-500 font-medium">Línea & Color:</span>
-                    <div className="flex items-center gap-1.5">
-                      <span 
-                        className="w-3 h-3 rounded-full border border-slate-300 shadow-xs shrink-0" 
-                        style={{ backgroundColor: prj.colorHex }} 
-                      />
-                      <span className="font-bold text-slate-800">{prj.color}</span>
+                    <div className="flex items-center gap-2 text-xs text-slate-500">
+                      <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span>{prj.empresa?.ciudad?.ciudad || 'Medellín'} • {prj.tipoSuperficie}</span>
                     </div>
                   </div>
 
-                  <div className="pt-2 border-t border-slate-200 flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-emerald-700">Consumo Calculado:</span>
-                    <span className="text-xs font-black text-slate-900 bg-emerald-100/70 px-2 py-0.5 rounded text-emerald-950">
-                      {prj.cunetes} Cuñete{prj.cunetes !== 1 ? 's' : ''} (5G) + {prj.galones} Gal{prj.galones !== 1 ? 'ones' : ''}
-                    </span>
+                  {/* Paint Spec & Calculated Buckets */}
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-500 font-medium">Área a pintar:</span>
+                      <span className="font-extrabold text-slate-900">{prj.area || 0} m²</span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-500 font-medium">Color:</span>
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className="w-3 h-3 rounded-full border border-slate-300 shadow-xs shrink-0"
+                          style={{ backgroundColor: prj.colorHex || '#F8FAFC' }}
+                        />
+                        <span className="font-bold text-slate-800">{prj.color || 'Sin definir'}</span>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-200 flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-emerald-700">Consumo Calculado:</span>
+                      <span className="text-xs font-black text-slate-900 bg-emerald-100/70 px-2 py-0.5 rounded text-emerald-950">
+                        {cot?.cunetes5g ?? 0} Cuñete{cot?.cunetes5g !== 1 ? 's' : ''} (5G) + {cot?.galones1g ?? 0} Gal{cot?.galones1g !== 1 ? 'ones' : ''}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Price & Action Buttons */}
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-medium">Total Cotizado (con IVA)</span>
+                      <span className="text-base font-black text-slate-900">
+                        ${(cot?.total ?? 0).toLocaleString('es-CO')} <span className="text-[10px] text-slate-500 font-medium">COP</span>
+                      </span>
+                    </div>
+
+                    <button
+                      onClick={onOpenPdfModal}
+                      className="p-2.5 bg-slate-900 hover:bg-emerald-600 text-white rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1 text-xs font-bold"
+                      title="Descargar Ficha y Cotización PDF"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>PDF</span>
+                    </button>
                   </div>
                 </div>
-
-                {/* Price & Action Buttons */}
-                <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                  <div>
-                    <span className="text-[10px] text-slate-400 block font-medium">Total Cotizado (con IVA)</span>
-                    <span className="text-base font-black text-slate-900">
-                      ${prj.totalCOP.toLocaleString('es-CO')} <span className="text-[10px] text-slate-500 font-medium">COP</span>
-                    </span>
-                  </div>
-
-                  <button
-                    onClick={onOpenPdfModal}
-                    className="p-2.5 bg-slate-900 hover:bg-emerald-600 text-white rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1 text-xs font-bold"
-                    title="Descargar Ficha y Cotización PDF"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>PDF</span>
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Quick Support Banner */}
@@ -302,30 +279,27 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
       {/* ========================================================================= */}
       {viewMode === 'create' && (
         <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-md border border-slate-200 space-y-6">
-          
+
           {/* Wizard Step Indicator */}
           <div className="grid grid-cols-3 gap-2 pb-4 border-b border-slate-100 text-center">
             <button
               onClick={() => setActiveStep(1)}
-              className={`py-2 px-3 rounded-xl text-xs font-bold cursor-pointer transition-all ${
-                activeStep === 1 ? 'bg-emerald-500 text-slate-950 font-black' : 'bg-slate-100 text-slate-600'
-              }`}
+              className={`py-2 px-3 rounded-xl text-xs font-bold cursor-pointer transition-all ${activeStep === 1 ? 'bg-emerald-500 text-slate-950 font-black' : 'bg-slate-100 text-slate-600'
+                }`}
             >
               1. Datos de la Obra
             </button>
             <button
               onClick={() => setActiveStep(2)}
-              className={`py-2 px-3 rounded-xl text-xs font-bold cursor-pointer transition-all ${
-                activeStep === 2 ? 'bg-emerald-500 text-slate-950 font-black' : 'bg-slate-100 text-slate-600'
-              }`}
+              className={`py-2 px-3 rounded-xl text-xs font-bold cursor-pointer transition-all ${activeStep === 2 ? 'bg-emerald-500 text-slate-950 font-black' : 'bg-slate-100 text-slate-600'
+                }`}
             >
               2. Metraje & Superficie
             </button>
             <button
               onClick={() => setActiveStep(3)}
-              className={`py-2 px-3 rounded-xl text-xs font-bold cursor-pointer transition-all ${
-                activeStep === 3 ? 'bg-emerald-500 text-slate-950 font-black' : 'bg-slate-100 text-slate-600'
-              }`}
+              className={`py-2 px-3 rounded-xl text-xs font-bold cursor-pointer transition-all ${activeStep === 3 ? 'bg-emerald-500 text-slate-950 font-black' : 'bg-slate-100 text-slate-600'
+                }`}
             >
               3. Color & Resumen
             </button>
@@ -335,7 +309,7 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
           {activeStep === 1 && (
             <div className="space-y-4 animate-in fade-in duration-200">
               <h3 className="font-extrabold text-sm text-slate-900">Identificación del Proyecto de Pintura</h3>
-              
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-700 block">Nombre del Proyecto / Obra *</label>
@@ -374,11 +348,10 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
                       key={env.id}
                       type="button"
                       onClick={() => setFormData(prev => ({ ...prev, ambiente: env.id }))}
-                      className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
-                        formData.ambiente === env.id
-                          ? 'border-emerald-500 bg-emerald-50/80 text-emerald-950 font-bold'
-                          : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'
-                      }`}
+                      className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${formData.ambiente === env.id
+                        ? 'border-emerald-500 bg-emerald-50/80 text-emerald-950 font-bold'
+                        : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'
+                        }`}
                     >
                       <span className="text-xs font-extrabold block">{env.label}</span>
                       <span className="text-[11px] text-slate-500 block">{env.desc}</span>
@@ -431,11 +404,10 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
                       key={s.id}
                       type="button"
                       onClick={() => setFormData(prev => ({ ...prev, superficie: s.id }))}
-                      className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
-                        formData.superficie === s.id
-                          ? 'border-emerald-500 bg-emerald-50 text-emerald-950 font-bold'
-                          : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'
-                      }`}
+                      className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${formData.superficie === s.id
+                        ? 'border-emerald-500 bg-emerald-50 text-emerald-950 font-bold'
+                        : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'
+                        }`}
                     >
                       <span className="text-base mb-1 block">{s.icon}</span>
                       <span className="text-xs font-extrabold block leading-tight">{s.label}</span>
@@ -479,15 +451,14 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
                       key={tone.id}
                       type="button"
                       onClick={() => setFormData(prev => ({ ...prev, color: tone.name, colorHex: tone.hex }))}
-                      className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-2 cursor-pointer transition-all ${
-                        formData.color === tone.name
-                          ? 'border-emerald-500 bg-emerald-50 text-emerald-950 ring-2 ring-emerald-500/20'
-                          : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'
-                      }`}
+                      className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-2 cursor-pointer transition-all ${formData.color === tone.name
+                        ? 'border-emerald-500 bg-emerald-50 text-emerald-950 ring-2 ring-emerald-500/20'
+                        : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'
+                        }`}
                     >
-                      <span 
-                        className="w-3.5 h-3.5 rounded-full border border-slate-300 shadow-xs" 
-                        style={{ backgroundColor: tone.hex }} 
+                      <span
+                        className="w-3.5 h-3.5 rounded-full border border-slate-300 shadow-xs"
+                        style={{ backgroundColor: tone.hex }}
                       />
                       <span>{tone.name}</span>
                     </button>

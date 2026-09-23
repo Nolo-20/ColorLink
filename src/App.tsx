@@ -16,15 +16,32 @@ import { PipelineTraceability } from './components/PipelineTraceability';
 import { TechnicalPdfModal } from './components/TechnicalPdfModal';
 import { VirtualAssistantModal } from './components/VirtualAssistantModal';
 import { WelcomeLanding } from './components/WelcomeLanding';
+import { ProfileModal } from './components/ProfileModal';
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [user, setUser] = useState<UserProfile>(INITIAL_USER);
   const [formData, setFormData] = useState<ProjectFormData>(INITIAL_SAMPLE_PROJECT);
   const [aiResult, setAiResult] = useState<AiDiagnosisResult | null>(null);
   const [calculation, setCalculation] = useState<CalculationBreakdown>(SAMPLE_CALCULATION);
-  
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+
+  // Al cargar la app, revisa si ya existe una sesión válida (cookie httpOnly)
+  // en vez de asumir siempre que el usuario está deslogueado.
+  React.useEffect(() => {
+    fetch('/api/auth/profile')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data?.success) {
+          setUser(data.user);
+          setIsLoggedIn(true);
+        }
+      })
+      .finally(() => setIsCheckingSession(false));
+  }, []);
+
   // Modals
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
   const [isAssistantModalOpen, setIsAssistantModalOpen] = useState(false);
@@ -76,7 +93,7 @@ export default function App() {
   const handleLoginSuccess = (authenticatedUser: UserProfile) => {
     setUser(authenticatedUser);
     setIsLoggedIn(true);
-    
+
     // Set landing tab based on user role
     if (authenticatedUser.role === 'asesor') {
       setActiveTab('proyectos_asesor');
@@ -99,7 +116,12 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch (err) {
+      console.error('Error al cerrar sesión:', err);
+    }
     setIsLoggedIn(false);
     setUser(DEMO_PROFILES.cliente);
   };
@@ -110,9 +132,83 @@ export default function App() {
     setActiveTab('captura');
   };
 
+  const handleStartNewAiQuote = () => {
+    setFormData(prev => ({
+      ...prev,
+      id: '',
+      proyecto: '',
+      areaM2: 0,
+      superficie: '',
+      ambiente: '',
+      condiciones: [],
+      color: '',
+      colorHex: '#ffffff',
+      fotos: [],
+      descripcion: '',
+      consentimientoDatos: false,
+      fechaRequeridaDias: 15,
+      cliente: user.company || '',
+      ciudad: user.city || 'Medellín',
+      emailContacto: user.email || '',
+      telefonoContacto: user.phone || ''
+    }));
+    setAiResult(null);
+    setActiveTab('nueva_cotizacion_ia');
+  };
+
   const handleAdvisorUpdateProject = (updated: ProjectFormData) => {
     setFormData(updated);
     updateCalculationForArea(updated.areaM2, updated.descuentoAsesorPct || 0);
+  };
+
+  const [isSavingProject, setIsSavingProject] = useState(false);
+  const [saveProjectError, setSaveProjectError] = useState('');
+
+  const handleSaveProjectAndProceed = async () => {
+    setIsSavingProject(true);
+    setSaveProjectError('');
+    try {
+      const response = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nombreProyecto: formData.proyecto,
+          ciudad: formData.ciudad,
+          area: formData.areaM2,
+          tipoSuperficie: formData.superficie,
+          ambiente: formData.ambiente,
+          color: formData.color,
+          colorHex: formData.colorHex,
+          cunetes5g: calculation.cunetesPintura5Gal,
+          galones1g: calculation.galonesPintura1Gal,
+          subtotal: calculation.costoEstimadoCOP.subtotal,
+          iva: calculation.costoEstimadoCOP.iva19,
+          total: calculation.costoEstimadoCOP.totalCOP,
+          // Diagnóstico real de Gemini, si ya corrió
+          diagnosticoPatologia: aiResult?.diagnostico_patologia,
+          severidad: aiResult?.severidad,
+          sistemaRecomendado: aiResult?.sistema_recomendado,
+          manoRecomendada: aiResult?.manos_recomendadas,
+          rendimientoEstimado: aiResult?.rendimiento_estimado_m2_gal,
+          confianzaIaPct: aiResult?.nivel_confianza_ia_pct,
+          requiereVisitaHumana: aiResult?.requiere_visita_especialista_human_in_the_loop
+        })
+      });
+      const data = await response.json();
+
+      if (!data.success) {
+        setSaveProjectError(data.error || 'No se pudo guardar el proyecto');
+        return;
+      }
+
+      // Guarda el ID real del proyecto para que el resto de la app lo referencie
+      setFormData(prev => ({ ...prev, id: data.project.proyectoId }));
+      setActiveTab('captura');
+    } catch (err) {
+      setSaveProjectError('Error de conexión al guardar el proyecto');
+    } finally {
+      setIsSavingProject(false);
+    }
   };
 
   const handleQualityVerdict = (verdict: { aprobado: boolean; perito: string; fecha: string; notas: string }) => {
@@ -129,6 +225,16 @@ export default function App() {
   };
 
   // If not logged in, display the clean, unified login & registration screen
+  // Mientras se verifica si ya hay sesión activa, no mostrar login ni la app todavía
+  if (isCheckingSession) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center">
+        <span className="text-slate-400 text-sm">Cargando...</span>
+      </div>
+    );
+  }
+
+  // If not logged in, display the clean, unified login & registration screen
   if (!isLoggedIn) {
     return (
       <ModernLoginScreen
@@ -139,7 +245,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans selection:bg-emerald-500 selection:text-white">
-      
+
       {/* Top Dynamic Navigation */}
       <Navbar
         activeTab={activeTab}
@@ -149,11 +255,14 @@ export default function App() {
         hasValidatedData={Boolean(formData.id)}
         onLogout={handleLogout}
         onOpenVirtualAssistant={() => setIsAssistantModalOpen(true)}
+        onOpenProfile={() => setIsProfileModalOpen(true)}
+        onStartNewAiQuote={handleStartNewAiQuote}
+
       />
 
       {/* Main View Router */}
       <main className="flex-1 pb-16">
-        
+
         {/* Role Dashboard Cockpit */}
         {activeTab === 'dashboard' && (
           <RoleDashboard
@@ -163,6 +272,20 @@ export default function App() {
             setActiveTab={setActiveTab}
             onOpenPdfModal={() => setIsPdfModalOpen(true)}
             onOpenAssistant={() => setIsAssistantModalOpen(true)}
+            onStartNewAiQuote={handleStartNewAiQuote}
+          />
+        )}
+
+        {activeTab === 'nueva_cotizacion_ia' && (
+          <SmartCaptureForm
+            formData={formData}
+            setFormData={setFormData}
+            user={user}
+            onSubmitToValidation={() => setActiveTab('validacion')}
+            onLoadHorizontePreset={() => {
+              setFormData(INITIAL_SAMPLE_PROJECT);
+              updateCalculationForArea(85.0);
+            }}
           />
         )}
 
@@ -217,7 +340,7 @@ export default function App() {
           <AutoValidationStep
             formData={formData}
             onProceedToAi={() => setActiveTab('ia_clasificacion')}
-            onBackToCapture={() => setActiveTab('captura')}
+            onBackToCapture={() => setActiveTab('nueva_cotizacion_ia')}
           />
         )}
 
@@ -229,6 +352,7 @@ export default function App() {
             setAiResult={setAiResult}
             onProceedToTechnicalEngine={() => setActiveTab('motor_tecnico')}
             onBackToValidation={() => setActiveTab('validacion')}
+            onGoFixPhoto={() => setActiveTab('nueva_cotizacion_ia')}
           />
         )}
 
@@ -239,8 +363,10 @@ export default function App() {
             aiResult={aiResult}
             calculation={calculation}
             onOpenPdfModal={() => setIsPdfModalOpen(true)}
-            onProceedToPipeline={() => setActiveTab('trazabilidad_arquitectura')}
+            onProceedToPipeline={handleSaveProjectAndProceed}
             onBackToAi={() => setActiveTab('ia_clasificacion')}
+            isSaving={isSavingProject}
+            saveError={saveProjectError}
           />
         )}
 
@@ -281,6 +407,13 @@ export default function App() {
         onClose={() => setIsAssistantModalOpen(false)}
         user={user}
         formData={formData}
+      />
+
+      <ProfileModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+        user={user}
+        onProfileUpdated={(updated) => setUser(updated)}
       />
 
       {/* Persistent Footer */}

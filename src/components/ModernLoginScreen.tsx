@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile } from '../types';
 import { DEMO_PROFILES } from '../data/mockData';
-import { 
-  HelpCircle, 
+import {
+  HelpCircle,
   RefreshCw,
   Eye,
   EyeOff,
@@ -44,8 +44,14 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
   onLoginSuccess
 }) => {
   // View state following the requested flow
-  const [authView, setAuthView] = useState<AuthView>('main_menu');
-  
+  //const [authView, setAuthView] = useState<AuthView>('main_menu');
+
+  const [authView, setAuthView] = useState<'main_menu' | 'password_login' | 'register_page' | 'forgot_email' | 'forgot_code'>('main_menu');
+
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotCode, setForgotCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [forgotMessage, setForgotMessage] = useState('');
   // Rotating image index on each visit/session
   const [imageIndex] = useState(() => {
     try {
@@ -63,7 +69,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
 
   // Email input for code access or login
   const [userEmail, setUserEmail] = useState('');
-  const [userPassword, setUserPassword] = useState('ColorLink*2026');
+  const [userPassword, setUserPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [otpCode, setOtpCode] = useState('');
   const [activeGeneratedCode, setActiveGeneratedCode] = useState('');
@@ -71,11 +77,12 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
   // Register Form Fields
   const [regFirstName, setRegFirstName] = useState('');
   const [regLastName, setRegLastName] = useState('');
+  const [regPassword, setRegPassword] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regCompany, setRegCompany] = useState('');
   const [regNit, setRegNit] = useState('');
   const [regAddress, setRegAddress] = useState('');
-  const [regCity, setRegCity] = useState('Medellín');
+  const [regCity, setRegCity] = useState('');
   const [regPhone, setRegPhone] = useState('');
 
   // UI status & Modals
@@ -89,8 +96,11 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS' && event.data?.user) {
-        const { email, name, avatar } = event.data.user;
-        executeSocialAuth(email, name, avatar);
+        const { needsProfile, ...userData } = event.data.user;
+        executeSocialAuth(userData, needsProfile);
+      }
+      if (event.data?.type === 'OAUTH_AUTH_ERROR') {
+        setErrorMessage(event.data.error || 'Error al autenticar');
       }
     };
     window.addEventListener('message', handleMessage);
@@ -182,6 +192,58 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
     if (domainPart && !['gmail.com', 'hotmail.com', 'outlook.com', 'yahoo.com'].includes(domainPart) && !regCompany) {
       const companyClean = domainPart.split('.')[0];
       setRegCompany(`Constructora ${companyClean.charAt(0).toUpperCase() + companyClean.slice(1)} S.A.S.`);
+    }
+  };
+
+  const handleForgotPasswordRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage('');
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail.trim().toLowerCase() })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setForgotMessage(data.message);
+        setAuthView('forgot_code');
+      } else {
+        setErrorMessage(data.error || 'No se pudo procesar la solicitud');
+      }
+    } catch {
+      setErrorMessage('Error de conexión');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage('');
+    if (newPassword.length < 8) {
+      setErrorMessage('La contraseña debe tener al menos 8 caracteres');
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail.trim().toLowerCase(), code: forgotCode, newPassword })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setForgotMessage('¡Contraseña actualizada! Ya puedes iniciar sesión.');
+        setTimeout(() => setAuthView('email_password'), 2000);
+      } else {
+        setErrorMessage(data.error || 'No se pudo restablecer la contraseña');
+      }
+    } catch {
+      setErrorMessage('Error de conexión');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -335,110 +397,56 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
     setErrorMessage('');
 
     if (!regFirstName || !regLastName || !regEmail || !regCompany || !regNit || !regAddress) {
-      setErrorMessage('Por favor completa todos los campos requeridos de la empresa para habilitar cotizaciones y facturación.');
+      setErrorMessage('Por favor completa todos los campos requeridos de la empresa.');
       return;
     }
 
     setIsLoading(true);
-    const emailLower = regEmail.trim().toLowerCase();
-
     try {
-      const response = await fetch('/api/auth/register', {
+      // Si ya hay sesión activa (vino de Google/Microsoft), completamos perfil.
+      // Si no, es un registro nuevo por contraseña.
+      const meCheck = await fetch('/api/auth/me');
+      const isAlreadyAuthenticated = meCheck.ok;
+
+      const endpoint = isAlreadyAuthenticated ? '/api/auth/complete-profile' : '/api/auth/register';
+      const body = isAlreadyAuthenticated
+        ? { company: regCompany, documentId: regNit, address: regAddress, city: regCity, phone: regPhone }
+        : { firstName: regFirstName, lastName: regLastName, email: regEmail.trim().toLowerCase(), company: regCompany, documentId: regNit, address: regAddress, city: regCity, phone: regPhone, password: regPassword };
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          firstName: regFirstName,
-          lastName: regLastName,
-          email: emailLower,
-          company: regCompany,
-          documentId: regNit,
-          address: regAddress,
-          city: regCity,
-          phone: regPhone
-        })
+        body: JSON.stringify(body)
       });
 
       const data = await response.json();
-
-      // Register email into database memory
-      setDbEmails(prev => [...prev, emailLower]);
-
-      if (data.success && data.user) {
-        onLoginSuccess(data.user);
-      } else {
-        onLoginSuccess({
-          id: `USR-CLI-${Math.floor(1000 + Math.random() * 9000)}`,
-          name: `${regFirstName} ${regLastName}`,
-          firstName: regFirstName,
-          lastName: regLastName,
-          email: emailLower,
-          phone: regPhone || '+57 (314) 789-2045',
-          company: regCompany,
-          documentId: regNit,
-          address: regAddress,
-          city: regCity,
-          role: 'cliente',
-          authMethod: 'credentials',
-          avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-          isRegistered: true
-        });
+      if (!data.success) {
+        setErrorMessage(data.error || 'No se pudo completar el registro');
+        setIsLoading(false);
+        return;
       }
-    } catch {
-      setDbEmails(prev => [...prev, emailLower]);
-      onLoginSuccess({
-        id: `USR-CLI-${Math.floor(1000 + Math.random() * 9000)}`,
-        name: `${regFirstName} ${regLastName}`,
-        firstName: regFirstName,
-        lastName: regLastName,
-        email: emailLower,
-        phone: regPhone || '+57 (314) 789-2045',
-        company: regCompany,
-        documentId: regNit,
-        address: regAddress,
-        city: regCity,
-        role: 'cliente',
-        authMethod: 'credentials',
-        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-        isRegistered: true
-      });
+
+      onLoginSuccess?.(data.user); // ajusta al nombre real de tu callback
+    } catch (err) {
+      setErrorMessage('Error de conexión con el servidor');
     } finally {
       setIsLoading(false);
     }
   };
 
   // 5. Functional Social / SSO Authentication execution
-  const executeSocialAuth = (selectedEmail: string, selectedName?: string, photo?: string) => {
-    setIsLoading(true);
+  const executeSocialAuth = (userData: any, needsProfile?: boolean) => {
+    setIsLoading(false);
 
-    const emailLower = selectedEmail.trim().toLowerCase();
-    const isRegistered = dbEmails.some(e => e.toLowerCase() === emailLower);
-
-    setTimeout(() => {
-      setIsLoading(false);
-
-      if (isRegistered) {
-        // Registered: login directly!
-        resolveLoginByEmail(emailLower);
-      } else {
-        // Not registered yet: prefill extracted profile and lead smoothly to company registration
-        setUserEmail(emailLower);
-        setRegEmail(emailLower);
-
-        const fullName = selectedName || emailLower.split('@')[0];
-        const nameParts = fullName.split(' ');
-        setRegFirstName(nameParts[0] || 'Usuario');
-        setRegLastName(nameParts.slice(1).join(' ') || '');
-
-        const domainPart = emailLower.split('@')[1] || '';
-        if (domainPart && !['gmail.com', 'hotmail.com', 'outlook.com', 'yahoo.com', 'icloud.com'].includes(domainPart)) {
-          const compName = domainPart.split('.')[0];
-          setRegCompany(`Constructora ${compName.charAt(0).toUpperCase() + compName.slice(1)} S.A.S.`);
-        }
-
-        setInfoNotice(`Cuenta (${emailLower}) validada con éxito. Por favor completa los datos de tu empresa.`);
-        setAuthView('register_page');
-      }
-    }, 400);
+    if (needsProfile) {
+      setUserEmail(userData.email);
+      setRegEmail(userData.email);
+      setRegFirstName(userData.firstName || 'Usuario');
+      setRegLastName(userData.lastName || '');
+      setAuthView('register_page');
+    } else {
+      onLoginSuccess(userData); // ahora sí con el usuario completo y bien formado
+    }
   };
 
   // Helper to resolve role and log user in based on email
@@ -472,19 +480,19 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
 
   return (
     <div className="min-h-screen bg-[#0B1528] flex flex-col justify-between p-4 sm:p-6 lg:p-10 font-sans relative overflow-hidden selection:bg-emerald-500 selection:text-white">
-      
+
       {/* Background Graphic Ambient Lighting */}
       <div className="absolute -top-32 -left-32 w-[500px] h-[500px] bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute -bottom-32 -right-32 w-[500px] h-[500px] bg-blue-600/15 rounded-full blur-3xl pointer-events-none" />
 
       {/* Main Container */}
       <div className="max-w-6xl w-full mx-auto my-auto grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center z-10 py-4">
-        
+
         {/* ========================================================================= */}
         {/* LEFT COLUMN: Presentation & Rotating Image (Clean, without any badge)     */}
         {/* ========================================================================= */}
         <div className="lg:col-span-6 flex flex-col justify-center items-center lg:items-start text-center lg:text-left space-y-6">
-          
+
           {/* Brand Logo Header */}
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2.5">
@@ -510,9 +518,9 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
 
           {/* Pure Rotating Presentation Image: Pure image, no text badge overlay */}
           <div className="w-full max-w-md rounded-3xl overflow-hidden shadow-2xl border border-slate-700/80 bg-slate-900 group">
-            <img 
-              src={PRESENTATION_IMAGES[imageIndex]} 
-              alt="ColorLink Recubrimientos Arquitectónicos" 
+            <img
+              src={PRESENTATION_IMAGES[imageIndex]}
+              alt="ColorLink Recubrimientos Arquitectónicos"
               className="w-full h-64 sm:h-72 object-cover object-center group-hover:scale-105 transition-all duration-700 brightness-95"
             />
           </div>
@@ -523,9 +531,9 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
         {/* RIGHT COLUMN: Auth Card retaining original Dark Navy/Emerald Styling     */}
         {/* ========================================================================= */}
         <div className="lg:col-span-6 flex flex-col items-center">
-          
+
           <div className="w-full max-w-md bg-slate-900/95 backdrop-blur-xl rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-800 text-white space-y-5 relative">
-            
+
             {/* Top User Icon matching structure in dark theme */}
             <div className="flex flex-col items-center text-center space-y-2">
               <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center">
@@ -536,7 +544,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                   {authView === 'register_page' ? 'Registro Corporativo' : 'Inicia Sesión o Regístrate'}
                 </h2>
                 <p className="text-xs text-slate-400 font-medium mt-0.5">
-                  {authView === 'register_page' 
+                  {authView === 'register_page'
                     ? 'Completa los datos de tu empresa para cotizar y comprar'
                     : 'Escoge una opción para ingresar'}
                 </p>
@@ -564,7 +572,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
             {/* =================================================================== */}
             {authView === 'main_menu' && (
               <div className="space-y-3 pt-1">
-                
+
                 {/* 1. RECIBIR CÓDIGO DE ACCESO POR E-MAIL */}
                 <button
                   id="btn-option-email-code"
@@ -617,10 +625,10 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                   className="w-full py-3 px-4 bg-slate-950 hover:bg-slate-800 text-slate-200 font-bold text-xs sm:text-sm rounded-xl border border-slate-700/80 cursor-pointer transition-all shadow-xs flex items-center justify-center gap-2.5 hover:border-slate-500"
                 >
                   <svg className="w-4 h-4" viewBox="0 0 23 23">
-                    <path fill="#f35325" d="M1 1h10v10H1z"/>
-                    <path fill="#81bc06" d="M12 1h10v10H12z"/>
-                    <path fill="#05a6f0" d="M1 12h10v10H1z"/>
-                    <path fill="#ffba08" d="M12 12h10v10H12z"/>
+                    <path fill="#f35325" d="M1 1h10v10H1z" />
+                    <path fill="#81bc06" d="M12 1h10v10H12z" />
+                    <path fill="#05a6f0" d="M1 12h10v10H1z" />
+                    <path fill="#ffba08" d="M12 12h10v10H12z" />
                   </svg>
                   <span>Entrar con <strong className="text-white">Microsoft</strong></span>
                 </button>
@@ -812,6 +820,66 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                     {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <span>Ingresar</span>}
                   </button>
                 </div>
+
+                <div className="text-center pt-1">
+                  <button
+                    type="button"
+                    onClick={() => { setAuthView('forgot_email'); setErrorMessage(''); }}
+                    className="text-[11px] text-slate-400 hover:text-emerald-400 hover:underline"
+                  >
+                    ¿Olvidaste tu contraseña?
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {authView === 'forgot_email' && (
+              <form onSubmit={handleForgotPasswordRequest} className="space-y-4">
+                <h3 className="font-bold text-sm text-white">Recuperar contraseña</h3>
+                <p className="text-xs text-slate-400">Ingresa tu correo y te enviaremos un código para restablecerla.</p>
+                <input
+                  type="email"
+                  value={forgotEmail}
+                  onChange={(e) => setForgotEmail(e.target.value)}
+                  placeholder="tu-correo@empresa.com"
+                  required
+                  className="w-full px-3.5 py-2.5 bg-slate-950 text-white rounded-xl border border-slate-700 text-xs focus:outline-none focus:border-emerald-500"
+                />
+                {errorMessage && <p className="text-xs text-red-400">{errorMessage}</p>}
+                <button type="submit" disabled={isLoading} className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl">
+                  {isLoading ? 'Enviando...' : 'Enviar código'}
+                </button>
+                <button type="button" onClick={() => setAuthView('email_password')} className="text-xs text-emerald-400 hover:underline">
+                  ← Volver
+                </button>
+              </form>
+            )}
+
+            {authView === 'forgot_code' && (
+              <form onSubmit={handleResetPassword} className="space-y-4">
+                <h3 className="font-bold text-sm text-white">Ingresa el código y tu nueva contraseña</h3>
+                {forgotMessage && <p className="text-xs text-emerald-400">{forgotMessage}</p>}
+                <input
+                  type="text"
+                  value={forgotCode}
+                  onChange={(e) => setForgotCode(e.target.value)}
+                  placeholder="Código de 6 dígitos"
+                  maxLength={6}
+                  required
+                  className="w-full px-3.5 py-2.5 bg-slate-950 text-white rounded-xl border border-slate-700 text-xs focus:outline-none focus:border-emerald-500"
+                />
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Nueva contraseña (mínimo 8 caracteres)"
+                  required
+                  className="w-full px-3.5 py-2.5 bg-slate-950 text-white rounded-xl border border-slate-700 text-xs focus:outline-none focus:border-emerald-500"
+                />
+                {errorMessage && <p className="text-xs text-red-400">{errorMessage}</p>}
+                <button type="submit" disabled={isLoading} className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl">
+                  {isLoading ? 'Actualizando...' : 'Restablecer contraseña'}
+                </button>
               </form>
             )}
 
@@ -820,7 +888,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
             {/* =================================================================== */}
             {authView === 'register_page' && (
               <form onSubmit={handleCompleteRegister} className="space-y-3.5 max-h-[460px] overflow-y-auto pr-1 animate-in fade-in duration-200">
-                
+
                 {/* Personal Information */}
                 <div className="grid grid-cols-2 gap-2">
                   <div>
@@ -846,7 +914,18 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                     />
                   </div>
                 </div>
-
+                <div>
+                  <label className="text-[10px] font-bold text-slate-300 block mb-1">Contraseña *</label>
+                  <input
+                    type="password"
+                    value={regPassword}
+                    onChange={(e) => setRegPassword(e.target.value)}
+                    placeholder="Mínimo 8 caracteres"
+                    minLength={8}
+                    className="w-full px-2.5 py-1.5 bg-slate-950 text-xs rounded-lg border border-slate-700 text-white focus:outline-none focus:border-emerald-500"
+                    required
+                  />
+                </div>
                 {/* Company Information */}
                 <div className="p-3 bg-slate-950/70 rounded-2xl border border-slate-800 space-y-2.5">
                   <span className="text-[10px] font-black text-emerald-400 uppercase tracking-wider block">
@@ -961,7 +1040,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                 <span className="text-[10px] font-black uppercase text-slate-400 block">
                   Haz clic para auto-llenar credenciales por rol:
                 </span>
-                
+
                 <div className="grid grid-cols-2 gap-1.5">
                   <button
                     type="button"
