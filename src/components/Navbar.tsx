@@ -1,14 +1,10 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { ActiveTab, UserProfile } from '../types';
+import React, { useState } from 'react';
+import { ActiveTab, UserProfile, StoreCategory } from '../types';
 import { 
   Droplet,
   Home,
   Layers, 
-  CheckCircle2, 
-  Cpu, 
   Calculator, 
-  Network, 
-  User, 
   Search,
   Menu, 
   X,
@@ -16,17 +12,30 @@ import {
   ChevronDown,
   Building2,
   MapPin,
-  FileText,
   Sparkles,
+  ShoppingCart,
+  LogIn,
+  Store,
+  Palette,
+  HardHat,
   Package,
-  ShieldCheck,
-  Bot
+  User
 } from 'lucide-react';
 
 interface NavbarProps {
   activeTab: ActiveTab;
   setActiveTab: (tab: ActiveTab) => void;
   user: UserProfile;
+  isLoggedIn: boolean;
+  cartItemsCount: number;
+  onOpenCart: () => void;
+  onOpenLogin: () => void;
+  onOpenBranchLocator: () => void;
+  onOpenCalculator: () => void;
+  searchFilter?: string;
+  onSearchChange?: (query: string) => void;
+  selectedCategory?: StoreCategory;
+  onSelectCategory?: (category: StoreCategory) => void;
   onLoadSampleCase: () => void;
   hasValidatedData: boolean;
   onLogout?: () => void;
@@ -37,6 +46,15 @@ export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
   setActiveTab,
   user,
+  isLoggedIn,
+  cartItemsCount,
+  onOpenCart,
+  onOpenLogin,
+  onOpenBranchLocator,
+  onOpenCalculator,
+  onSearchChange,
+  selectedCategory = 'todos',
+  onSelectCategory,
   onLoadSampleCase,
   hasValidatedData,
   onLogout,
@@ -44,283 +62,367 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
-  
-  // Dynamic Collapsible Search State
-  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
+  const [isProductsMenuOpen, setIsProductsMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [cartBounce, setCartBounce] = useState(false);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
 
-  // Focus input when search expands
-  useEffect(() => {
-    if (isSearchExpanded && searchInputRef.current) {
-      searchInputRef.current.focus();
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (onSearchChange) {
+      onSearchChange(searchQuery);
     }
-  }, [isSearchExpanded]);
-
-  // Role-based Nav Links Configuration
-  const getNavLinks = () => {
-    const base: Array<{ id: ActiveTab; label: string; icon: React.ComponentType<any> }> = [
-      { id: 'dashboard', label: 'Dashboard', icon: Home },
-    ];
-
-    if (user.role === 'cliente') {
-      base.push(
-        { id: 'captura', label: 'Mis Proyectos', icon: Layers },
-        { id: 'motor_tecnico', label: 'Cotización & Cuñetes', icon: Calculator }
-      );
-    } else if (user.role === 'asesor') {
-      base.push(
-        { id: 'proyectos_asesor', label: 'Gestión Obras', icon: Layers },
-        { id: 'inventario', label: 'Inventario Bodegas', icon: Package },
-        { id: 'motor_tecnico', label: 'Cotizaciones', icon: Calculator }
-      );
-    } else if (user.role === 'calidad') {
-      base.push(
-        { id: 'calidad_revision', label: 'Peritaje & Sustratos', icon: ShieldCheck },
-        { id: 'ia_clasificacion', label: 'Diagnóstico IA', icon: Cpu }
-      );
-    } else if (user.role === 'administrador') {
-      base.push(
-        { id: 'inventario', label: 'Inventario Bodegas', icon: Package },
-        { id: 'proyectos_asesor', label: 'Bandeja Obras', icon: Layers },
-        { id: 'trazabilidad_arquitectura', label: 'Monitoreo & Logs', icon: Network }
-      );
-    }
-
-    return base;
+    setActiveTab('tienda');
   };
 
-  const navLinks = getNavLinks();
+  const handleCategoryClick = (cat: StoreCategory) => {
+    if (onSelectCategory) {
+      onSelectCategory(cat);
+    }
+    if (cat === 'todos') {
+      setActiveTab('tienda');
+    } else {
+      setActiveTab('categoria');
+    }
+    setIsProductsMenuOpen(false);
+  };
 
-  const handleSearchResultClick = (tab: ActiveTab) => {
-    setActiveTab(tab);
-    setIsSearchExpanded(false);
-    setSearchQuery('');
+  const handleProjectsClick = () => {
+    if (!isLoggedIn) {
+      setActiveTab('proyectos_teaser');
+    } else {
+      setActiveTab('dashboard');
+    }
+    setIsMobileMenuOpen(false);
+  };
+
+  const triggerCartOpen = () => {
+    setCartBounce(true);
+    setTimeout(() => setCartBounce(false), 500);
+    onOpenCart();
   };
 
   return (
-    <header className="sticky top-0 z-50 bg-[#0F224A] text-white shadow-md font-sans border-b border-blue-900/60">
+    <header className="sticky top-0 z-40 bg-[#0A1A36] text-white shadow-xl font-sans border-b border-slate-800/80">
+      
+      {/* 1. Top Enterprise Micro-Bar */}
+      <div className="bg-[#050D1C] border-b border-slate-800/60 px-4 py-1.5 text-[11px] text-slate-300">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onOpenBranchLocator}
+              className="flex items-center gap-1.5 hover:text-emerald-400 text-slate-300 font-semibold transition-colors cursor-pointer group"
+            >
+              <MapPin className="w-3.5 h-3.5 text-emerald-400 group-hover:scale-110 transition-transform" />
+              <span>Puntos de Venta & Centros de Color (Medellín, Itagüí, Bello, Envigado)</span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-4 text-[11px]">
+            <span className="hidden md:inline-flex items-center gap-1.5 text-slate-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              Asesoría Técnica Especializada
+            </span>
+            <span className="text-emerald-400 font-bold bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/50">
+              🚚 Envío gratis en compras &gt; $150.000 COP
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* 2. Main Navigation Bar */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 gap-2 sm:gap-4">
+        <div className="flex items-center justify-between h-16 gap-3 sm:gap-6">
           
-          {/* 1. Brand Logo */}
+          {/* Brand Logo - Sleek Minimalist Enterprise Identity */}
           <button
-            onClick={() => setActiveTab('dashboard')}
-            className="flex items-center gap-2 text-left shrink-0 cursor-pointer focus:outline-none group"
+            onClick={() => {
+              if (onSelectCategory) onSelectCategory('todos');
+              setActiveTab('tienda');
+            }}
+            className="flex items-center gap-2.5 sm:gap-3 text-left shrink-0 cursor-pointer focus:outline-hidden group"
           >
-            <div className="w-9 h-9 rounded-xl bg-emerald-500 text-slate-950 flex items-center justify-center font-black shadow-sm group-hover:scale-105 transition-transform">
-              <Droplet className="w-5 h-5 fill-slate-950 text-slate-950" />
+            {/* Minimalist Geometric Logo Mark */}
+            <div className="relative w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center shrink-0">
+              <svg 
+                viewBox="0 0 40 40" 
+                fill="none" 
+                xmlns="http://www.w3.org/2000/svg" 
+                className="w-9 h-9 sm:w-10 sm:h-10 group-hover:scale-105 transition-all duration-300"
+              >
+                <defs>
+                  <linearGradient id="clHexGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#10B981" />
+                    <stop offset="100%" stopColor="#0284C7" />
+                  </linearGradient>
+                  <linearGradient id="clDropGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#38BDF8" />
+                    <stop offset="100%" stopColor="#2563EB" />
+                  </linearGradient>
+                </defs>
+                {/* Modern geometric frame */}
+                <rect x="2" y="2" width="36" height="36" rx="9" fill="#060E1D" stroke="rgba(56, 189, 248, 0.25)" strokeWidth="1.2" />
+                {/* Minimalist interlocking geometric facet */}
+                <path d="M12 25L20 10L28 25H12Z" fill="url(#clDropGrad)" opacity="0.4" />
+                {/* Fluid pigment drop silhouette */}
+                <path d="M20 12C20 12 14.5 20.5 14.5 24.5C14.5 27.5 17 29.5 20 29.5C23 29.5 25.5 27.5 25.5 24.5C25.5 20.5 20 12 20 12Z" fill="url(#clHexGrad)" />
+                {/* Precision core highlight */}
+                <circle cx="18" cy="23" r="1.3" fill="#FFFFFF" opacity="0.9" />
+              </svg>
             </div>
+
             <div>
-              <div className="flex items-center gap-1 leading-none">
-                <span className="text-base sm:text-lg font-black tracking-tight text-white">
+              <div className="flex items-center gap-1.5 leading-none">
+                <span className="text-lg sm:text-xl font-extrabold tracking-tight text-white font-sans">
                   COLOR<span className="text-emerald-400">LINK</span>
                 </span>
-                <span className="text-[9px] font-black text-amber-400 bg-amber-400/20 px-1 py-0.2 rounded border border-amber-400/40 uppercase">
-                  {user.role}
+                <span className="text-[8px] font-black text-cyan-300 bg-cyan-950 px-1.5 py-0.5 rounded border border-cyan-800/60 uppercase tracking-widest">
+                  PRO
                 </span>
               </div>
-              <span className="text-[10px] font-semibold text-blue-200 block tracking-wider uppercase">
-                Paint Systems Medellín
+              <span className="text-[9px] font-semibold text-slate-400 block tracking-wider uppercase mt-0.5">
+                Recubrimientos & Pinturas
               </span>
             </div>
           </button>
 
-          {/* 2. DYNAMIC & COLLAPSIBLE SEARCH ICON / BAR */}
-          <div className="relative flex items-center">
-            {!isSearchExpanded ? (
+          {/* Dynamic Animated Expandable Search Input */}
+          <form 
+            onSubmit={handleSearchSubmit} 
+            className={`relative transition-all duration-300 ease-in-out ${
+              isSearchFocused 
+                ? 'flex-1 max-w-xl shadow-lg ring-2 ring-emerald-400/80 rounded-full' 
+                : 'w-48 sm:w-64 md:w-80 max-w-md'
+            }`}
+          >
+            <Search className={`w-4 h-4 absolute left-3.5 top-2.5 pointer-events-none transition-colors ${
+              isSearchFocused ? 'text-emerald-400' : 'text-slate-400'
+            }`} />
+            <input
+              type="text"
+              value={searchQuery}
+              onFocus={() => setIsSearchFocused(true)}
+              onBlur={() => setIsSearchFocused(false)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                if (onSearchChange) onSearchChange(e.target.value);
+              }}
+              placeholder="Buscar Koraza, viniltex, epóxico, rodillos..."
+              className="w-full pl-10 pr-9 py-2 bg-[#050D1C] border border-slate-700/80 rounded-full text-xs text-white placeholder-slate-400 focus:outline-hidden focus:border-cyan-400/60 transition-all"
+            />
+            {searchQuery && (
               <button
-                onClick={() => setIsSearchExpanded(true)}
-                className="p-2 rounded-full bg-blue-900/60 hover:bg-blue-800 text-blue-200 hover:text-white transition-all cursor-pointer flex items-center gap-1.5 border border-blue-700/60"
-                title="Buscar en la plataforma..."
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  if (onSearchChange) onSearchChange('');
+                }}
+                className="absolute right-3 top-2.5 text-slate-400 hover:text-white text-xs cursor-pointer p-0.5 rounded-full hover:bg-slate-800"
               >
-                <Search className="w-4 h-4" />
-                <span className="hidden xl:inline text-xs font-medium text-blue-300 pr-1">Buscar...</span>
+                ✕
               </button>
-            ) : (
-              <div className="flex items-center gap-2 bg-blue-950 border border-cyan-400 rounded-full px-3 py-1.5 shadow-lg animate-in fade-in duration-150 z-50">
-                <Search className="w-4 h-4 text-cyan-400 shrink-0" />
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Escape' && setIsSearchExpanded(false)}
-                  placeholder="Buscar proyectos, SKUs o cuñetes..."
-                  className="bg-transparent text-white placeholder-blue-300 text-xs focus:outline-none w-48 sm:w-64"
-                />
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery('')}
-                    className="text-blue-400 hover:text-white text-xs font-bold"
-                  >
-                    ✕
-                  </button>
-                )}
-                <button
-                  onClick={() => setIsSearchExpanded(false)}
-                  className="text-blue-400 hover:text-white p-0.5 rounded-full"
-                  title="Cerrar búsqueda"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
             )}
+          </form>
 
-            {/* Live Search Quick Results Dropdown */}
-            {isSearchExpanded && searchQuery.trim() && (
-              <div className="absolute top-12 left-0 w-72 sm:w-80 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-3 z-50 space-y-2 text-xs">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                  Accesos Rápidos Encontrados:
-                </span>
-                
-                <button
-                  onClick={() => handleSearchResultClick('captura')}
-                  className="w-full text-left p-2 rounded-xl hover:bg-slate-800 text-white flex items-center justify-between"
-                >
-                  <span>Fachada Residencial (85 m² - Medellín)</span>
-                  <span className="text-[10px] text-cyan-400 font-bold">Proyecto ➔</span>
-                </button>
-
-                <button
-                  onClick={() => handleSearchResultClick('inventario')}
-                  className="w-full text-left p-2 rounded-xl hover:bg-slate-800 text-white flex items-center justify-between"
-                >
-                  <span>Stock Koraza Tech 5G (Bodega Itagüí)</span>
-                  <span className="text-[10px] text-emerald-400 font-bold">Inventario ➔</span>
-                </button>
-
-                <button
-                  onClick={() => handleSearchResultClick('ia_clasificacion')}
-                  className="w-full text-left p-2 rounded-xl hover:bg-slate-800 text-white flex items-center justify-between"
-                >
-                  <span>Diagnóstico Humedad & Fisuras (Gemini)</span>
-                  <span className="text-[10px] text-purple-400 font-bold">IA ➔</span>
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* 3. Navigation Links with Active Highlighting */}
-          <nav className="hidden lg:flex items-center gap-1">
-            {navLinks.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => setActiveTab(item.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                    isActive 
-                      ? 'bg-emerald-500 text-slate-950 shadow-md font-black' 
-                      : 'text-blue-100 hover:bg-blue-900/60 hover:text-white'
-                  }`}
-                >
-                  <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-slate-950' : 'text-blue-300'}`} />
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
-          </nav>
-
-          {/* 4. Right Controls: Max Assistant & User Profile Dropdown */}
-          <div className="flex items-center gap-2 sm:gap-3">
-            
-            {/* Asistente Virtual Button in Navbar */}
+          {/* Direct Navbar Buttons: Tiendas, Calculadora & Proyectos */}
+          <div className="hidden lg:flex items-center gap-2">
             <button
-              onClick={onOpenVirtualAssistant}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-400/40 text-xs font-bold transition-all cursor-pointer"
-              title="Abrir Asistente Virtual ColorLink"
+              type="button"
+              onClick={() => setActiveTab('tiendas')}
+              className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+                activeTab === 'tiendas'
+                  ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-sm'
+                  : 'bg-slate-900/80 hover:bg-slate-800 text-slate-200 border-slate-700/70 hover:text-white'
+              }`}
             >
-              <Bot className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="hidden sm:inline">Asistente Virtual</span>
+              <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Tiendas</span>
             </button>
 
-            {/* User Profile Avatar with Dropdown */}
-            <div className="relative">
-              <button
-                onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
-                className="flex items-center gap-2 p-1 pl-2 pr-2.5 rounded-full bg-blue-950 border border-blue-800 hover:border-emerald-400 transition-all cursor-pointer group"
-              >
-                <img 
-                  src={user.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'} 
-                  alt={user.name} 
-                  className="w-7 h-7 rounded-full object-cover border border-emerald-400" 
-                />
-                <div className="hidden sm:block text-left">
-                  <span className="text-xs font-bold text-white block leading-tight truncate max-w-[120px]">
-                    {user.firstName || user.name.split(' ')[0]}
-                  </span>
-                  <span className="text-[10px] text-emerald-300 block leading-none font-bold capitalize">
-                    {user.role}
-                  </span>
-                </div>
-                <ChevronDown className="w-3.5 h-3.5 text-blue-300 group-hover:text-white transition-transform" />
-              </button>
+            <button
+              type="button"
+              onClick={onOpenCalculator}
+              title="Calculadora de Pintura y Rendimiento"
+              className="px-3 py-2 rounded-xl bg-slate-900/60 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/70 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Calculator className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Calculadora</span>
+            </button>
 
-              {/* Profile Dropdown Menu */}
-              {isUserDropdownOpen && (
-                <div className="absolute right-0 mt-2 w-64 bg-white text-slate-900 rounded-2xl shadow-2xl border border-slate-200 py-3 px-4 z-50 space-y-3 animate-in fade-in zoom-in duration-100">
-                  <div className="pb-3 border-b border-slate-100">
-                    <div className="flex items-center gap-2">
-                      <img 
-                        src={user.avatar} 
-                        alt={user.name} 
-                        className="w-9 h-9 rounded-full object-cover border-2 border-emerald-500" 
-                      />
-                      <div>
-                        <h4 className="font-extrabold text-xs text-slate-900 truncate">{user.name}</h4>
-                        <p className="text-[10px] text-slate-500 truncate">{user.email}</p>
-                        <span className="text-[9px] font-black uppercase text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 inline-block mt-0.5">
-                          Rol: {user.role}
-                        </span>
-                      </div>
-                    </div>
-                    {user.company && (
-                      <div className="mt-2 text-[10px] text-slate-600 bg-slate-50 p-1.5 rounded-lg border border-slate-200">
-                        🏢 <strong>Empresa:</strong> {user.company}
-                      </div>
-                    )}
-                  </div>
+            <button
+              type="button"
+              onClick={handleProjectsClick}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+                activeTab === 'captura' || activeTab === 'dashboard' || activeTab === 'proyectos_teaser'
+                  ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-black' 
+                  : 'bg-slate-900/80 hover:bg-slate-800 text-white border-slate-700/70'
+              }`}
+            >
+              <HardHat className="w-3.5 h-3.5 text-amber-400" />
+              <span>Proyectos & Obras</span>
+            </button>
+          </div>
 
-                  <div className="space-y-1 text-xs font-semibold">
-                    <button
-                      onClick={() => { setActiveTab('dashboard'); setIsUserDropdownOpen(false); }}
-                      className="w-full text-left p-2 rounded-xl hover:bg-slate-100 text-slate-700 flex items-center gap-2 cursor-pointer"
-                    >
-                      <Home className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>Ir a mi Dashboard</span>
-                    </button>
-
-                    <button
-                      onClick={() => { onLoadSampleCase(); setIsUserDropdownOpen(false); }}
-                      className="w-full text-left p-2 rounded-xl hover:bg-slate-100 text-slate-700 flex items-center gap-2 cursor-pointer"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                      <span>Recargar Caso Demo 85m²</span>
-                    </button>
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-100">
-                    <button
-                      onClick={() => {
-                        setIsUserDropdownOpen(false);
-                        if (onLogout) onLogout();
-                      }}
-                      className="w-full text-left p-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold flex items-center gap-2 transition-colors cursor-pointer"
-                    >
-                      <LogOut className="w-3.5 h-3.5 text-red-600" />
-                      <span>Cerrar Sesión</span>
-                    </button>
-                  </div>
-                </div>
+          {/* Right Actions: Cart & Auth */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            
+            {/* Shopping Cart Button */}
+            <button
+              type="button"
+              onClick={triggerCartOpen}
+              className={`relative p-2.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-white border border-slate-700/70 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 ${
+                cartBounce ? 'scale-105 ring-2 ring-emerald-400' : ''
+              }`}
+              title="Abrir Carrito de Compras"
+            >
+              <ShoppingCart className="w-5 h-5 text-emerald-400" />
+              <span className="hidden sm:inline text-xs font-bold">Carrito</span>
+              {cartItemsCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 bg-amber-400 text-slate-950 text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center shadow-md animate-bounce">
+                  {cartItemsCount}
+                </span>
               )}
-            </div>
+            </button>
 
-            {/* Mobile Menu Button */}
+            {/* Orders Button (Next to cart when logged in - User Request) */}
+            {isLoggedIn && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('pedidos')}
+                className={`relative p-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 border ${
+                  activeTab === 'pedidos'
+                    ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-black shadow-md'
+                    : 'bg-slate-900/80 hover:bg-slate-800 text-white border-slate-700/70'
+                }`}
+                title="Rastrear y ver mis pedidos"
+              >
+                <Package className="w-5 h-5 text-emerald-400" />
+                <span className="hidden sm:inline text-xs font-bold">Pedidos</span>
+              </button>
+            )}
+
+            {/* Profile or Login Button */}
+            {isLoggedIn ? (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
+                  className="flex items-center gap-2 p-1 pl-2 pr-2.5 rounded-full bg-[#050D1C] border border-slate-700 hover:border-emerald-400 transition-all cursor-pointer group"
+                >
+                  <img 
+                    src={user.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'} 
+                    alt={user.name} 
+                    className="w-7 h-7 rounded-full object-cover border border-emerald-400" 
+                  />
+                  <div className="hidden sm:block text-left">
+                    <span className="text-xs font-bold text-white block leading-tight truncate max-w-[110px]">
+                      {user.firstName || user.name.split(' ')[0]}
+                    </span>
+                    <span className="text-[9px] text-emerald-400 block leading-none font-bold capitalize">
+                      {user.role}
+                    </span>
+                  </div>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-white transition-transform" />
+                </button>
+
+                {/* Profile Dropdown */}
+                {isUserDropdownOpen && (
+                  <div className="absolute right-0 mt-2 w-64 bg-white text-slate-900 rounded-2xl shadow-2xl border border-slate-200 py-3 px-4 z-50 space-y-3 animate-in fade-in zoom-in-95 duration-150">
+                    <div className="pb-3 border-b border-slate-100">
+                      <div className="flex items-center gap-2">
+                        <img 
+                          src={user.avatar} 
+                          alt={user.name} 
+                          className="w-9 h-9 rounded-full object-cover border-2 border-emerald-500" 
+                        />
+                        <div className="min-w-0">
+                          <h4 className="font-extrabold text-xs text-slate-900 truncate">{user.name}</h4>
+                          <p className="text-[10px] text-slate-500 truncate">{user.email}</p>
+                          <span className="text-[9px] font-black uppercase text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 inline-block mt-0.5">
+                            {user.role}
+                          </span>
+                        </div>
+                      </div>
+                      {user.company && (
+                        <div className="mt-2 text-[10px] text-slate-600 bg-slate-50 p-1.5 rounded-lg border border-slate-200">
+                          🏢 {user.company}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-1 text-xs font-semibold">
+                      <button
+                        onClick={() => { setActiveTab('mi_cuenta'); setIsUserDropdownOpen(false); }}
+                        className="w-full text-left p-2 rounded-xl hover:bg-slate-100 text-slate-700 flex items-center gap-2 cursor-pointer font-bold"
+                      >
+                        <User className="w-4 h-4 text-indigo-600" />
+                        <span>Mi Cuenta & Perfil</span>
+                      </button>
+
+                      <button
+                        onClick={() => { setActiveTab('pedidos'); setIsUserDropdownOpen(false); }}
+                        className="w-full text-left p-2 rounded-xl hover:bg-slate-100 text-slate-700 flex items-center gap-2 cursor-pointer font-bold"
+                      >
+                        <Package className="w-4 h-4 text-emerald-600" />
+                        <span>Mis Pedidos & Seguimiento</span>
+                      </button>
+
+                      <button
+                        onClick={() => { setActiveTab('dashboard'); setIsUserDropdownOpen(false); }}
+                        className="w-full text-left p-2 rounded-xl hover:bg-slate-100 text-slate-700 flex items-center gap-2 cursor-pointer"
+                      >
+                        <Home className="w-4 h-4 text-emerald-600" />
+                        <span>Panel de Obras & Proyectos</span>
+                      </button>
+
+                      <button
+                        onClick={() => { setActiveTab('tienda'); setIsUserDropdownOpen(false); }}
+                        className="w-full text-left p-2 rounded-xl hover:bg-slate-100 text-slate-700 flex items-center gap-2 cursor-pointer"
+                      >
+                        <Store className="w-4 h-4 text-blue-600" />
+                        <span>Tienda de Pinturas</span>
+                      </button>
+
+                      <button
+                        onClick={() => { onLoadSampleCase(); setIsUserDropdownOpen(false); }}
+                        className="w-full text-left p-2 rounded-xl hover:bg-slate-100 text-slate-700 flex items-center gap-2 cursor-pointer"
+                      >
+                        <Sparkles className="w-4 h-4 text-amber-500" />
+                        <span>Cargar Caso Demo 85m²</span>
+                      </button>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-100">
+                      <button
+                        onClick={() => {
+                          setIsUserDropdownOpen(false);
+                          if (onLogout) onLogout();
+                        }}
+                        className="w-full text-left p-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold flex items-center gap-2 transition-colors cursor-pointer"
+                      >
+                        <LogOut className="w-4 h-4 text-red-600" />
+                        <span>Cerrar Sesión</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={onOpenLogin}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 text-xs font-black shadow-md transition-all cursor-pointer"
+              >
+                <LogIn className="w-4 h-4" />
+                <span>Ingresar</span>
+              </button>
+            )}
+
+            {/* Mobile Menu Trigger */}
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="lg:hidden p-2 rounded-xl bg-blue-950 text-white hover:bg-blue-900 cursor-pointer"
+              className="lg:hidden p-2 rounded-xl bg-slate-900/80 text-white hover:bg-slate-800 border border-slate-700/70 cursor-pointer"
             >
               {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
@@ -328,33 +430,131 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
         </div>
+      </div>
 
-        {/* Mobile Navigation Drawer */}
-        {isMobileMenuOpen && (
-          <div className="lg:hidden py-3 border-t border-blue-900/80 space-y-1.5">
-            {navLinks.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.id;
+      {/* 3. Secondary Category Navigation Bar */}
+      <div className="bg-[#060E1E] border-t border-slate-800/80 px-4 py-2 text-xs overflow-x-auto no-scrollbar hidden sm:block">
+        <div className="max-w-7xl mx-auto flex items-center gap-2 min-w-max">
+          
+          <div className="flex items-center gap-1.5">
+            {[
+              { id: 'todos', label: 'Todo el Catálogo', icon: '🎨' },
+              { id: 'hogar', label: 'Hogar & Decoración', icon: '🏡' },
+              { id: 'construccion', label: 'Construcción & Fachadas', icon: '🧱' },
+              { id: 'automotriz', label: 'Automotriz 2K', icon: '🚗' },
+              { id: 'industrial', label: 'Industrial & Pisos', icon: '🏭' },
+              { id: 'herramientas', label: 'Herramientas & Brochas', icon: '🖌️' }
+            ].map(cat => {
+              const isActive = (activeTab === 'categoria' && selectedCategory === cat.id) ||
+                (activeTab === 'tienda' && cat.id === 'todos' && !searchQuery);
               return (
                 <button
-                  key={item.id}
-                  onClick={() => {
-                    setActiveTab(item.id);
-                    setIsMobileMenuOpen(false);
-                  }}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold ${
-                    isActive ? 'bg-emerald-500 text-slate-950 font-black' : 'text-blue-100 hover:bg-blue-900/60'
+                  key={cat.id}
+                  type="button"
+                  onClick={() => handleCategoryClick(cat.id as StoreCategory)}
+                  className={`px-3 py-1.5 rounded-lg font-bold transition-all duration-200 flex items-center gap-1.5 cursor-pointer text-xs active:scale-95 ${
+                    isActive 
+                      ? 'bg-emerald-500 text-slate-950 font-black shadow-xs ring-1 ring-emerald-300' 
+                      : 'text-slate-300 hover:text-white hover:bg-slate-800/80 font-medium'
                   }`}
                 >
-                  <Icon className="w-4 h-4" />
-                  <span>{item.label}</span>
+                  <span>{cat.icon}</span>
+                  <span>{cat.label}</span>
                 </button>
               );
             })}
           </div>
-        )}
 
+          <div className="h-4 w-px bg-slate-800 mx-1" />
+
+          <button
+            type="button"
+            onClick={handleProjectsClick}
+            className="px-3 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-colors border border-slate-700/60 shadow-xs"
+          >
+            <Building2 className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Obras & Contratistas</span>
+          </button>
+
+        </div>
       </div>
+
+      {/* 4. Mobile Menu Drawer */}
+      {isMobileMenuOpen && (
+        <div className="lg:hidden py-4 px-4 bg-[#060E1E] border-t border-slate-800 space-y-3 text-xs">
+          
+          <div className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">
+            Navegación Principal
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => { setActiveTab('tienda'); setIsMobileMenuOpen(false); }}
+              className="p-2.5 rounded-xl bg-slate-800/70 border border-slate-700/70 font-bold flex items-center gap-2 text-left"
+            >
+              <Store className="w-4 h-4 text-emerald-400" />
+              <span>Tienda</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => { setActiveTab('tiendas'); setIsMobileMenuOpen(false); }}
+              className={`p-2.5 rounded-xl font-bold flex items-center gap-2 text-left border ${
+                activeTab === 'tiendas' ? 'bg-emerald-500 text-slate-950 border-emerald-400' : 'bg-slate-800/70 text-white border-slate-700/70'
+              }`}
+            >
+              <MapPin className="w-4 h-4 text-emerald-400" />
+              <span>Tiendas & Sucursales</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleProjectsClick}
+              className="p-2.5 rounded-xl bg-slate-800/70 border border-slate-700/70 font-bold flex items-center gap-2 text-left"
+            >
+              <HardHat className="w-4 h-4 text-amber-400" />
+              <span>Proyectos & Obras</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => { onOpenCalculator(); setIsMobileMenuOpen(false); }}
+              className="p-2.5 rounded-xl bg-slate-800/70 border border-slate-700/70 font-bold flex items-center gap-2 text-left text-slate-200"
+            >
+              <Calculator className="w-4 h-4 text-cyan-400" />
+              <span>Calculadora</span>
+            </button>
+          </div>
+
+          <div className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider pt-2">
+            Líneas & Categorías
+          </div>
+
+          <div className="space-y-1">
+            {[
+              { id: 'todos', label: 'Todo el Catálogo', icon: '🎨' },
+              { id: 'hogar', label: 'Hogar & Decoración', icon: '🏡' },
+              { id: 'construccion', label: 'Construcción & Fachadas', icon: '🧱' },
+              { id: 'automotriz', label: 'Automotriz 2K', icon: '🚗' },
+              { id: 'industrial', label: 'Industrial & Pisos', icon: '🏭' },
+              { id: 'herramientas', label: 'Herramientas & Brochas', icon: '🖌️' }
+            ].map(cat => (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => handleCategoryClick(cat.id as StoreCategory)}
+                className="w-full text-left px-3 py-2 rounded-lg bg-[#050D1C] hover:bg-slate-800 text-slate-200 border border-slate-800/80 flex items-center gap-2 font-semibold"
+              >
+                <span>{cat.icon}</span>
+                <span>{cat.label}</span>
+              </button>
+            ))}
+          </div>
+
+        </div>
+      )}
+
     </header>
   );
 };

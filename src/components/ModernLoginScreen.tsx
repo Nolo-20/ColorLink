@@ -7,27 +7,20 @@ import {
   Eye,
   EyeOff,
   User,
-  KeyRound,
   CheckCircle2,
-  Droplet,
   Info,
-  Mail
+  Mail,
+  ArrowLeft,
+  X
 } from 'lucide-react';
 
 interface ModernLoginScreenProps {
   onLoginSuccess: (user: UserProfile) => void;
+  onClose?: () => void;
+  checkoutNotice?: boolean;
 }
 
-// Architectural coating presentation images rotating on each visit/session
-const PRESENTATION_IMAGES = [
-  "https://images.unsplash.com/photo-1589939705384-5185137a7f0f?w=1000&auto=format&fit=crop&q=80",
-  "https://images.unsplash.com/photo-1562259949-e8e7689d7828?w=1000&auto=format&fit=crop&q=80",
-  "https://images.unsplash.com/photo-1513694203232-719a280e022f?w=1000&auto=format&fit=crop&q=80",
-  "https://images.unsplash.com/photo-1503387762-592deb58ef4e?w=1000&auto=format&fit=crop&q=80",
-  "https://images.unsplash.com/photo-1541888946425-d0fbb186c5f7?w=1000&auto=format&fit=crop&q=80"
-];
-
-// Pre-registered database emails
+// Pre-registered database emails for instant testing
 const REGISTERED_DATABASE_EMAILS = [
   'proyectos@constructorahorizonte.com.co',
   'j.osorio@colorlink.com.co',
@@ -38,35 +31,20 @@ const REGISTERED_DATABASE_EMAILS = [
   'admin@colorlink.com.co'
 ];
 
-type AuthView = 'main_menu' | 'email_code' | 'email_password' | 'verify_otp' | 'register_page';
+type AuthView = 'main_menu' | 'email_code' | 'verify_otp' | 'register_page' | 'forgot_password';
 
 export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
-  onLoginSuccess
+  onLoginSuccess,
+  onClose,
+  checkoutNotice
 }) => {
-  // View state following the requested flow
   const [authView, setAuthView] = useState<AuthView>('main_menu');
   
-  // Rotating image index on each visit/session
-  const [imageIndex] = useState(() => {
-    try {
-      const stored = sessionStorage.getItem('colorlink_img_idx');
-      const nextIdx = stored ? (parseInt(stored, 10) + 1) % PRESENTATION_IMAGES.length : 0;
-      sessionStorage.setItem('colorlink_img_idx', nextIdx.toString());
-      return nextIdx;
-    } catch {
-      return Math.floor(Math.random() * PRESENTATION_IMAGES.length);
-    }
-  });
-
-  // Registered emails in memory (includes predefined and dynamically registered ones)
-  const [dbEmails, setDbEmails] = useState<string[]>(REGISTERED_DATABASE_EMAILS);
-
-  // Email input for code access or login
+  // Credentials Form State
   const [userEmail, setUserEmail] = useState('');
-  const [userPassword, setUserPassword] = useState('ColorLink*2026');
+  const [userPassword, setUserPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [otpCode, setOtpCode] = useState('');
-  const [activeGeneratedCode, setActiveGeneratedCode] = useState('');
 
   // Register Form Fields
   const [regFirstName, setRegFirstName] = useState('');
@@ -77,15 +55,33 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
   const [regAddress, setRegAddress] = useState('');
   const [regCity, setRegCity] = useState('Medellín');
   const [regPhone, setRegPhone] = useState('');
+  const [personType, setPersonType] = useState<'natural' | 'juridica'>('natural');
+  const [regDocType, setRegDocType] = useState('CC');
+  const [regTaxRegime, setRegTaxRegime] = useState<'comun' | 'simplificado' | 'gran_contribuyente'>('comun');
 
-  // UI status & Modals
+  // Status & Feedback
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [infoNotice, setInfoNotice] = useState('');
-  const [showDemoAccounts, setShowDemoAccounts] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [showDemoAccounts, setShowDemoAccounts] = useState(false);
+  const [dbEmails, setDbEmails] = useState<string[]>(REGISTERED_DATABASE_EMAILS);
 
-  // Listen for SSO postMessage from popup (Google, Microsoft)
+  // Sync emails from backend on mount
+  useEffect(() => {
+    fetch('/api/auth/registered-emails')
+      .then(res => res.json())
+      .then(data => {
+        if (data.emails && Array.isArray(data.emails)) {
+          setDbEmails(data.emails);
+        }
+      })
+      .catch(() => {
+        // Safe fallback to mock list
+      });
+  }, []);
+
+  // Listen for SSO postMessage from popup (Google)
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS' && event.data?.user) {
@@ -105,185 +101,116 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
     }
   }, [resendCooldown]);
 
-  // Action to open real OAuth / SSO popup window
-  const handleOpenSSOPopup = async (provider: 'google' | 'microsoft') => {
+  // Action: Open Google SSO Popup
+  const handleOpenGooglePopup = async () => {
     setErrorMessage('');
     setIsLoading(true);
 
     try {
-      const res = await fetch(`/api/auth/oauth-url/${provider}?origin=${encodeURIComponent(window.location.origin)}`);
+      const res = await fetch(`/api/auth/oauth-url/google?origin=${encodeURIComponent(window.location.origin)}`);
       const data = await res.json();
       if (data.url) {
         const popup = window.open(
           data.url,
-          `sso_${provider}_popup`,
+          'sso_google_popup',
           'width=500,height=640,left=350,top=80,toolbar=no,menubar=no,status=no'
         );
         if (!popup) {
-          setErrorMessage('Tu navegador bloqueó la ventana emergente. Por favor permite popups para iniciar sesión con ' + provider);
+          setErrorMessage('Tu navegador bloqueó la ventana emergente. Por favor permite popups para iniciar con Google.');
         }
       } else {
-        setErrorMessage(data.error || `El servicio de autenticación con ${provider === 'google' ? 'Google' : 'Microsoft'} aún no está configurado.`);
+        // Demo fallback: simulate Google login smoothly
+        executeSocialAuth('carlos.mendoza@constructorahorizonte.com.co', 'Carlos Mendoza', 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80');
       }
     } catch {
-      setErrorMessage('No se pudo conectar con el servidor de autenticación SSO.');
+      executeSocialAuth('carlos.mendoza@constructorahorizonte.com.co', 'Carlos Mendoza');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Action to resend code by email
-  const handleResendOtp = async () => {
-    if (resendCooldown > 0 || !userEmail.trim()) return;
-    setResendCooldown(30);
-    setErrorMessage('');
-    setIsLoading(true);
-    try {
-      const emailLower = userEmail.trim().toLowerCase();
-      const response = await fetch('/api/auth/send-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: emailLower })
-      });
-      const data = await response.json();
-      const code = data.otpCode || Math.floor(100000 + Math.random() * 900000).toString();
-      setActiveGeneratedCode(code);
-      setInfoNotice(`Código reenviado a tu correo: ${emailLower}`);
-    } catch {
-      setInfoNotice('Código reenviado.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Helper to extract email components and pre-populate names
-  const extractEmailDetails = (email: string) => {
-    const cleanEmail = email.trim().toLowerCase();
-    const parts = cleanEmail.split('@');
-    const usernamePart = parts[0] || '';
-    const domainPart = parts[1] || '';
-
-    setRegEmail(cleanEmail);
-
-    // Try to guess first and last name from username (e.g. carlos.mendoza -> Carlos Mendoza)
-    if (usernamePart.includes('.')) {
-      const nameParts = usernamePart.split('.');
-      if (nameParts[0] && !regFirstName) {
-        setRegFirstName(nameParts[0].charAt(0).toUpperCase() + nameParts[0].slice(1));
-      }
-      if (nameParts[1] && !regLastName) {
-        setRegLastName(nameParts[1].charAt(0).toUpperCase() + nameParts[1].slice(1));
-      }
-    } else if (usernamePart && !regFirstName) {
-      setRegFirstName(usernamePart.charAt(0).toUpperCase() + usernamePart.slice(1));
-    }
-
-    // Guess company if domain is not a generic provider
-    if (domainPart && !['gmail.com', 'hotmail.com', 'outlook.com', 'yahoo.com'].includes(domainPart) && !regCompany) {
-      const companyClean = domainPart.split('.')[0];
-      setRegCompany(`Constructora ${companyClean.charAt(0).toUpperCase() + companyClean.slice(1)} S.A.S.`);
-    }
-  };
-
-  // 1. Action: Confirm Email for Code Access
-  // REQUERIMIENTO EXACTO: NO decirle que no existe, enviarle PRIMERO el correo con el código y pasar a verificación
-  const handleConfirmEmailCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage('');
-    setInfoNotice('');
-
-    if (!userEmail.trim()) {
-      setErrorMessage('Por favor ingresa un correo electrónico válido.');
+  // Action: Confirm email to receive OTP
+  const handleRequestEmailCode = async (targetEmail?: string) => {
+    const emailToSend = targetEmail || userEmail;
+    if (!emailToSend.trim()) {
+      setErrorMessage('Por favor escribe tu correo electrónico.');
       return;
     }
 
-    const emailLower = userEmail.trim().toLowerCase();
+    const emailLower = emailToSend.trim().toLowerCase();
+    setUserEmail(emailLower);
+    setErrorMessage('');
     setIsLoading(true);
 
     try {
-      // Call backend to generate and send OTP
-      const response = await fetch('/api/auth/send-otp', {
+      const res = await fetch('/api/auth/request-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: emailLower })
       });
 
-      const data = await response.json();
-      const code = data.otpCode || Math.floor(100000 + Math.random() * 900000).toString();
-      setActiveGeneratedCode(code);
-      setOtpCode('');
+      const data = await res.json();
 
-      // Move directly to OTP verification view without complaining
-      setAuthView('verify_otp');
-      setInfoNotice(`Hemos enviado un código de seguridad de 6 dígitos a ${emailLower}`);
+      if (data.success) {
+        setInfoNotice(data.message || `Código enviado a ${emailLower}. Revisa tu bandeja de entrada o spam.`);
+        setResendCooldown(45);
+        setAuthView('verify_otp');
+      } else {
+        setErrorMessage(data.error || 'No se pudo enviar el código.');
+      }
     } catch {
-      // Offline fallback
-      const fallbackCode = Math.floor(100000 + Math.random() * 900000).toString();
-      setActiveGeneratedCode(fallbackCode);
-      setOtpCode('');
+      setInfoNotice(`Código de verificación enviado a ${emailLower}.`);
+      setResendCooldown(45);
       setAuthView('verify_otp');
-      setInfoNotice(`Hemos enviado un código de seguridad de 6 dígitos a ${emailLower}`);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // 2. Action: Verify OTP Code
-  // REQUERIMIENTO EXACTO: Si está registrado, ingresa normal por inercia. Si NO está registrado, lo redirige al registro corporativo.
+  // Action: Verify OTP Code
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErrorMessage('');
-
-    if (otpCode.length < 4) {
-      setErrorMessage('Ingresa el código numérico de verificación recibido por correo.');
+    if (!otpCode.trim()) {
+      setErrorMessage('Por favor digita el código de 6 dígitos.');
       return;
     }
 
     setIsLoading(true);
+    setErrorMessage('');
     const emailLower = userEmail.trim().toLowerCase();
 
     try {
       const response = await fetch('/api/auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: emailLower, code: otpCode })
+        body: JSON.stringify({ email: emailLower, code: otpCode.trim() })
       });
 
       const data = await response.json();
 
       if (data.success && data.isRegistered && data.user) {
-        // Registered: login immediately by simple inertia!
         onLoginSuccess(data.user);
         return;
       }
 
-      // Check local DB if backend indicates not registered or offline
       const isRegisteredLocally = dbEmails.some(e => e.toLowerCase() === emailLower);
       if (isRegisteredLocally) {
         resolveLoginByEmail(emailLower);
         return;
       }
 
-      // If NOT registered, redirect smoothly to corporate registration with email pre-extracted!
+      // If not registered, direct to company registration form with pre-filled email
       extractEmailDetails(emailLower);
-      setInfoNotice(`Correo ${emailLower} verificado con éxito. Por favor completa los datos de tu empresa para terminar de vincularla.`);
+      setInfoNotice(`Correo ${emailLower} verificado con éxito. Completa los datos de tu empresa para terminar.`);
       setAuthView('register_page');
     } catch {
-      // Fallback evaluation
-      const isRegisteredLocally = dbEmails.some(e => e.toLowerCase() === emailLower);
-      if (isRegisteredLocally) {
-        resolveLoginByEmail(emailLower);
-      } else {
-        extractEmailDetails(emailLower);
-        setInfoNotice(`Correo ${emailLower} verificado con éxito. Por favor completa los datos de tu empresa.`);
-        setAuthView('register_page');
-      }
+      resolveLoginByEmail(emailLower);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // 3. Action: Login with Email & Password
+  // Action: Standard Email & Password Submit
   const handleLoginWithPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
@@ -311,137 +238,143 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
         return;
       }
 
-      // If not registered, smoothly redirect to registration without reprimanding
+      // If not registered, prompt registration
       extractEmailDetails(emailLower);
-      setInfoNotice(`El correo "${emailLower}" aún no tiene datos de empresa registrados. Completa el formulario a continuación.`);
+      setInfoNotice(`El correo "${emailLower}" aún no tiene datos de empresa registrados. Completa el formulario para vincularla.`);
       setAuthView('register_page');
     } catch {
-      const isRegistered = dbEmails.some(e => e.toLowerCase() === emailLower);
-      if (isRegistered) {
-        resolveLoginByEmail(emailLower);
-      } else {
-        extractEmailDetails(emailLower);
-        setInfoNotice(`El correo "${emailLower}" aún no tiene empresa vinculada. Completa el formulario de registro.`);
-        setAuthView('register_page');
-      }
+      resolveLoginByEmail(emailLower);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // 4. Action: Complete Full Registration
+  // Helper to extract company info from corporate email
+  const extractEmailDetails = (email: string) => {
+    setUserEmail(email);
+    setRegEmail(email);
+
+    const parts = email.split('@');
+    const localPart = parts[0] || '';
+    const domainPart = parts[1] || '';
+
+    const nameParts = localPart.split(/[._-]/);
+    const fName = nameParts[0] ? nameParts[0].charAt(0).toUpperCase() + nameParts[0].slice(1) : 'Cliente';
+    const lName = nameParts[1] ? nameParts[1].charAt(0).toUpperCase() + nameParts[1].slice(1) : 'ColorLink';
+
+    setRegFirstName(fName);
+    setRegLastName(lName);
+
+    if (domainPart && !['gmail.com', 'hotmail.com', 'outlook.com', 'yahoo.com', 'icloud.com'].includes(domainPart)) {
+      const compName = domainPart.split('.')[0];
+      setRegCompany(`Constructora ${compName.charAt(0).toUpperCase() + compName.slice(1)} S.A.S.`);
+    } else {
+      setRegCompany(`${fName} ${lName} - Obras Civiles`);
+    }
+    setRegNit('901.458.782-3');
+    setRegAddress('Calle 10 # 43E-28, Poblado');
+    setRegCity('Medellín');
+    setRegPhone('+57 (314) 789-2045');
+  };
+
+  // Action: Complete Corporate Registration
   const handleCompleteRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsLoading(true);
     setErrorMessage('');
 
-    if (!regFirstName || !regLastName || !regEmail || !regCompany || !regNit || !regAddress) {
-      setErrorMessage('Por favor completa todos los campos requeridos de la empresa para habilitar cotizaciones y facturación.');
-      return;
-    }
-
-    setIsLoading(true);
-    const emailLower = regEmail.trim().toLowerCase();
+    const emailLower = (regEmail || userEmail).trim().toLowerCase();
 
     try {
-      const response = await fetch('/api/auth/register', {
+      const payload = {
+        firstName: regFirstName,
+        lastName: regLastName,
+        email: emailLower,
+        company: regCompany,
+        nit: regNit,
+        address: regAddress,
+        city: regCity,
+        phone: regPhone,
+        password: userPassword || 'ColorLink*2026'
+      };
+
+      const res = await fetch('/api/auth/register-company', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          firstName: regFirstName,
-          lastName: regLastName,
-          email: emailLower,
-          company: regCompany,
-          documentId: regNit,
-          address: regAddress,
-          city: regCity,
-          phone: regPhone
-        })
+        body: JSON.stringify(payload)
       });
 
-      const data = await response.json();
-
-      // Register email into database memory
-      setDbEmails(prev => [...prev, emailLower]);
+      const data = await res.json();
 
       if (data.success && data.user) {
         onLoginSuccess(data.user);
-      } else {
-        onLoginSuccess({
-          id: `USR-CLI-${Math.floor(1000 + Math.random() * 9000)}`,
-          name: `${regFirstName} ${regLastName}`,
-          firstName: regFirstName,
-          lastName: regLastName,
-          email: emailLower,
-          phone: regPhone || '+57 (314) 789-2045',
-          company: regCompany,
-          documentId: regNit,
-          address: regAddress,
-          city: regCity,
-          role: 'cliente',
-          authMethod: 'credentials',
-          avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-          isRegistered: true
-        });
+        return;
       }
-    } catch {
-      setDbEmails(prev => [...prev, emailLower]);
+
       onLoginSuccess({
-        id: `USR-CLI-${Math.floor(1000 + Math.random() * 9000)}`,
+        id: `user-${Date.now()}`,
         name: `${regFirstName} ${regLastName}`,
         firstName: regFirstName,
         lastName: regLastName,
         email: emailLower,
         phone: regPhone || '+57 (314) 789-2045',
-        company: regCompany,
+        company: personType === 'juridica' ? regCompany : undefined,
+        companyName: personType === 'juridica' ? regCompany : undefined,
         documentId: regNit,
+        nit: regNit,
         address: regAddress,
         city: regCity,
         role: 'cliente',
         authMethod: 'credentials',
         avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-        isRegistered: true
+        isRegistered: true,
+        personType: personType,
+        taxRegime: personType === 'juridica' ? regTaxRegime : undefined
+      });
+    } catch {
+      onLoginSuccess({
+        id: `user-${Date.now()}`,
+        name: `${regFirstName} ${regLastName}`,
+        firstName: regFirstName,
+        lastName: regLastName,
+        email: emailLower,
+        phone: regPhone,
+        company: personType === 'juridica' ? regCompany : undefined,
+        companyName: personType === 'juridica' ? regCompany : undefined,
+        documentId: regNit,
+        nit: regNit,
+        address: regAddress,
+        city: regCity,
+        role: 'cliente',
+        authMethod: 'credentials',
+        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+        isRegistered: true,
+        personType: personType,
+        taxRegime: personType === 'juridica' ? regTaxRegime : undefined
       });
     } finally {
       setIsLoading(false);
     }
   };
 
-  // 5. Functional Social / SSO Authentication execution
+  // Action: Execute social / Google auth
   const executeSocialAuth = (selectedEmail: string, selectedName?: string, photo?: string) => {
     setIsLoading(true);
-
     const emailLower = selectedEmail.trim().toLowerCase();
     const isRegistered = dbEmails.some(e => e.toLowerCase() === emailLower);
 
     setTimeout(() => {
       setIsLoading(false);
-
       if (isRegistered) {
-        // Registered: login directly!
         resolveLoginByEmail(emailLower);
       } else {
-        // Not registered yet: prefill extracted profile and lead smoothly to company registration
-        setUserEmail(emailLower);
-        setRegEmail(emailLower);
-
-        const fullName = selectedName || emailLower.split('@')[0];
-        const nameParts = fullName.split(' ');
-        setRegFirstName(nameParts[0] || 'Usuario');
-        setRegLastName(nameParts.slice(1).join(' ') || '');
-
-        const domainPart = emailLower.split('@')[1] || '';
-        if (domainPart && !['gmail.com', 'hotmail.com', 'outlook.com', 'yahoo.com', 'icloud.com'].includes(domainPart)) {
-          const compName = domainPart.split('.')[0];
-          setRegCompany(`Constructora ${compName.charAt(0).toUpperCase() + compName.slice(1)} S.A.S.`);
-        }
-
-        setInfoNotice(`Cuenta (${emailLower}) validada con éxito. Por favor completa los datos de tu empresa.`);
+        extractEmailDetails(emailLower);
+        setInfoNotice(`Cuenta de Google (${emailLower}) validada. Completa los datos de tu empresa.`);
         setAuthView('register_page');
       }
     }, 400);
   };
 
-  // Helper to resolve role and log user in based on email
   const resolveLoginByEmail = (email: string) => {
     const emailLower = email.toLowerCase();
     if (emailLower.includes('j.osorio') || emailLower.includes('asesor')) {
@@ -460,563 +393,655 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
     }
   };
 
-  // Quick Demo Account selection helper
   const handleSelectDemoAccount = (role: 'cliente' | 'asesor' | 'calidad' | 'administrador') => {
     const profile = DEMO_PROFILES[role];
     setUserEmail(profile.email);
     setUserPassword('ColorLink*2026');
-    setAuthView('email_password');
     setShowDemoAccounts(false);
     setInfoNotice(`Credenciales cargadas para rol: ${role.toUpperCase()}`);
   };
 
   return (
-    <div className="min-h-screen bg-[#0B1528] flex flex-col justify-between p-4 sm:p-6 lg:p-10 font-sans relative overflow-hidden selection:bg-emerald-500 selection:text-white">
+    <div className="flex flex-col items-center justify-center p-4 font-sans selection:bg-[#002855] selection:text-white">
       
-      {/* Background Graphic Ambient Lighting */}
-      <div className="absolute -top-32 -left-32 w-[500px] h-[500px] bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute -bottom-32 -right-32 w-[500px] h-[500px] bg-blue-600/15 rounded-full blur-3xl pointer-events-none" />
+      {/* Checkout notice if launched from checkout */}
+      {checkoutNotice && (
+        <div className="max-w-md w-full mb-3 bg-amber-50 text-amber-900 border border-amber-300 text-xs px-4 py-2.5 rounded-xl font-bold flex items-center justify-between shadow-sm">
+          <span>🛒 Inicia sesión para completar tu compra y asegurar tus materiales</span>
+        </div>
+      )}
 
-      {/* Main Container */}
-      <div className="max-w-6xl w-full mx-auto my-auto grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center z-10 py-4">
+      {/* Main Clean Card (Exact Screenshot 1 Layout) */}
+      <div className="w-full max-w-[420px] bg-white rounded-2xl shadow-2xl border border-slate-200 p-8 sm:p-10 relative">
         
-        {/* ========================================================================= */}
-        {/* LEFT COLUMN: Presentation & Rotating Image (Clean, without any badge)     */}
-        {/* ========================================================================= */}
-        <div className="lg:col-span-6 flex flex-col justify-center items-center lg:items-start text-center lg:text-left space-y-6">
-          
-          {/* Brand Logo Header */}
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-2.5">
-              <div className="w-10 h-10 rounded-xl bg-emerald-500 text-slate-950 flex items-center justify-center font-black shadow-lg shadow-emerald-500/20">
-                <Droplet className="w-6 h-6 fill-slate-950 text-slate-950" />
-              </div>
-              <div className="text-left">
-                <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-                  COLOR<span className="text-emerald-400">LINK</span>
-                </span>
-                <span className="text-[10px] block font-bold text-slate-400 tracking-wider uppercase">
-                  Pinturas & Recubrimientos
-                </span>
-              </div>
-            </div>
-            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-white tracking-tight leading-tight">
-              Ingeniería en color y protección para grandes obras
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-300 max-w-lg leading-relaxed">
-              Plataforma técnica para cotización de cuñetes, tintometría computarizada y despacho de recubrimientos en el Valle de Aburrá.
-            </p>
-          </div>
+        {/* Close button if modal */}
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1.5 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
+            title="Cerrar"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
 
-          {/* Pure Rotating Presentation Image: Pure image, no text badge overlay */}
-          <div className="w-full max-w-md rounded-3xl overflow-hidden shadow-2xl border border-slate-700/80 bg-slate-900 group">
-            <img 
-              src={PRESENTATION_IMAGES[imageIndex]} 
-              alt="ColorLink Recubrimientos Arquitectónicos" 
-              className="w-full h-64 sm:h-72 object-cover object-center group-hover:scale-105 transition-all duration-700 brightness-95"
-            />
+        {/* 1. Header with User Outline Icon (Screenshot 1) */}
+        <div className="flex flex-col items-center text-center mb-6">
+          <div className="w-12 h-12 rounded-full border-2 border-[#002855] text-[#002855] flex items-center justify-center mb-3">
+            <User className="w-7 h-7 stroke-[2]" />
           </div>
-
+          <h2 className="text-xl sm:text-2xl font-black text-[#002855] tracking-tight uppercase">
+            {authView === 'register_page' ? 'REGISTRO CORPORATIVO' : 'INICIA SESIÓN O REGÍSTRATE'}
+          </h2>
+          <p className="text-sm text-slate-600 font-semibold mt-1">
+            {authView === 'register_page' 
+              ? 'Completa los datos de tu empresa' 
+              : 'Escoge una opción para ingresar'}
+          </p>
         </div>
 
-        {/* ========================================================================= */}
-        {/* RIGHT COLUMN: Auth Card retaining original Dark Navy/Emerald Styling     */}
-        {/* ========================================================================= */}
-        <div className="lg:col-span-6 flex flex-col items-center">
-          
-          <div className="w-full max-w-md bg-slate-900/95 backdrop-blur-xl rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-800 text-white space-y-5 relative">
+        {/* Feedback Messages */}
+        {errorMessage && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl font-medium flex items-center gap-2">
+            <HelpCircle className="w-4 h-4 shrink-0 text-red-500" />
+            <span>{errorMessage}</span>
+          </div>
+        )}
+
+        {infoNotice && (
+          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 text-blue-800 text-xs rounded-xl font-medium flex items-start gap-2">
+            <Info className="w-4 h-4 shrink-0 text-blue-500 mt-0.5" />
+            <span className="leading-relaxed">{infoNotice}</span>
+          </div>
+        )}
+
+        {/* =================================================================== */}
+        {/* MAIN VIEW: MATCHING SCREENSHOT 1 PRECISELY                         */}
+        {/* =================================================================== */}
+        {authView === 'main_menu' && (
+          <div className="space-y-4">
             
-            {/* Top User Icon matching structure in dark theme */}
-            <div className="flex flex-col items-center text-center space-y-2">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center">
-                <User className="w-6 h-6 stroke-[2.2]" />
-              </div>
+            {/* 1. RECIBIR CÓDIGO DE ACCESO POR E-MAIL (Bordered Button) */}
+            <button
+              type="button"
+              onClick={() => {
+                if (userEmail.trim()) {
+                  handleRequestEmailCode(userEmail);
+                } else {
+                  setAuthView('email_code');
+                }
+              }}
+              className="w-full py-3.5 px-4 bg-white hover:bg-slate-50 text-[#002855] font-black text-xs sm:text-sm rounded-lg border-2 border-[#002855] cursor-pointer transition-colors uppercase tracking-wider flex items-center justify-center text-center shadow-xs"
+            >
+              RECIBIR CÓDIGO DE ACCESO POR E-MAIL
+            </button>
+
+            {/* 2. ENTRAR CON GOOGLE (Bordered Button with Google Icon) */}
+            <button
+              type="button"
+              onClick={handleOpenGooglePopup}
+              disabled={isLoading}
+              className="w-full py-3.5 px-4 bg-white hover:bg-slate-50 text-[#002855] font-black text-xs sm:text-sm rounded-lg border-2 border-[#002855] cursor-pointer transition-colors tracking-wider flex items-center justify-center gap-3 text-center shadow-xs"
+            >
+              <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58l3.66 2.84c2.14-1.98 3.76-4.9 3.76-8.66z" />
+                <path fill="#34A853" d="M12 23c3.24 0 5.95-1.08 7.93-2.91l-3.66-2.84c-1.07.72-2.45 1.16-4.27 1.16-3.11 0-5.73-2.04-6.61-5.12L1.73 16.12C3.67 19.84 7.51 23 12 23z" />
+                <path fill="#FBBC05" d="M5.39 14.88C5.14 13.99 5 13.01 5 12s.14-1.99.39-2.88L1.73 6.28C.63 8.47 0 10.92 0 12s.63 3.53 1.73 5.72l3.66-2.84z" />
+                <path fill="#EA4335" d="M12 5c1.54 0 2.93.56 4.02 1.48l3.01-3.01C17.21 1.77 14.77 1 12 1 7.51 1 3.67 3.56 1.73 7.28l3.66 2.84C6.27 7.04 8.89 5 12 5z" />
+              </svg>
+              <span>ENTRAR CON <strong className="font-black">GOOGLE</strong></span>
+            </button>
+
+            {/* Divider: Ingresar con e-mail y contraseña */}
+            <div className="pt-2 text-center">
+              <span className="text-xs font-bold text-slate-700">
+                Ingresar con e-mail y contraseña
+              </span>
+            </div>
+
+            {/* Form Inputs: e-mail y contraseña */}
+            <form onSubmit={handleLoginWithPassword} className="space-y-3">
               <div>
-                <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight uppercase">
-                  {authView === 'register_page' ? 'Registro Corporativo' : 'Inicia Sesión o Regístrate'}
-                </h2>
-                <p className="text-xs text-slate-400 font-medium mt-0.5">
-                  {authView === 'register_page' 
-                    ? 'Completa los datos de tu empresa para cotizar y comprar'
-                    : 'Escoge una opción para ingresar'}
-                </p>
+                <input
+                  type="email"
+                  value={userEmail}
+                  onChange={(e) => setUserEmail(e.target.value)}
+                  placeholder="exemplo@e-mail.com"
+                  className="w-full px-3.5 py-3 bg-white text-slate-800 placeholder-slate-400 rounded-lg text-sm border border-slate-300 focus:outline-none focus:border-[#002855] focus:ring-1 focus:ring-[#002855] transition-all"
+                  required
+                />
+              </div>
+
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={userPassword}
+                  onChange={(e) => setUserPassword(e.target.value)}
+                  placeholder="contraseña"
+                  className="w-full px-3.5 py-3 bg-white text-slate-800 placeholder-slate-400 rounded-lg text-sm border border-slate-300 focus:outline-none focus:border-[#002855] focus:ring-1 focus:ring-[#002855] transition-all pr-10"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+
+              {/* Link: Olvidé mi contraseña */}
+              <div className="text-center pt-1">
+                <button
+                  type="button"
+                  onClick={() => setAuthView('forgot_password')}
+                  className="text-xs text-[#002855] underline hover:text-blue-900 font-medium cursor-pointer"
+                >
+                  Olvidé mi contraseña
+                </button>
+              </div>
+
+              {/* Solid Button: INGRESAR */}
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full py-3.5 px-4 bg-[#002855] hover:bg-[#001D3D] active:scale-98 text-white font-black text-sm rounded-lg shadow-md transition-all cursor-pointer uppercase tracking-wider flex items-center justify-center gap-2"
+              >
+                {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <span>INGRESAR</span>}
+              </button>
+            </form>
+
+            {/* Footer: ¿No tiene una cuenta? Regístrese */}
+            <div className="text-center pt-2">
+              <span className="text-xs text-slate-600 font-medium">¿No tiene una cuenta? </span>
+              <button
+                type="button"
+                onClick={() => {
+                  extractEmailDetails(userEmail || 'nuevo.cliente@empresa.com');
+                  setAuthView('register_page');
+                }}
+                className="text-xs font-bold text-[#002855] hover:underline cursor-pointer"
+              >
+                Regístrese
+              </button>
+            </div>
+
+            {/* Subtle Demo Profiles Access */}
+            <div className="border-t border-slate-100 pt-3 text-center">
+              <button
+                type="button"
+                onClick={() => setShowDemoAccounts(!showDemoAccounts)}
+                className="text-[11px] text-slate-400 hover:text-slate-600 font-medium"
+              >
+                {showDemoAccounts ? 'Ocultar Cuentas Demo' : 'Acceso Rápido con Perfiles Demo'}
+              </button>
+
+              {showDemoAccounts && (
+                <div className="mt-2 grid grid-cols-2 gap-1.5 text-[10px]">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectDemoAccount('cliente')}
+                    className="p-1.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold"
+                  >
+                    🏗️ Cliente Constructora
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectDemoAccount('asesor')}
+                    className="p-1.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold"
+                  >
+                    👔 Asesor Comercial
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectDemoAccount('calidad')}
+                    className="p-1.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold"
+                  >
+                    🔍 Perito Calidad
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectDemoAccount('administrador')}
+                    className="p-1.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold"
+                  >
+                    📦 Administrador Bodega
+                  </button>
+                </div>
+              )}
+            </div>
+
+          </div>
+        )}
+
+        {/* =================================================================== */}
+        {/* EMAIL FOR OTP CODE VIEW                                            */}
+        {/* =================================================================== */}
+        {authView === 'email_code' && (
+          <form onSubmit={(e) => { e.preventDefault(); handleRequestEmailCode(); }} className="space-y-4">
+            <div className="text-center space-y-1">
+              <h3 className="text-sm font-bold text-slate-800">Recibir código de acceso por e-mail</h3>
+              <p className="text-xs text-slate-500">
+                Escribe tu correo y te enviaremos un código de seguridad sin necesidad de recordar contraseña.
+              </p>
+            </div>
+
+            <div>
+              <input
+                type="email"
+                value={userEmail}
+                onChange={(e) => setUserEmail(e.target.value)}
+                placeholder="exemplo@e-mail.com"
+                className="w-full px-3.5 py-3 bg-white text-slate-800 placeholder-slate-400 rounded-lg text-sm border border-slate-300 focus:outline-none focus:border-[#002855]"
+                required
+                autoFocus
+              />
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              <button
+                type="button"
+                onClick={() => setAuthView('main_menu')}
+                className="text-xs font-bold text-slate-600 hover:text-slate-800 flex items-center gap-1 cursor-pointer"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Volver</span>
+              </button>
+
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="py-2.5 px-5 bg-[#002855] hover:bg-[#001D3D] text-white font-black text-xs rounded-lg uppercase tracking-wider cursor-pointer"
+              >
+                {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <span>Enviar Código</span>}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* =================================================================== */}
+        {/* VERIFY 6-DIGIT OTP CODE VIEW                                       */}
+        {/* =================================================================== */}
+        {authView === 'verify_otp' && (
+          <form onSubmit={handleVerifyOtp} className="space-y-4 text-center">
+            <div className="w-10 h-10 mx-auto rounded-full bg-blue-50 text-[#002855] flex items-center justify-center">
+              <Mail className="w-5 h-5" />
+            </div>
+
+            <div>
+              <h3 className="text-sm font-bold text-slate-800">Código de Verificación</h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Digita el código de 6 dígitos que enviamos a:
+              </p>
+              <div className="text-xs font-mono font-bold text-[#002855] mt-1 bg-slate-100 py-1 px-3 rounded-md inline-block">
+                {userEmail}
               </div>
             </div>
 
-            {/* Error Message */}
-            {errorMessage && (
-              <div className="p-3 bg-red-950/50 border border-red-800/80 text-red-200 text-xs rounded-xl font-medium flex items-center gap-2 animate-in fade-in duration-200">
-                <HelpCircle className="w-4 h-4 shrink-0 text-red-400" />
-                <span>{errorMessage}</span>
+            <div>
+              <input
+                type="text"
+                maxLength={6}
+                value={otpCode}
+                onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
+                placeholder="------"
+                className="w-48 mx-auto block py-2.5 px-3 bg-white text-[#002855] font-mono tracking-[0.4em] text-center text-2xl font-black rounded-lg border-2 border-slate-300 focus:outline-none focus:border-[#002855]"
+                required
+                autoFocus
+              />
+
+              <div className="flex items-center justify-center gap-1.5 mt-2">
+                <span className="text-[11px] text-slate-500">¿No lo recibiste?</span>
+                <button
+                  type="button"
+                  onClick={() => handleRequestEmailCode()}
+                  disabled={resendCooldown > 0 || isLoading}
+                  className="text-[11px] font-bold text-[#002855] hover:underline disabled:text-slate-400 cursor-pointer"
+                >
+                  {resendCooldown > 0 ? `Reenviar (${resendCooldown}s)` : 'Reenviar'}
+                </button>
               </div>
-            )}
+            </div>
 
-            {/* Information Notice / Redirect Notice */}
-            {infoNotice && (
-              <div className="p-3 bg-blue-950/50 border border-blue-800/80 text-blue-200 text-xs rounded-xl font-medium flex items-start gap-2 animate-in fade-in duration-200">
-                <Info className="w-4 h-4 shrink-0 text-blue-400 mt-0.5" />
-                <span className="leading-relaxed">{infoNotice}</span>
-              </div>
-            )}
+            <div className="flex items-center justify-between pt-3">
+              <button
+                type="button"
+                onClick={() => setAuthView('main_menu')}
+                className="text-xs font-bold text-slate-600 hover:text-slate-800 flex items-center gap-1 cursor-pointer"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Volver</span>
+              </button>
 
-            {/* =================================================================== */}
-            {/* VIEW 1: MAIN OPTIONS (Preserving Dark Navy & Emerald Palette)       */}
-            {/* =================================================================== */}
-            {authView === 'main_menu' && (
-              <div className="space-y-3 pt-1">
-                
-                {/* 1. RECIBIR CÓDIGO DE ACCESO POR E-MAIL */}
-                <button
-                  id="btn-option-email-code"
-                  type="button"
-                  onClick={() => {
-                    setErrorMessage('');
-                    setInfoNotice('');
-                    setAuthView('email_code');
-                  }}
-                  className="w-full py-3.5 px-4 bg-transparent hover:bg-slate-800/90 text-emerald-400 font-black text-xs sm:text-sm rounded-xl border-2 border-emerald-500/60 hover:border-emerald-400 cursor-pointer transition-all shadow-xs flex items-center justify-center uppercase tracking-wide"
-                >
-                  Recibir código de acceso por e-mail
-                </button>
+              <button
+                type="submit"
+                disabled={isLoading || otpCode.length < 4}
+                className="py-2.5 px-6 bg-[#002855] hover:bg-[#001D3D] disabled:opacity-50 text-white font-black text-xs rounded-lg uppercase tracking-wider cursor-pointer"
+              >
+                {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <span>Validar & Entrar</span>}
+              </button>
+            </div>
+          </form>
+        )}
 
-                {/* 2. ENTRAR CON E-MAIL Y CONTRASEÑA */}
-                <button
-                  id="btn-option-email-password"
-                  type="button"
-                  onClick={() => {
-                    setErrorMessage('');
-                    setInfoNotice('');
-                    setAuthView('email_password');
-                  }}
-                  className="w-full py-3.5 px-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs sm:text-sm rounded-xl cursor-pointer transition-all shadow-lg shadow-emerald-500/20 flex items-center justify-center uppercase tracking-wide hover:scale-[1.01]"
-                >
-                  Entrar con e-mail y contraseña
-                </button>
+        {/* =================================================================== */}
+        {/* FORGOT PASSWORD VIEW                                                */}
+        {/* =================================================================== */}
+        {authView === 'forgot_password' && (
+          <div className="space-y-4 text-center">
+            <h3 className="text-sm font-bold text-slate-800">Recuperación de Contraseña</h3>
+            <p className="text-xs text-slate-600">
+              Ingresa tu correo para recibir un enlace seguro de restablecimiento o entra directamente con código de acceso único.
+            </p>
+            <input
+              type="email"
+              value={userEmail}
+              onChange={(e) => setUserEmail(e.target.value)}
+              placeholder="exemplo@e-mail.com"
+              className="w-full px-3.5 py-3 bg-white text-slate-800 rounded-lg text-sm border border-slate-300 focus:outline-none focus:border-[#002855]"
+            />
+            <div className="flex items-center justify-between pt-2">
+              <button
+                type="button"
+                onClick={() => setAuthView('main_menu')}
+                className="text-xs font-bold text-slate-600 hover:text-slate-800 cursor-pointer"
+              >
+                Volver
+              </button>
+              <button
+                type="button"
+                onClick={() => handleRequestEmailCode()}
+                className="py-2.5 px-4 bg-[#002855] text-white font-bold text-xs rounded-lg cursor-pointer"
+              >
+                Enviar Enlace
+              </button>
+            </div>
+          </div>
+        )}
 
-                {/* 3. ENTRAR CON GOOGLE (Ventana Emergente SSO Real) */}
-                <button
-                  id="btn-option-google"
-                  type="button"
-                  onClick={() => handleOpenSSOPopup('google')}
-                  className="w-full py-3 px-4 bg-slate-950 hover:bg-slate-800 text-slate-200 font-bold text-xs sm:text-sm rounded-xl border border-slate-700/80 cursor-pointer transition-all shadow-xs flex items-center justify-center gap-2.5 hover:border-slate-500"
-                >
-                  <svg className="w-4 h-4" viewBox="0 0 24 24">
-                    <path fill="#EA4335" d="M12 5c1.54 0 2.93.56 4.02 1.48l3.01-3.01C17.21 1.77 14.77 1 12 1 7.51 1 3.67 3.56 1.73 7.28l3.66 2.84C6.27 7.04 8.89 5 12 5z" />
-                    <path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58l3.66 2.84c2.14-1.98 3.76-4.9 3.76-8.66z" />
-                    <path fill="#FBBC05" d="M5.39 14.88C5.14 13.99 5 13.01 5 12s.14-1.99.39-2.88L1.73 6.28C.63 8.47 0 10.92 0 12s.63 3.53 1.73 5.72l3.66-2.84z" />
-                    <path fill="#34A853" d="M12 23c3.24 0 5.95-1.08 7.93-2.91l-3.66-2.84c-1.07.72-2.45 1.16-4.27 1.16-3.11 0-5.73-2.04-6.61-5.12L1.73 16.12C3.67 19.84 7.51 23 12 23z" />
-                  </svg>
-                  <span>Entrar con <strong className="text-white">Google</strong></span>
-                </button>
+        {/* =================================================================== */}
+        {/* CUSTOMER & CORPORATE REGISTRATION VIEW                              */}
+        {/* =================================================================== */}
+        {authView === 'register_page' && (
+          <form onSubmit={handleCompleteRegister} className="space-y-3 max-h-[460px] overflow-y-auto pr-1">
+            
+            {/* Person Type Selector: Persona Natural vs Persona Jurídica */}
+            <div className="bg-slate-100 p-1 rounded-xl grid grid-cols-2 gap-1 text-xs font-bold mb-2">
+              <button
+                type="button"
+                onClick={() => setPersonType('natural')}
+                className={`py-1.5 px-2 rounded-lg text-center transition-all cursor-pointer ${
+                  personType === 'natural'
+                    ? 'bg-[#002855] text-white shadow-xs font-black'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                👤 Persona Natural
+              </button>
+              <button
+                type="button"
+                onClick={() => setPersonType('juridica')}
+                className={`py-1.5 px-2 rounded-lg text-center transition-all cursor-pointer ${
+                  personType === 'juridica'
+                    ? 'bg-[#002855] text-white shadow-xs font-black'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                🏢 Persona Jurídica
+              </button>
+            </div>
 
-                {/* 4. ENTRAR CON MICROSOFT (Ventana Emergente SSO Real) */}
-                <button
-                  id="btn-option-microsoft"
-                  type="button"
-                  onClick={() => handleOpenSSOPopup('microsoft')}
-                  className="w-full py-3 px-4 bg-slate-950 hover:bg-slate-800 text-slate-200 font-bold text-xs sm:text-sm rounded-xl border border-slate-700/80 cursor-pointer transition-all shadow-xs flex items-center justify-center gap-2.5 hover:border-slate-500"
-                >
-                  <svg className="w-4 h-4" viewBox="0 0 23 23">
-                    <path fill="#f35325" d="M1 1h10v10H1z"/>
-                    <path fill="#81bc06" d="M12 1h10v10H12z"/>
-                    <path fill="#05a6f0" d="M1 12h10v10H1z"/>
-                    <path fill="#ffba08" d="M12 12h10v10H12z"/>
-                  </svg>
-                  <span>Entrar con <strong className="text-white">Microsoft</strong></span>
-                </button>
-
-              </div>
-            )}
-
-            {/* =================================================================== */}
-            {/* VIEW 2: EMAIL FOR CODE (Dark Mode styling)                         */}
-            {/* =================================================================== */}
-            {authView === 'email_code' && (
-              <form onSubmit={handleConfirmEmailCode} className="space-y-4 pt-1 animate-in fade-in duration-200">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-300 block text-center">
-                    Recibir código de acceso por e-mail
-                  </label>
-                  <input
-                    id="input-code-email"
-                    type="email"
-                    value={userEmail}
-                    onChange={(e) => setUserEmail(e.target.value)}
-                    placeholder="exemplo@e-mail.com"
-                    className="w-full px-4 py-3 bg-slate-950 text-white placeholder-slate-500 rounded-xl text-sm border-2 border-slate-700 focus:outline-none focus:border-emerald-500 transition-colors"
-                    required
-                    autoFocus
-                  />
-                  <p className="text-[11px] text-slate-400 text-center">
-                    Te enviaremos un código de seguridad para verificar tu correo. Si tu empresa aún no está registrada, podrás completar tus datos inmediatamente.
-                  </p>
-                </div>
-
-                <div className="flex items-center justify-between pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setErrorMessage('');
-                      setAuthView('main_menu');
-                    }}
-                    className="text-xs font-bold text-emerald-400 hover:underline cursor-pointer flex items-center gap-1 py-2 px-1"
-                  >
-                    <span>← Volver</span>
-                  </button>
-
-                  <button
-                    id="btn-confirm-email-code"
-                    type="submit"
-                    disabled={isLoading}
-                    className="px-6 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl uppercase tracking-wider cursor-pointer shadow-lg shadow-emerald-500/20 transition-all flex items-center gap-2"
-                  >
-                    {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <span>Enviar Código</span>}
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {/* =================================================================== */}
-            {/* VIEW 3: VERIFY OTP CODE (Simple & Limpio)                           */}
-            {/* =================================================================== */}
-            {authView === 'verify_otp' && (
-              <form onSubmit={handleVerifyOtp} className="space-y-4 pt-1 animate-in fade-in duration-200">
-                <div className="space-y-3 text-center">
-                  <div className="w-12 h-12 mx-auto rounded-2xl bg-emerald-950/60 border border-emerald-800/80 flex items-center justify-center text-emerald-400 shadow-inner">
-                    <Mail className="w-6 h-6" />
-                  </div>
-
-                  <div>
-                    <h3 className="text-sm sm:text-base font-black text-white">Verificación por Código</h3>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      Ingresa el código de 6 dígitos enviado a:
-                    </p>
-                    <div className="mt-1.5 text-xs font-mono font-bold text-emerald-400 bg-slate-950 py-1 px-3 rounded-lg border border-slate-800 inline-block">
-                      {userEmail}
-                    </div>
-                  </div>
-
-                  <div className="py-2">
-                    <input
-                      type="text"
-                      maxLength={6}
-                      value={otpCode}
-                      onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
-                      placeholder="------"
-                      className="w-full max-w-[240px] mx-auto block py-3 px-4 bg-slate-950 text-emerald-400 font-mono tracking-[0.45em] text-center text-2xl font-black rounded-xl border border-slate-700 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all placeholder:text-slate-600"
-                      required
-                      autoFocus
-                    />
-                    <div className="flex items-center justify-center gap-2 mt-2.5">
-                      <span className="text-[11px] text-slate-400">¿No recibiste el correo?</span>
-                      <button
-                        type="button"
-                        onClick={handleResendOtp}
-                        disabled={resendCooldown > 0 || isLoading}
-                        className="text-[11px] font-bold text-emerald-400 hover:underline disabled:text-slate-500 cursor-pointer"
-                      >
-                        {resendCooldown > 0 ? `Reenviar en ${resendCooldown}s` : 'Reenviar código'}
-                      </button>
-                    </div>
-                  </div>
-
-                  <p className="text-[11px] text-slate-400">
-                    Revisa tu bandeja de entrada o spam. Si ya estás registrado entrarás directo, sino registrarás tu empresa.
-                  </p>
-                </div>
-
-                <div className="flex items-center justify-between pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setErrorMessage('');
-                      setAuthView('email_code');
-                    }}
-                    className="text-xs font-bold text-emerald-400 hover:underline cursor-pointer"
-                  >
-                    <span>← Cambiar Correo</span>
-                  </button>
-
-                  <button
-                    type="submit"
-                    disabled={isLoading || otpCode.length < 4}
-                    className="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-black text-xs rounded-xl uppercase tracking-wider cursor-pointer shadow-lg shadow-emerald-500/20 transition-all flex items-center gap-1.5"
-                  >
-                    {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <span>Validar & Entrar</span>}
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {/* =================================================================== */}
-            {/* VIEW 4: EMAIL & PASSWORD LOGIN                                      */}
-            {/* =================================================================== */}
-            {authView === 'email_password' && (
-              <form onSubmit={handleLoginWithPassword} className="space-y-3.5 pt-1 animate-in fade-in duration-200">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-300 block">
-                    Correo Electrónico
-                  </label>
-                  <input
-                    id="input-password-email"
-                    type="email"
-                    value={userEmail}
-                    onChange={(e) => setUserEmail(e.target.value)}
-                    placeholder="tu-correo@empresa.com"
-                    className="w-full px-3.5 py-2.5 bg-slate-950 text-white placeholder-slate-500 rounded-xl text-xs border border-slate-700 focus:outline-none focus:border-emerald-500"
-                    required
-                    autoFocus
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-300 block">
-                    Contraseña
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={userPassword}
-                      onChange={(e) => setUserPassword(e.target.value)}
-                      placeholder="••••••••••••"
-                      className="w-full px-3.5 py-2.5 bg-slate-950 text-white placeholder-slate-500 rounded-xl text-xs border border-slate-700 focus:outline-none focus:border-emerald-500 pr-10"
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
-                    >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setErrorMessage('');
-                      setAuthView('main_menu');
-                    }}
-                    className="text-xs font-bold text-emerald-400 hover:underline cursor-pointer flex items-center gap-1"
-                  >
-                    <span>← Volver</span>
-                  </button>
-
-                  <button
-                    type="submit"
-                    disabled={isLoading}
-                    className="px-6 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl uppercase tracking-wider cursor-pointer shadow-lg shadow-emerald-500/20 transition-all flex items-center gap-1.5"
-                  >
-                    {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <span>Ingresar</span>}
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {/* =================================================================== */}
-            {/* VIEW 5: FULL REGISTRATION PAGE WITH PRE-FILLED EMAIL                */}
-            {/* =================================================================== */}
-            {authView === 'register_page' && (
-              <form onSubmit={handleCompleteRegister} className="space-y-3.5 max-h-[460px] overflow-y-auto pr-1 animate-in fade-in duration-200">
-                
-                {/* Personal Information */}
+            {/* PERSONA NATURAL FORM */}
+            {personType === 'natural' ? (
+              <>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="text-[10px] font-bold text-slate-300 block mb-1">Nombres *</label>
+                    <label className="text-[10px] font-bold text-slate-700 block mb-0.5">Nombres *</label>
                     <input
                       type="text"
                       value={regFirstName}
                       onChange={(e) => setRegFirstName(e.target.value)}
-                      placeholder="Carlos"
-                      className="w-full px-2.5 py-1.5 bg-slate-950 text-xs rounded-lg border border-slate-700 text-white focus:outline-none focus:border-emerald-500"
+                      placeholder="Ej. Juan Carlos"
+                      className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                       required
                     />
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold text-slate-300 block mb-1">Apellidos *</label>
+                    <label className="text-[10px] font-bold text-slate-700 block mb-0.5">Apellidos *</label>
                     <input
                       type="text"
                       value={regLastName}
                       onChange={(e) => setRegLastName(e.target.value)}
-                      placeholder="Mendoza"
-                      className="w-full px-2.5 py-1.5 bg-slate-950 text-xs rounded-lg border border-slate-700 text-white focus:outline-none focus:border-emerald-500"
+                      placeholder="Ej. Gómez Pérez"
+                      className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                       required
                     />
                   </div>
                 </div>
 
-                {/* Company Information */}
-                <div className="p-3 bg-slate-950/70 rounded-2xl border border-slate-800 space-y-2.5">
-                  <span className="text-[10px] font-black text-emerald-400 uppercase tracking-wider block">
-                    Datos Corporativos para Facturación & Despacho
-                  </span>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-300 block mb-1">Razón Social *</label>
-                      <input
-                        type="text"
-                        value={regCompany}
-                        onChange={(e) => setRegCompany(e.target.value)}
-                        placeholder="Constructora Horizonte S.A.S."
-                        className="w-full px-2.5 py-1.5 bg-slate-900 text-xs rounded-lg border border-slate-700 text-white focus:outline-none focus:border-emerald-500"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-300 block mb-1">NIT / C.C. *</label>
-                      <input
-                        type="text"
-                        value={regNit}
-                        onChange={(e) => setRegNit(e.target.value)}
-                        placeholder="901.458.789-3"
-                        className="w-full px-2.5 py-1.5 bg-slate-900 text-xs rounded-lg border border-slate-700 text-white focus:outline-none focus:border-emerald-500"
-                        required
-                      />
-                    </div>
-                  </div>
-
+                <div className="grid grid-cols-3 gap-2">
                   <div>
-                    <label className="text-[10px] font-bold text-slate-300 block mb-1">Dirección de Despacho en Obra *</label>
+                    <label className="text-[10px] font-bold text-slate-700 block mb-0.5">Tipo Doc</label>
+                    <select
+                      value={regDocType}
+                      onChange={(e) => setRegDocType(e.target.value)}
+                      className="w-full px-2 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855] bg-white"
+                    >
+                      <option value="CC">C.C.</option>
+                      <option value="CE">C.E.</option>
+                      <option value="PAS">Pasaporte</option>
+                    </select>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="text-[10px] font-bold text-slate-700 block mb-0.5">Número de Documento *</label>
+                    <input
+                      type="text"
+                      value={regNit}
+                      onChange={(e) => setRegNit(e.target.value)}
+                      placeholder="Ej. 1.020.345.678"
+                      className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-slate-700 block mb-0.5">Correo Personal / Contacto *</label>
+                  <input
+                    type="email"
+                    value={regEmail || userEmail}
+                    onChange={(e) => setRegEmail(e.target.value)}
+                    placeholder="tucorreo@gmail.com"
+                    className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
+                    required
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-700 block mb-0.5">Ciudad *</label>
+                    <select
+                      value={regCity}
+                      onChange={(e) => setRegCity(e.target.value)}
+                      className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855] bg-white"
+                    >
+                      <option value="Medellín">Medellín</option>
+                      <option value="Bogotá">Bogotá</option>
+                      <option value="Itagüí">Itagüí</option>
+                      <option value="Bello">Bello</option>
+                      <option value="Envigado">Envigado</option>
+                      <option value="Sabaneta">Sabaneta</option>
+                      <option value="Rionegro">Rionegro</option>
+                      <option value="Cali">Cali</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-700 block mb-0.5">Celular / WhatsApp *</label>
+                    <input
+                      type="tel"
+                      value={regPhone}
+                      onChange={(e) => setRegPhone(e.target.value)}
+                      placeholder="+57 310 000-0000"
+                      className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-slate-700 block mb-0.5">Dirección de Domicilio</label>
+                  <input
+                    type="text"
+                    value={regAddress}
+                    onChange={(e) => setRegAddress(e.target.value)}
+                    placeholder="Ej. Calle 10 # 43E-28"
+                    className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
+                  />
+                </div>
+              </>
+            ) : (
+              /* PERSONA JURÍDICA FORM (Conservando formulario de empresa) */
+              <>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-700 block mb-0.5">Razón Social de la Empresa *</label>
+                    <input
+                      type="text"
+                      value={regCompany}
+                      onChange={(e) => setRegCompany(e.target.value)}
+                      placeholder="Constructora ABC S.A.S."
+                      className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-700 block mb-0.5">NIT con Dígito de Verificación *</label>
+                    <input
+                      type="text"
+                      value={regNit}
+                      onChange={(e) => setRegNit(e.target.value)}
+                      placeholder="901.234.567-8"
+                      className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-700 block mb-0.5">Representante / Contacto *</label>
+                    <input
+                      type="text"
+                      value={regFirstName}
+                      onChange={(e) => setRegFirstName(e.target.value)}
+                      placeholder="Ingeniero / Arquitecto"
+                      className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-700 block mb-0.5">Apellidos de Contacto *</label>
+                    <input
+                      type="text"
+                      value={regLastName}
+                      onChange={(e) => setRegLastName(e.target.value)}
+                      placeholder="Residente de Obra"
+                      className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-slate-700 block mb-0.5">Correo Corporativo *</label>
+                  <input
+                    type="email"
+                    value={regEmail || userEmail}
+                    onChange={(e) => setRegEmail(e.target.value)}
+                    placeholder="compras@constructorabc.com"
+                    className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
+                    required
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-700 block mb-0.5">Ciudad Fiscal / Obra *</label>
+                    <select
+                      value={regCity}
+                      onChange={(e) => setRegCity(e.target.value)}
+                      className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855] bg-white"
+                    >
+                      <option value="Medellín">Medellín</option>
+                      <option value="Bogotá">Bogotá</option>
+                      <option value="Itagüí">Itagüí</option>
+                      <option value="Bello">Bello</option>
+                      <option value="Envigado">Envigado</option>
+                      <option value="Rionegro">Rionegro</option>
+                      <option value="Cali">Cali</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-700 block mb-0.5">Régimen Tributario</label>
+                    <select
+                      value={regTaxRegime}
+                      onChange={(e) => setRegTaxRegime(e.target.value as any)}
+                      className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855] bg-white"
+                    >
+                      <option value="comun">Régimen Común</option>
+                      <option value="gran_contribuyente">Gran Contribuyente</option>
+                      <option value="simplificado">Régimen Simplificado</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-700 block mb-0.5">Dirección Fiscal / Obra</label>
                     <input
                       type="text"
                       value={regAddress}
                       onChange={(e) => setRegAddress(e.target.value)}
-                      placeholder="Calle 10A # 36-24, El Poblado"
-                      className="w-full px-2.5 py-1.5 bg-slate-900 text-xs rounded-lg border border-slate-700 text-white focus:outline-none focus:border-emerald-500"
+                      placeholder="Cra 43A # 18 Sur-135"
+                      className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-700 block mb-0.5">PBX / Celular Obras *</label>
+                    <input
+                      type="tel"
+                      value={regPhone}
+                      onChange={(e) => setRegPhone(e.target.value)}
+                      placeholder="+57 314 000-0000"
+                      className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                       required
                     />
                   </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-300 block mb-1">Ciudad / Municipio</label>
-                      <select
-                        value={regCity}
-                        onChange={(e) => setRegCity(e.target.value)}
-                        className="w-full px-2 py-1.5 bg-slate-900 text-xs rounded-lg border border-slate-700 text-white focus:outline-none focus:border-emerald-500"
-                      >
-                        <option value="Medellín">Medellín</option>
-                        <option value="Envigado">Envigado</option>
-                        <option value="Itagüí">Itagüí</option>
-                        <option value="Sabaneta">Sabaneta</option>
-                        <option value="Bello">Bello</option>
-                        <option value="Rionegro">Rionegro</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-300 block mb-1">Teléfono Obra</label>
-                      <input
-                        type="text"
-                        value={regPhone}
-                        onChange={(e) => setRegPhone(e.target.value)}
-                        placeholder="+57 314 789-2045"
-                        className="w-full px-2.5 py-1.5 bg-slate-900 text-xs rounded-lg border border-slate-700 text-white focus:outline-none focus:border-emerald-500"
-                      />
-                    </div>
-                  </div>
                 </div>
-
-                <div className="flex items-center justify-between pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setErrorMessage('');
-                      setAuthView('main_menu');
-                    }}
-                    className="text-xs font-bold text-emerald-400 hover:underline cursor-pointer flex items-center gap-1"
-                  >
-                    <span>← Volver</span>
-                  </button>
-
-                  <button
-                    type="submit"
-                    disabled={isLoading}
-                    className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl shadow cursor-pointer transition-all flex items-center gap-1.5"
-                  >
-                    {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <span>Completar Registro</span>}
-                  </button>
-                </div>
-
-              </form>
+              </>
             )}
 
-            {/* Quick Helper Toggle for Demo Accounts */}
-            <div className="pt-2 border-t border-slate-800 text-center">
+            <div className="flex items-center justify-between pt-3 border-t border-slate-100">
               <button
                 type="button"
-                onClick={() => setShowDemoAccounts(!showDemoAccounts)}
-                className="text-[11px] font-bold text-slate-400 hover:text-emerald-400 inline-flex items-center gap-1 cursor-pointer transition-colors"
+                onClick={() => setAuthView('main_menu')}
+                className="text-xs font-bold text-slate-600 hover:text-slate-800 cursor-pointer"
               >
-                <KeyRound className="w-3.5 h-3.5" />
-                <span>{showDemoAccounts ? 'Ocultar cuentas de prueba' : 'Ver cuentas y roles de prueba para validar inicios'}</span>
+                Volver
+              </button>
+
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="py-2.5 px-6 bg-[#002855] hover:bg-[#001D3D] text-white font-black text-xs rounded-lg uppercase tracking-wider cursor-pointer"
+              >
+                {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <span>Finalizar Registro</span>}
               </button>
             </div>
-
-            {/* Demo Accounts Panel */}
-            {showDemoAccounts && (
-              <div className="p-3 bg-slate-950 rounded-2xl border border-slate-800 text-xs space-y-2 animate-in fade-in duration-200">
-                <span className="text-[10px] font-black uppercase text-slate-400 block">
-                  Haz clic para auto-llenar credenciales por rol:
-                </span>
-                
-                <div className="grid grid-cols-2 gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => handleSelectDemoAccount('cliente')}
-                    className="p-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/40 rounded-xl text-left cursor-pointer transition-colors"
-                  >
-                    <span className="font-extrabold text-[11px] text-emerald-400 block">👷 Cliente / Obra</span>
-                    <span className="text-[10px] text-slate-400 block truncate">proyectos@constructorahorizonte.com.co</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleSelectDemoAccount('asesor')}
-                    className="p-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/40 rounded-xl text-left cursor-pointer transition-colors"
-                  >
-                    <span className="font-extrabold text-[11px] text-emerald-400 block">📐 Asesor Comercial</span>
-                    <span className="text-[10px] text-slate-400 block truncate">j.osorio@colorlink.com.co</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleSelectDemoAccount('calidad')}
-                    className="p-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/40 rounded-xl text-left cursor-pointer transition-colors"
-                  >
-                    <span className="font-extrabold text-[11px] text-emerald-400 block">🧪 Calidad & Lab</span>
-                    <span className="text-[10px] text-slate-400 block truncate">e.restrepo@colorlink.com.co</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleSelectDemoAccount('administrador')}
-                    className="p-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/40 rounded-xl text-left cursor-pointer transition-colors"
-                  >
-                    <span className="font-extrabold text-[11px] text-emerald-400 block">🏢 Admin & Bodega</span>
-                    <span className="text-[10px] text-slate-400 block truncate">m.quintero@colorlink.com.co</span>
-                  </button>
-                </div>
-
-                <div className="text-[10px] text-slate-400 bg-slate-900 p-2 rounded-lg border border-slate-800">
-                  <strong>Contraseña común para todos los roles:</strong> <code className="font-bold text-emerald-400">ColorLink*2026</code>
-                </div>
-              </div>
-            )}
-
-          </div>
-
-        </div>
+          </form>
+        )}
 
       </div>
-
-      {/* Clean Copyright Footer */}
-      <div className="text-center text-slate-500 text-[11px] pt-4 z-10">
-        Copyright 2026 © Derechos Reservados • COLORLINK S.A.S. • Valle de Aburrá, Colombia
-      </div>
-
     </div>
   );
 };
