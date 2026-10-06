@@ -1273,8 +1273,8 @@ async function startServer() {
   // REVISIÓN DE IMAGEN DEL PROYECTO (asesor <-> cliente)
   // ----------------------------------------------------------------
 
-  // El asesor pide al cliente cambiar la foto (no corresponde al proyecto, está borrosa, etc.)
-  app.patch('/api/projects/:id/request-image-change', requireAuth, requireRole('asesor', 'administrador'), async (req: any, res) => {
+  // El asesor o el perito piden al cliente cambiar la foto (no corresponde al proyecto, está borrosa, etc.)
+  app.patch('/api/projects/:id/request-image-change', requireAuth, requireRole('asesor', 'calidad', 'administrador'), async (req: any, res) => {
     try {
       const motivo = String(req.body.motivo || '').trim();
       if (motivo.length < 5) {
