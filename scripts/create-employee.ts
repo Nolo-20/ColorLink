@@ -11,7 +11,7 @@ async function main() {
   const email = await ask('Email del empleado: ');
   const nombre = await ask('Nombre: ');
   const apellido = await ask('Apellido: ');
-  const rolNombre = await ask('Rol (asesor / calidad / administrador): ');
+  const rolNombre = await ask('Rol (asesor / calidad / despachos / administrador): ');
   const password = await ask('Contraseña temporal: ');
 
   const rol = await prisma.rol.findFirst({ where: { rol: rolNombre.trim() } });

@@ -26,6 +26,29 @@ const cookieOptions = {
   maxAge: 7 * 24 * 60 * 60 * 1000 // 7 días
 };
 
+// Roles internos (empleados) y estados válidos de un proyecto
+const STAFF_ROLES = ['asesor', 'calidad', 'despachos', 'administrador'];
+const ESTADOS_PROYECTO = [
+  'en_revision', 'imagen_por_corregir', 'en_peritaje', 'cotizado',
+  'aprobado_calidad', 'rechazado', 'despachado', 'cancelado'
+];
+
+// Estados que un asesor puede fijar a mano; aprobar/rechazar/despachar tienen su propio flujo
+const ESTADOS_EDITABLES_ASESOR = ['en_revision', 'en_peritaje', 'cotizado', 'cancelado'];
+
+// Todo lo que el ERP necesita ver de un proyecto (sin el binario de la foto)
+const PROYECTO_STAFF_INCLUDE = {
+  evidencias: { select: { evidenciaId: true, nombreArchivo: true, fechaRegistro: true }, orderBy: { fechaRegistro: 'desc' } },
+  diagnostico: true,
+  cotizaciones: { orderBy: { createdAt: 'desc' }, include: { items: { include: { producto: true } } } },
+  empresa: { include: { ciudad: true } },
+  usuario: { select: { usuarioId: true, nombre: true, apellido: true, email: true, telefono: true, company: true, documentId: true } },
+  asesorAsignado: { select: { usuarioId: true, nombre: true, apellido: true, email: true } },
+  peritoAsignado: { select: { usuarioId: true, nombre: true, apellido: true, email: true } },
+  historial: { orderBy: { fecha: 'desc' } },
+  despacho: true
+} as const;
+
 function issueSessionToken(user: { usuarioId: string; email: string; rol: { rol: string } }) {
   return jwt.sign(
     { id: user.usuarioId, email: user.email, role: user.rol.rol },
@@ -287,15 +310,31 @@ async function startServer() {
   });
 
   // ---------- Middleware de autenticación ----------
-  function requireAuth(req: any, res: any, next: any) {
+  async function requireAuth(req: any, res: any, next: any) {
     const token = req.cookies?.session;
     if (!token) return res.status(401).json({ success: false, error: 'No autenticado' });
     try {
       req.user = jwt.verify(token, JWT_SECRET);
-      next();
     } catch {
       return res.status(401).json({ success: false, error: 'Sesión inválida o expirada' });
     }
+
+    // Un empleado desactivado pierde el acceso al instante, aunque su sesión (7 días) siga vigente.
+    if (STAFF_ROLES.includes(req.user.role)) {
+      try {
+        const u = await prisma.usuario.findUnique({ where: { usuarioId: req.user.id }, select: { activo: true, nombre: true, apellido: true, rol: { select: { rol: true } } } });
+        if (!u || u.activo === false) {
+          res.clearCookie('session');
+          return res.status(401).json({ success: false, error: 'Tu cuenta está desactivada. Contacta al administrador.' });
+        }
+        req.user.role = u.rol.rol; // el rol vigente en la BD manda sobre el que quedó en la cookie
+        req.user.name = `${u.nombre} ${u.apellido || ''}`.trim();
+      } catch (e) {
+        console.error('[requireAuth]', e);
+        return res.status(500).json({ success: false, error: 'No se pudo validar la sesión' });
+      }
+    }
+    next();
   }
 
   function requireRole(...roles: string[]) {
@@ -305,6 +344,16 @@ async function startServer() {
       }
       next();
     };
+  }
+
+  // Foto fija de quién ejecutó una acción (nombre y rol), para la trazabilidad
+  async function actorSnapshot(user: any) {
+    let nombre: string | undefined = user.name;
+    if (!nombre) {
+      const u = await prisma.usuario.findUnique({ where: { usuarioId: user.id }, select: { nombre: true, apellido: true } });
+      nombre = u ? `${u.nombre} ${u.apellido || ''}`.trim() : user.email;
+    }
+    return { usuarioId: user.id as string, usuarioNombre: nombre as string, rolNombre: user.role as string };
   }
 
   // ================================================================
@@ -376,6 +425,9 @@ async function startServer() {
       });
 
       if (existingUser) {
+        if (existingUser.activo === false) {
+          return res.status(403).json({ success: false, error: 'Tu cuenta está desactivada. Contacta al administrador.' });
+        }
         const token = issueSessionToken(existingUser);
         res.cookie('session', token, cookieOptions);
         return res.json({ success: true, isRegistered: true, user: safeUser(existingUser) });
@@ -498,6 +550,9 @@ async function startServer() {
       const matches = await bcrypt.compare(password, user.passwordHash);
       if (!matches) {
         return res.status(401).json({ success: false, error: 'Contraseña incorrecta' });
+      }
+      if (user.activo === false) {
+        return res.status(403).json({ success: false, error: 'Tu cuenta está desactivada. Contacta al administrador.' });
       }
 
       const token = issueSessionToken(user);
@@ -708,7 +763,7 @@ async function startServer() {
   // 12. Estadísticas reales del dashboard, según el rol
   app.get('/api/dashboard/stats', requireAuth, async (req: any, res) => {
     try {
-      const isStaff = ['asesor', 'calidad', 'administrador'].includes(req.user.role);
+      const isStaff = STAFF_ROLES.includes(req.user.role);
       const whereClause = isStaff ? {} : { usuarioId: req.user.id };
 
       const proyectos = await prisma.proyecto.findMany({
@@ -869,12 +924,55 @@ async function startServer() {
     return empresa;
   }
 
+  // Valida una imagen enviada como data URI (png/jpg/webp, máx. 8 MB) y la deja lista para guardar
+  function parseImageDataUri(raw: any): { dataUri: string; tamanoMb: number; ext: string } | null {
+    if (typeof raw !== 'string' || raw.length > 11_500_000) return null;
+    const m = raw.match(/^data:image\/(png|jpe?g|webp);base64,([A-Za-z0-9+/=]+)$/);
+    if (!m) return null;
+    const bytes = Math.floor((m[2].length * 3) / 4);
+    if (bytes > 8 * 1024 * 1024) return null;
+    return { dataUri: raw, tamanoMb: Number((bytes / 1024 / 1024).toFixed(2)), ext: m[1] === 'jpeg' ? 'jpg' : m[1] };
+  }
+
+  async function sendImageChangeRequestEmail(email: string, nombreProyecto: string, proyectoId: string, motivo: string) {
+    if (!process.env.SMTP_HOST) {
+      console.warn(`[EMAIL] SMTP no configurado. Cambio de imagen solicitado para ${email}: ${motivo}`);
+      return;
+    }
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM || '"ColorLink" <no-reply@colorlink.com>',
+      to: email,
+      subject: `Necesitamos una nueva foto para tu proyecto "${nombreProyecto}"`,
+      html: `
+    <div style="font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #f1f5f9;">
+      <div style="background: #0A1A36; padding: 24px 32px; border-radius: 12px 12px 0 0;">
+        <span style="font-size: 20px; font-weight: 900; color: #ffffff;">COLOR<span style="color: #10B981;">LINK</span></span>
+      </div>
+      <div style="background: #ffffff; padding: 32px; border-radius: 0 0 12px 12px;">
+        <span style="display:inline-block; background:#fee2e2; color:#991b1b; font-size:11px; font-weight:800; padding:4px 10px; border-radius:999px; text-transform:uppercase;">
+          Acción requerida
+        </span>
+        <h2 style="color: #0A1A36; margin: 14px 0 6px;">${escapeHtml(nombreProyecto)}</h2>
+        <p style="color: #475569; font-size: 14px; line-height: 1.6;">
+          Revisamos tu proyecto (código <strong>#${proyectoId.slice(0, 8).toUpperCase()}</strong>) y necesitamos que cambies la imagen para poder continuar con la cotización.
+        </p>
+        <div style="background:#fef2f2; border-left:4px solid #ef4444; padding:12px 16px; border-radius:6px; margin:16px 0;">
+          <p style="margin:0; color:#7f1d1d; font-size:13px;"><strong>Motivo:</strong> ${escapeHtml(motivo)}</p>
+        </div>
+        <a href="${process.env.APP_URL || ''}" style="display:inline-block; background:#10B981; color:#031018; font-weight:800; font-size:13px; padding:12px 24px; border-radius:10px; text-decoration:none; margin-top:8px;">
+          Ingresar y subir nueva foto
+        </a>
+      </div>
+    </div>`
+    });
+  }
+
   async function sendProjectCreatedEmail(email: string, nombreProyecto: string, proyectoId: string) {
     if (!process.env.SMTP_HOST) return;
     await transporter.sendMail({
       from: process.env.SMTP_FROM || '"ColorLink" <no-reply@colorlink.com>',
       to: email,
-      subject: `Tu proyecto "${nombreProyecto}" fue recibido`,
+      subject: `Tu proyecto "${String(nombreProyecto).replace(/[\r\n]/g, ' ')}" fue recibido`,
       html: `
     <div style="font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #f1f5f9;">
       <div style="background: #0A1A36; padding: 24px 32px; border-radius: 12px 12px 0 0;">
@@ -884,7 +982,7 @@ async function startServer() {
         <span style="display:inline-block; background:#fef3c7; color:#92400e; font-size:11px; font-weight:800; padding:4px 10px; border-radius:999px; text-transform:uppercase;">
           En revisión
         </span>
-        <h2 style="color: #0A1A36; margin: 14px 0 6px;">${nombreProyecto}</h2>
+        <h2 style="color: #0A1A36; margin: 14px 0 6px;">${escapeHtml(nombreProyecto)}</h2>
         <p style="color: #475569; font-size: 14px; line-height: 1.6;">
           Recibimos tu proyecto (código <strong>#${proyectoId.slice(0, 8).toUpperCase()}</strong>) y ya está en revisión por nuestro equipo técnico. Te avisaremos por aquí cuando cambie de estado.
         </p>
@@ -899,9 +997,11 @@ async function startServer() {
       const proyectos = await prisma.proyecto.findMany({
         where: { usuarioId: req.user.id },
         include: {
+          evidencias: { select: { evidenciaId: true, nombreArchivo: true, fechaRegistro: true }, orderBy: { fechaRegistro: 'desc' } },
           diagnostico: true,
           cotizaciones: { orderBy: { createdAt: 'desc' } },
-          empresa: { include: { ciudad: true } }
+          empresa: { include: { ciudad: true } },
+          historial: { orderBy: { fecha: 'desc' } }
         },
         orderBy: { updatedAt: 'desc' }
       });
@@ -920,14 +1020,24 @@ async function startServer() {
         cunetes5g, galones1g, subtotal, iva, total,
         // Campos opcionales del diagnóstico de IA (Gemini), si el wizard completo lo generó
         diagnosticoPatologia, severidad, sistemaRecomendado, manoRecomendada,
-        rendimientoEstimado, confianzaIaPct, requiereVisitaHumana
+        rendimientoEstimado, confianzaIaPct, requiereVisitaHumana,
+        imageBase64
       } = req.body;
 
       if (!nombreProyecto) {
         return res.status(400).json({ success: false, error: 'El nombre del proyecto es requerido' });
       }
 
+      let foto: ReturnType<typeof parseImageDataUri> = null;
+      if (imageBase64) {
+        foto = parseImageDataUri(imageBase64);
+        if (!foto) {
+          return res.status(400).json({ success: false, error: 'La imagen debe ser PNG, JPG o WEBP de máximo 8 MB.' });
+        }
+      }
+
       const empresa = await findOrCreateEmpresaForUser(req.user.id, ciudad);
+      const actor = await actorSnapshot(req.user);
 
       const tieneDiagnostico = diagnosticoPatologia != null;
 
@@ -942,7 +1052,18 @@ async function startServer() {
           color: color || null,
           colorHex: colorHex || null,
           canalOrigen: 'web_portal',
-          estadoPipeline: 'cotizado',
+          estadoPipeline: 'en_revision',
+          evidencias: foto ? {
+            create: { urlAlmacenado: foto.dataUri, nombreArchivo: `foto-proyecto.${foto.ext}`, tamanoMb: foto.tamanoMb }
+          } : undefined,
+          historial: {
+            create: {
+              estadoAnterior: null,
+              estadoNuevo: 'en_revision',
+              comentario: foto ? 'Proyecto registrado por el cliente con imagen adjunta.' : 'Proyecto registrado por el cliente.',
+              ...actor
+            }
+          },
           cotizaciones: (cunetes5g != null || total != null) ? {
             create: {
               galonesExactos: null,
@@ -982,14 +1103,7 @@ async function startServer() {
   app.get('/api/projects/all', requireAuth, requireRole('asesor', 'calidad', 'administrador'), async (req: any, res) => {
     try {
       const proyectos = await prisma.proyecto.findMany({
-        include: {
-          diagnostico: true,
-          cotizaciones: { orderBy: { createdAt: 'desc' } },
-          empresa: { include: { ciudad: true } },
-          usuario: { select: { nombre: true, apellido: true, email: true, telefono: true } },
-          asesorAsignado: { select: { usuarioId: true, nombre: true, apellido: true, email: true } },
-          peritoAsignado: { select: { usuarioId: true, nombre: true, apellido: true, email: true } }
-        },
+        include: PROYECTO_STAFF_INCLUDE,
         orderBy: { updatedAt: 'desc' }
       });
       res.json({ success: true, projects: proyectos });
@@ -1003,14 +1117,39 @@ async function startServer() {
   // Acceso libre: cualquier asesor puede editar cualquier proyecto; el primero que lo toca queda auto-asignado.
   app.patch('/api/projects/:id', requireAuth, requireRole('asesor', 'administrador'), async (req: any, res) => {
     try {
-      const { area, acabado, descuentoAsesorPct, observacionesAsesor, estadoPipeline } = req.body;
+      const { area, acabado, descuentoAsesorPct, observacionesAsesor, estadoPipeline, comentario: nota } = req.body;
+
+      if (estadoPipeline) {
+        if (!ESTADOS_PROYECTO.includes(estadoPipeline)) {
+          return res.status(400).json({ success: false, error: `Estado inválido. Usa uno de: ${ESTADOS_PROYECTO.join(', ')}` });
+        }
+        if (req.user.role !== 'administrador' && !ESTADOS_EDITABLES_ASESOR.includes(estadoPipeline)) {
+          return res.status(403).json({ success: false, error: 'Ese estado lo define Calidad o Despachos, no el asesor.' });
+        }
+      }
 
       const proyectoActual = await prisma.proyecto.findUnique({ where: { proyectoId: req.params.id } });
       if (!proyectoActual) return res.status(404).json({ success: false, error: 'Proyecto no encontrado' });
+      if (['despachado', 'cancelado'].includes(proyectoActual.estadoPipeline || '')) {
+        return res.status(400).json({ success: false, error: 'Este proyecto ya está cerrado y no se puede modificar.' });
+      }
 
       // Auto-asignación (reclamo): si nadie lo ha tomado todavía y quien edita es un asesor, queda asignado a él.
       const asesorAsignadoIdFinal = proyectoActual.asesorAsignadoId
         || (req.user.role === 'asesor' ? req.user.id : proyectoActual.asesorAsignadoId);
+
+      const cambios: string[] = [];
+      if (area != null) cambios.push(`área ${Number(area)} m²`);
+      if (acabado) cambios.push(`acabado ${acabado}`);
+      if (descuentoAsesorPct != null) cambios.push(`descuento ${Number(descuentoAsesorPct)}%`);
+      if (observacionesAsesor != null) cambios.push('observaciones del asesor');
+      const cambiaEstado = !!estadoPipeline && estadoPipeline !== proyectoActual.estadoPipeline;
+      const comentario = [
+        cambiaEstado ? `Cambio de estado a ${estadoPipeline}` : null,
+        cambios.length ? `Ajustes: ${cambios.join(', ')}` : null,
+        nota ? String(nota).trim() : null
+      ].filter(Boolean).join('. ');
+      const actor = await actorSnapshot(req.user);
 
       const updated = await prisma.proyecto.update({
         where: { proyectoId: req.params.id },
@@ -1020,15 +1159,17 @@ async function startServer() {
           descuentoAsesorPct: descuentoAsesorPct != null ? Number(descuentoAsesorPct) : undefined,
           observacionesAsesor: observacionesAsesor ?? undefined,
           estadoPipeline: estadoPipeline || undefined,
-          asesorAsignadoId: asesorAsignadoIdFinal
+          asesorAsignadoId: asesorAsignadoIdFinal,
+          historial: comentario ? {
+            create: {
+              estadoAnterior: proyectoActual.estadoPipeline,
+              estadoNuevo: estadoPipeline || proyectoActual.estadoPipeline || 'en_revision',
+              comentario,
+              ...actor
+            }
+          } : undefined
         },
-        include: {
-          diagnostico: true,
-          cotizaciones: true,
-          empresa: { include: { ciudad: true } },
-          asesorAsignado: { select: { usuarioId: true, nombre: true, apellido: true, email: true } },
-          peritoAsignado: { select: { usuarioId: true, nombre: true, apellido: true, email: true } }
-        }
+        include: PROYECTO_STAFF_INCLUDE
       });
 
       res.json({ success: true, project: updated });
@@ -1041,28 +1182,38 @@ async function startServer() {
   // Reasignar/escalar un proyecto a otro asesor o responsable de calidad con más experiencia en el tema
   app.patch('/api/projects/:id/reassign', requireAuth, requireRole('asesor', 'calidad', 'administrador'), async (req: any, res) => {
     try {
-      const { role, nuevoUsuarioId } = req.body; // role: 'asesor' | 'calidad'
+      const { role, nuevoUsuarioId, motivo } = req.body; // role: 'asesor' | 'calidad'
       if (!['asesor', 'calidad'].includes(role) || !nuevoUsuarioId) {
         return res.status(400).json({ success: false, error: 'Datos de reasignación inválidos' });
       }
 
       const nuevoUsuario = await prisma.usuario.findUnique({ where: { usuarioId: nuevoUsuarioId }, include: { rol: true } });
-      if (!nuevoUsuario || nuevoUsuario.rol.rol !== role) {
-        return res.status(400).json({ success: false, error: `El usuario indicado no tiene el rol "${role}"` });
+      if (!nuevoUsuario || nuevoUsuario.rol.rol !== role || nuevoUsuario.activo === false) {
+        return res.status(400).json({ success: false, error: `El usuario indicado no es un "${role}" activo` });
       }
+
+      const proyectoActual = await prisma.proyecto.findUnique({ where: { proyectoId: req.params.id } });
+      if (!proyectoActual) return res.status(404).json({ success: false, error: 'Proyecto no encontrado' });
+      if (['despachado', 'cancelado'].includes(proyectoActual.estadoPipeline || '')) {
+        return res.status(400).json({ success: false, error: 'Este proyecto ya está cerrado.' });
+      }
+
+      // Escalar a calidad pone el proyecto en peritaje (salvo que ya esté aprobado)
+      const pasaAPeritaje = role === 'calidad'
+        && ['en_revision', 'cotizado', 'en_peritaje', 'rechazado'].includes(proyectoActual.estadoPipeline || '');
+      const estadoNuevo = pasaAPeritaje ? 'en_peritaje' : (proyectoActual.estadoPipeline || 'en_revision');
+      const actor = await actorSnapshot(req.user);
+      const quien = `${nuevoUsuario.nombre} ${nuevoUsuario.apellido || ''}`.trim();
+      const comentario = `${role === 'asesor' ? 'Escalado a asesor' : 'Enviado a peritaje con'} ${quien}.${motivo ? ' Motivo: ' + String(motivo).trim() : ''}`;
 
       const updated = await prisma.proyecto.update({
         where: { proyectoId: req.params.id },
-        data: role === 'asesor'
-          ? { asesorAsignadoId: nuevoUsuarioId }
-          : { peritoAsignadoId: nuevoUsuarioId },
-        include: {
-          diagnostico: true,
-          cotizaciones: true,
-          empresa: { include: { ciudad: true } },
-          asesorAsignado: { select: { usuarioId: true, nombre: true, apellido: true, email: true } },
-          peritoAsignado: { select: { usuarioId: true, nombre: true, apellido: true, email: true } }
-        }
+        data: {
+          ...(role === 'asesor' ? { asesorAsignadoId: nuevoUsuarioId } : { peritoAsignadoId: nuevoUsuarioId }),
+          estadoPipeline: estadoNuevo,
+          historial: { create: { estadoAnterior: proyectoActual.estadoPipeline, estadoNuevo, comentario, ...actor } }
+        },
+        include: PROYECTO_STAFF_INCLUDE
       });
 
       res.json({ success: true, project: updated });
@@ -1087,6 +1238,253 @@ async function startServer() {
     }
   });
 
+  // ----------------------------------------------------------------
+  // REVISIÓN DE IMAGEN DEL PROYECTO (asesor <-> cliente)
+  // ----------------------------------------------------------------
+
+  // El asesor pide al cliente cambiar la foto (no corresponde al proyecto, está borrosa, etc.)
+  app.patch('/api/projects/:id/request-image-change', requireAuth, requireRole('asesor', 'administrador'), async (req: any, res) => {
+    try {
+      const motivo = String(req.body.motivo || '').trim();
+      if (motivo.length < 5) {
+        return res.status(400).json({ success: false, error: 'Escribe el motivo (mínimo 5 caracteres) para que el cliente sepa qué corregir.' });
+      }
+
+      const proyecto = await prisma.proyecto.findUnique({
+        where: { proyectoId: req.params.id },
+        include: { usuario: { select: { email: true } } }
+      });
+      if (!proyecto) return res.status(404).json({ success: false, error: 'Proyecto no encontrado' });
+      if (['despachado', 'cancelado', 'aprobado_calidad'].includes(proyecto.estadoPipeline || '')) {
+        return res.status(400).json({ success: false, error: 'Este proyecto ya avanzó y no admite cambio de imagen.' });
+      }
+
+      const actor = await actorSnapshot(req.user);
+      const updated = await prisma.proyecto.update({
+        where: { proyectoId: req.params.id },
+        data: {
+          estadoPipeline: 'imagen_por_corregir',
+          observacionImagen: motivo,
+          asesorAsignadoId: proyecto.asesorAsignadoId || (req.user.role === 'asesor' ? req.user.id : undefined),
+          historial: {
+            create: {
+              estadoAnterior: proyecto.estadoPipeline,
+              estadoNuevo: 'imagen_por_corregir',
+              comentario: `Se pidió al cliente cambiar la imagen. Motivo: ${motivo}`,
+              ...actor
+            }
+          }
+        },
+        include: PROYECTO_STAFF_INCLUDE
+      });
+
+      sendImageChangeRequestEmail(proyecto.usuario.email, proyecto.nombreProyecto, proyecto.proyectoId, motivo)
+        .catch(err => console.error('[image-change-email]', err));
+
+      res.json({ success: true, project: updated });
+    } catch (error: any) {
+      console.error('[request-image-change]', error);
+      res.status(400).json({ success: false, error: 'No se pudo solicitar el cambio de imagen' });
+    }
+  });
+
+  // Imagen más reciente del proyecto: la ve el dueño o cualquier empleado
+  app.get('/api/projects/:id/evidence', requireAuth, async (req: any, res) => {
+    try {
+      const proyecto = await prisma.proyecto.findUnique({ where: { proyectoId: req.params.id }, select: { usuarioId: true } });
+      const esStaff = STAFF_ROLES.includes(req.user.role);
+      if (!proyecto || (!esStaff && proyecto.usuarioId !== req.user.id)) {
+        return res.status(404).json({ success: false, error: 'Proyecto no encontrado' });
+      }
+      const ev = await prisma.evidenciaFoto.findFirst({
+        where: { proyectoId: req.params.id },
+        orderBy: { fechaRegistro: 'desc' }
+      });
+      if (!ev) return res.status(404).json({ success: false, error: 'Este proyecto no tiene imagen.' });
+
+      res.json({
+        success: true,
+        evidence: { evidenciaId: ev.evidenciaId, nombreArchivo: ev.nombreArchivo, fechaRegistro: ev.fechaRegistro, imageDataUri: ev.urlAlmacenado }
+      });
+    } catch (error: any) {
+      console.error('[get-evidence]', error);
+      res.status(500).json({ success: false, error: 'No se pudo cargar la imagen' });
+    }
+  });
+
+  // El cliente sube la imagen corregida: el proyecto vuelve a "en revisión"
+  app.patch('/api/projects/:id/image', requireAuth, async (req: any, res) => {
+    try {
+      const foto = parseImageDataUri(req.body.imageBase64);
+      if (!foto) {
+        return res.status(400).json({ success: false, error: 'La imagen debe ser PNG, JPG o WEBP de máximo 8 MB.' });
+      }
+
+      const proyecto = await prisma.proyecto.findUnique({ where: { proyectoId: req.params.id } });
+      if (!proyecto || proyecto.usuarioId !== req.user.id) {
+        return res.status(404).json({ success: false, error: 'Proyecto no encontrado' });
+      }
+      if (proyecto.estadoPipeline !== 'imagen_por_corregir') {
+        return res.status(400).json({ success: false, error: 'Este proyecto no tiene una solicitud de cambio de imagen pendiente.' });
+      }
+
+      const actor = await actorSnapshot(req.user);
+      const updated = await prisma.proyecto.update({
+        where: { proyectoId: req.params.id },
+        data: {
+          estadoPipeline: 'en_revision',
+          observacionImagen: null,
+          evidencias: { create: { urlAlmacenado: foto.dataUri, nombreArchivo: `foto-proyecto.${foto.ext}`, tamanoMb: foto.tamanoMb } },
+          historial: {
+            create: {
+              estadoAnterior: 'imagen_por_corregir',
+              estadoNuevo: 'en_revision',
+              comentario: 'El cliente subió una nueva imagen.',
+              ...actor
+            }
+          }
+        },
+        include: {
+          evidencias: { select: { evidenciaId: true, nombreArchivo: true, fechaRegistro: true }, orderBy: { fechaRegistro: 'desc' } },
+          diagnostico: true,
+          cotizaciones: true,
+          empresa: { include: { ciudad: true } },
+          historial: { orderBy: { fecha: 'desc' } }
+        }
+      });
+
+      res.json({ success: true, project: updated });
+    } catch (error: any) {
+      console.error('[replace-project-image]', error);
+      res.status(400).json({ success: false, error: 'No se pudo actualizar la imagen' });
+    }
+  });
+
+  // ----------------------------------------------------------------
+  // EMPLEADOS (solo administrador)
+  // ----------------------------------------------------------------
+  const EMPLOYEE_SELECT = {
+    usuarioId: true, nombre: true, apellido: true, email: true, telefono: true,
+    activo: true, createdAt: true, rol: { select: { rol: true } }
+  } as const;
+
+  app.get('/api/admin/employees', requireAuth, requireRole('administrador'), async (_req, res) => {
+    try {
+      const empleados = await prisma.usuario.findMany({
+        where: { rol: { rol: { in: STAFF_ROLES } } },
+        select: EMPLOYEE_SELECT,
+        orderBy: { createdAt: 'desc' }
+      });
+      res.json({ success: true, employees: empleados });
+    } catch (error: any) {
+      console.error('[list-employees]', error);
+      res.status(500).json({ success: false, error: 'No se pudieron cargar los empleados' });
+    }
+  });
+
+  app.post('/api/admin/employees', requireAuth, requireRole('administrador'), async (req: any, res) => {
+    try {
+      const { email, nombre, apellido, telefono, rol, password } = req.body;
+      if (!email || !nombre || !apellido || !rol || !password) {
+        return res.status(400).json({ success: false, error: 'Correo, nombre, apellido, rol y contraseña temporal son requeridos' });
+      }
+      if (!STAFF_ROLES.includes(rol)) {
+        return res.status(400).json({ success: false, error: `Rol inválido. Usa uno de: ${STAFF_ROLES.join(', ')}` });
+      }
+      const policyError = validatePasswordPolicy(String(password));
+      if (policyError) return res.status(400).json({ success: false, error: policyError });
+
+      const cleanEmail = String(email).trim().toLowerCase();
+      if (await prisma.usuario.findUnique({ where: { email: cleanEmail } })) {
+        return res.status(409).json({ success: false, error: 'Ya existe una cuenta con este correo' });
+      }
+      const rolRow = await prisma.rol.findFirst({ where: { rol } });
+      if (!rolRow) {
+        return res.status(500).json({ success: false, error: `El rol "${rol}" no existe en la base de datos. Corre las migraciones.` });
+      }
+
+      const empleado = await prisma.usuario.create({
+        data: {
+          email: cleanEmail,
+          nombre: String(nombre).trim(),
+          apellido: String(apellido).trim(),
+          telefono: telefono ? String(telefono).trim() : null,
+          rolId: rolRow.rolId,
+          passwordHash: await bcrypt.hash(String(password), 10),
+          authProvider: 'credentials'
+        },
+        select: EMPLOYEE_SELECT
+      });
+
+      res.json({ success: true, employee: empleado });
+    } catch (error: any) {
+      console.error('[create-employee]', error);
+      res.status(400).json({ success: false, error: 'No se pudo crear el empleado' });
+    }
+  });
+
+  app.patch('/api/admin/employees/:id', requireAuth, requireRole('administrador'), async (req: any, res) => {
+    try {
+      const { nombre, apellido, telefono, rol, activo, password } = req.body;
+
+      const target = await prisma.usuario.findUnique({ where: { usuarioId: req.params.id }, include: { rol: true } });
+      if (!target || !STAFF_ROLES.includes(target.rol.rol)) {
+        return res.status(404).json({ success: false, error: 'Empleado no encontrado' });
+      }
+
+      const cambiaRol = rol !== undefined && rol !== target.rol.rol;
+      const desactiva = activo === false;
+
+      if (target.usuarioId === req.user.id && (cambiaRol || desactiva)) {
+        return res.status(400).json({ success: false, error: 'No puedes cambiar tu propio rol ni desactivar tu propia cuenta.' });
+      }
+      // Siempre debe quedar al menos un administrador activo
+      if (target.rol.rol === 'administrador' && (cambiaRol || desactiva)) {
+        const otros = await prisma.usuario.count({
+          where: { rol: { rol: 'administrador' }, activo: true, usuarioId: { not: target.usuarioId } }
+        });
+        if (otros === 0) {
+          return res.status(400).json({ success: false, error: 'Debe quedar al menos un administrador activo.' });
+        }
+      }
+
+      let rolId: number | undefined;
+      if (cambiaRol) {
+        if (!STAFF_ROLES.includes(rol)) {
+          return res.status(400).json({ success: false, error: `Rol inválido. Usa uno de: ${STAFF_ROLES.join(', ')}` });
+        }
+        const rolRow = await prisma.rol.findFirst({ where: { rol } });
+        if (!rolRow) return res.status(500).json({ success: false, error: `El rol "${rol}" no existe en la base de datos.` });
+        rolId = rolRow.rolId;
+      }
+
+      let passwordHash: string | undefined;
+      if (password) {
+        const policyError = validatePasswordPolicy(String(password));
+        if (policyError) return res.status(400).json({ success: false, error: policyError });
+        passwordHash = await bcrypt.hash(String(password), 10);
+      }
+
+      const empleado = await prisma.usuario.update({
+        where: { usuarioId: target.usuarioId },
+        data: {
+          nombre: nombre ? String(nombre).trim() : undefined,
+          apellido: apellido ? String(apellido).trim() : undefined,
+          telefono: telefono !== undefined ? (telefono ? String(telefono).trim() : null) : undefined,
+          rolId,
+          activo: typeof activo === 'boolean' ? activo : undefined,
+          passwordHash
+        },
+        select: EMPLOYEE_SELECT
+      });
+
+      res.json({ success: true, employee: empleado });
+    } catch (error: any) {
+      console.error('[update-employee]', error);
+      res.status(400).json({ success: false, error: 'No se pudo actualizar el empleado' });
+    }
+  });
+
   // Veredicto de calidad/laboratorio sobre un proyecto (crea o actualiza el DiagnosticoIA)
   // Acceso libre: cualquier miembro de calidad puede emitir veredicto; el primero que lo hace queda auto-asignado.
   app.put('/api/projects/:id/quality-verdict', requireAuth, requireRole('calidad', 'administrador'), async (req: any, res) => {
@@ -1095,6 +1493,11 @@ async function startServer() {
 
       const proyectoActual = await prisma.proyecto.findUnique({ where: { proyectoId: req.params.id } });
       if (!proyectoActual) return res.status(404).json({ success: false, error: 'Proyecto no encontrado' });
+      if (['despachado', 'cancelado'].includes(proyectoActual.estadoPipeline || '')) {
+        return res.status(400).json({ success: false, error: 'Este proyecto ya está cerrado.' });
+      }
+
+      const actor = await actorSnapshot(req.user);
 
       const verdict = await prisma.diagnosticoIA.upsert({
         where: { proyectoId: req.params.id },
@@ -1103,7 +1506,7 @@ async function startServer() {
           severidadFisuras: severidadFisuras || undefined,
           notasPerito: notasPerito || undefined,
           aprobadoCalidad: aprobadoCalidad != null ? Boolean(aprobadoCalidad) : undefined,
-          peritoNombre: req.user.email,
+          peritoNombre: actor.usuarioNombre,
           fechaVeredicto: new Date()
         },
         create: {
@@ -1112,7 +1515,7 @@ async function startServer() {
           severidadFisuras: severidadFisuras || null,
           notasPerito: notasPerito || null,
           aprobadoCalidad: aprobadoCalidad != null ? Boolean(aprobadoCalidad) : null,
-          peritoNombre: req.user.email,
+          peritoNombre: actor.usuarioNombre,
           fechaVeredicto: new Date()
         }
       });
@@ -1121,35 +1524,165 @@ async function startServer() {
       const peritoAsignadoIdFinal = proyectoActual.peritoAsignadoId
         || (req.user.role === 'calidad' ? req.user.id : proyectoActual.peritoAsignadoId);
 
-      const dataPipeline: any = { peritoAsignadoId: peritoAsignadoIdFinal };
-      if (aprobadoCalidad === true) dataPipeline.estadoPipeline = 'aprobado_calidad';
-      else if (aprobadoCalidad === false) dataPipeline.estadoPipeline = 'rechazado';
+      const estadoNuevo = aprobadoCalidad === true ? 'aprobado_calidad'
+        : aprobadoCalidad === false ? 'rechazado'
+        : (proyectoActual.estadoPipeline || 'en_peritaje');
+      const decision = aprobadoCalidad === true ? 'APROBADO' : aprobadoCalidad === false ? 'RECHAZADO' : 'Observaciones registradas';
+      const comentario = `Veredicto de calidad: ${decision}. Humedad: ${humedadRelativa ?? 'N/A'}%. Fisuras: ${severidadFisuras || 'N/A'}.${notasPerito ? ' Notas: ' + notasPerito : ''}`;
 
-      await prisma.proyecto.update({
+      const project = await prisma.proyecto.update({
         where: { proyectoId: req.params.id },
-        data: dataPipeline
+        data: {
+          peritoAsignadoId: peritoAsignadoIdFinal,
+          estadoPipeline: estadoNuevo,
+          historial: { create: { estadoAnterior: proyectoActual.estadoPipeline, estadoNuevo, comentario, ...actor } }
+        },
+        include: PROYECTO_STAFF_INCLUDE
       });
 
-      res.json({ success: true, diagnostico: verdict });
+      res.json({ success: true, diagnostico: verdict, project });
     } catch (error: any) {
       console.error('[quality-verdict]', error);
       res.status(400).json({ success: false, error: 'No se pudo guardar el veredicto de calidad' });
     }
   });
 
-  // Marca un proyecto ya aprobado por calidad como despachado a obra (solo administrador)
-  app.patch('/api/projects/:id/dispatch', requireAuth, requireRole('administrador'), async (req: any, res) => {
+  // Cotización técnica hecha por el asesor: el servidor calcula cuñetes/galones y precios con el catálogo real
+  app.post('/api/projects/:id/quote', requireAuth, requireRole('asesor', 'administrador'), async (req: any, res) => {
     try {
+      const { productoId, area, manos, descuentoPct } = req.body;
+
       const proyecto = await prisma.proyecto.findUnique({ where: { proyectoId: req.params.id } });
+      if (!proyecto) return res.status(404).json({ success: false, error: 'Proyecto no encontrado' });
+      if (['despachado', 'cancelado', 'aprobado_calidad'].includes(proyecto.estadoPipeline || '')) {
+        return res.status(400).json({ success: false, error: 'Este proyecto ya avanzó y no admite una nueva cotización.' });
+      }
+
+      const areaNum = Number(area ?? proyecto.area);
+      const manosNum = Math.max(1, Math.round(Number(manos || 2)));
+      const descNum = Math.min(100, Math.max(0, Number(descuentoPct || 0)));
+      if (!(areaNum > 0)) {
+        return res.status(400).json({ success: false, error: 'Indica el área en m² (mayor a 0).' });
+      }
+
+      const base = productoId ? await prisma.producto.findUnique({ where: { productoId } }) : null;
+      if (!base) return res.status(404).json({ success: false, error: 'Selecciona un producto del catálogo.' });
+      if (!base.rendimientoM2 || base.rendimientoM2 <= 0) {
+        return res.status(400).json({ success: false, error: 'Este producto no tiene rendimiento (m²/galón) configurado; no se puede cotizar por área.' });
+      }
+
+      // Mismo producto en sus dos presentaciones (cuñete 5 gal y galón 1 gal)
+      const familia = await prisma.producto.findMany({ where: { nombre: base.nombre } });
+      const cuneteProd = familia.find(f => f.presentacion === 'cunete_5gal') || null;
+      const galonProd = familia.find(f => f.presentacion === 'galon_1gal') || null;
+      const precioGalon = galonProd?.precio ?? (cuneteProd?.precio ? cuneteProd.precio / 4.6 : base.precio);
+      const precioCunete = cuneteProd?.precio ?? (galonProd?.precio ? galonProd.precio * 4.6 : base.precio);
+      if (!precioGalon || !precioCunete) {
+        return res.status(400).json({ success: false, error: 'Este producto no tiene precio configurado.' });
+      }
+
+      // 6% de desperdicio técnico en obra
+      const galonesExactos = Number((((areaNum * manosNum) / base.rendimientoM2) * 1.06).toFixed(1));
+      const cunetes5g = Math.floor(galonesExactos / 5);
+      const residuo = galonesExactos - cunetes5g * 5;
+      const galones1g = residuo > 0.0001 ? Math.ceil(residuo) : 0;
+
+      const subtotalBruto = cunetes5g * precioCunete + galones1g * precioGalon;
+      const subtotalConDescuento = subtotalBruto * (1 - descNum / 100);
+      const iva = Math.round(subtotalConDescuento * 0.19);
+      const total = Math.round(subtotalConDescuento + iva);
+
+      const items: any[] = [];
+      if (cunetes5g > 0) items.push({ productoId: cuneteProd?.productoId || base.productoId, cantidad: cunetes5g, precioUnitario: Math.round(precioCunete), total: Math.round(cunetes5g * precioCunete) });
+      if (galones1g > 0) items.push({ productoId: galonProd?.productoId || base.productoId, cantidad: galones1g, precioUnitario: Math.round(precioGalon), total: Math.round(galones1g * precioGalon) });
+
+      const pasaACotizado = proyecto.estadoPipeline === 'en_revision';
+      const estadoNuevo = pasaACotizado ? 'cotizado' : (proyecto.estadoPipeline || 'en_revision');
+      const actor = await actorSnapshot(req.user);
+
+      const updated = await prisma.proyecto.update({
+        where: { proyectoId: req.params.id },
+        data: {
+          area: areaNum,
+          descuentoAsesorPct: descNum,
+          estadoPipeline: estadoNuevo,
+          asesorAsignadoId: proyecto.asesorAsignadoId || (req.user.role === 'asesor' ? req.user.id : undefined),
+          cotizaciones: {
+            create: {
+              galonesExactos, cunetes5g, galones1g,
+              subtotal: Math.round(subtotalConDescuento), iva, total,
+              estado: 'Enviada',
+              items: { create: items }
+            }
+          },
+          historial: {
+            create: {
+              estadoAnterior: proyecto.estadoPipeline,
+              estadoNuevo,
+              comentario: `Cotización técnica: ${cunetes5g} cuñetes (5G) + ${galones1g} galones (1G) = ${galonesExactos} galones de ${base.nombre}. Descuento ${descNum}%. Total $${total.toLocaleString('es-CO')} COP.`,
+              ...actor
+            }
+          }
+        },
+        include: PROYECTO_STAFF_INCLUDE
+      });
+
+      res.json({ success: true, project: updated, quote: updated.cotizaciones[0] });
+    } catch (error: any) {
+      console.error('[quote-project]', error);
+      res.status(400).json({ success: false, error: 'No se pudo generar la cotización' });
+    }
+  });
+
+  // Despacha a obra un proyecto aprobado por calidad y registra guía, vehículo y conductor (despachos / administrador)
+  app.patch('/api/projects/:id/dispatch', requireAuth, requireRole('administrador', 'despachos'), async (req: any, res) => {
+    try {
+      const proyecto = await prisma.proyecto.findUnique({
+        where: { proyectoId: req.params.id },
+        include: { empresa: { include: { ciudad: true } } }
+      });
       if (!proyecto) return res.status(404).json({ success: false, error: 'Proyecto no encontrado' });
       if (proyecto.estadoPipeline !== 'aprobado_calidad') {
         return res.status(400).json({ success: false, error: 'Solo se pueden despachar proyectos ya aprobados por calidad' });
       }
 
+      const b = req.body || {};
+      const txt = (v: any) => (v == null || String(v).trim() === '' ? null : String(v).trim());
+      const numeroGuia = txt(b.numeroGuia) || `CL-DSP-${Math.floor(100000 + Math.random() * 900000)}`;
+      const horas = txt(b.tiempoEstimadoHoras) != null ? Math.max(0, Math.round(Number(b.tiempoEstimadoHoras))) : null;
+      const placa = txt(b.placaVehiculo)?.toUpperCase() ?? null;
+      const direccion = txt(b.direccionEntrega) || proyecto.empresa?.direccionDespacho || null;
+      const ciudad = txt(b.ciudadEntrega) || proyecto.empresa?.ciudad?.ciudad || null;
+      const actor = await actorSnapshot(req.user);
+
       const updated = await prisma.proyecto.update({
         where: { proyectoId: req.params.id },
-        data: { estadoPipeline: 'despachado' },
-        include: { diagnostico: true, cotizaciones: true, empresa: { include: { ciudad: true } }, usuario: { select: { nombre: true, apellido: true, email: true } } }
+        data: {
+          estadoPipeline: 'despachado',
+          despacho: {
+            create: {
+              numeroGuia,
+              transportador: txt(b.transportador),
+              placaVehiculo: placa,
+              conductorNombre: txt(b.conductorNombre),
+              conductorTelefono: txt(b.conductorTelefono),
+              bodegaOrigen: txt(b.bodegaOrigen),
+              direccionEntrega: direccion,
+              ciudadEntrega: ciudad,
+              tiempoEstimadoHoras: Number.isFinite(horas as number) ? horas : null,
+              despachadoPorId: req.user.id
+            }
+          },
+          historial: {
+            create: {
+              estadoAnterior: 'aprobado_calidad',
+              estadoNuevo: 'despachado',
+              comentario: `Despachado con guía ${numeroGuia}${placa ? `, vehículo ${placa}` : ''}${txt(b.conductorNombre) ? `, conductor ${txt(b.conductorNombre)}` : ''}. Destino: ${direccion || 'sin dirección'}${ciudad ? ` (${ciudad})` : ''}.`,
+              ...actor
+            }
+          }
+        },
+        include: PROYECTO_STAFF_INCLUDE
       });
 
       res.json({ success: true, project: updated });
@@ -1159,18 +1692,70 @@ async function startServer() {
     }
   });
 
-  // Lista los proyectos aprobados por calidad y listos para despacho (solo administrador)
-  app.get('/api/projects/ready-to-dispatch', requireAuth, requireRole('administrador'), async (req, res) => {
+  // Confirma que el material llegó a obra y quién lo recibió (despachos / administrador)
+  app.patch('/api/projects/:id/delivery', requireAuth, requireRole('administrador', 'despachos'), async (req: any, res) => {
+    try {
+      const recibidoPor = String(req.body.recibidoPor || '').trim();
+      const documentoRecibe = String(req.body.documentoRecibe || '').trim();
+      if (!recibidoPor) {
+        return res.status(400).json({ success: false, error: 'Indica quién recibió el material en obra.' });
+      }
+
+      const proyecto = await prisma.proyecto.findUnique({ where: { proyectoId: req.params.id }, include: { despacho: true } });
+      if (!proyecto) return res.status(404).json({ success: false, error: 'Proyecto no encontrado' });
+      if (proyecto.estadoPipeline !== 'despachado' || !proyecto.despacho) {
+        return res.status(400).json({ success: false, error: 'Este proyecto todavía no ha sido despachado.' });
+      }
+      if (proyecto.despacho.fechaEntrega) {
+        return res.status(400).json({ success: false, error: 'La entrega de este proyecto ya fue confirmada.' });
+      }
+
+      const actor = await actorSnapshot(req.user);
+      const updated = await prisma.proyecto.update({
+        where: { proyectoId: req.params.id },
+        data: {
+          despacho: { update: { recibidoPor, documentoRecibe: documentoRecibe || null, fechaEntrega: new Date() } },
+          historial: {
+            create: {
+              estadoAnterior: 'despachado',
+              estadoNuevo: 'despachado',
+              comentario: `Entrega confirmada en obra. Recibió: ${recibidoPor}${documentoRecibe ? ` (doc. ${documentoRecibe})` : ''}.`,
+              ...actor
+            }
+          }
+        },
+        include: PROYECTO_STAFF_INCLUDE
+      });
+
+      res.json({ success: true, project: updated });
+    } catch (error: any) {
+      console.error('[delivery-project]', error);
+      res.status(400).json({ success: false, error: 'No se pudo confirmar la entrega' });
+    }
+  });
+
+  // Tablero de despachos: proyectos listos para salir y los ya despachados (despachos / administrador)
+  app.get('/api/projects/dispatch-board', requireAuth, requireRole('administrador', 'despachos'), async (_req, res) => {
+    try {
+      const proyectos = await prisma.proyecto.findMany({
+        where: { estadoPipeline: { in: ['aprobado_calidad', 'despachado'] } },
+        include: PROYECTO_STAFF_INCLUDE,
+        orderBy: { updatedAt: 'asc' } // los que llevan más tiempo esperando, primero
+      });
+      res.json({ success: true, projects: proyectos });
+    } catch (error: any) {
+      console.error('[dispatch-board]', error);
+      res.status(500).json({ success: false, error: 'No se pudo cargar el tablero de despachos' });
+    }
+  });
+
+  // Lista los proyectos aprobados por calidad y listos para despacho (despachos / administrador)
+  app.get('/api/projects/ready-to-dispatch', requireAuth, requireRole('administrador', 'despachos'), async (req, res) => {
     try {
       const proyectos = await prisma.proyecto.findMany({
         where: { estadoPipeline: 'aprobado_calidad' },
-        include: {
-          diagnostico: true,
-          cotizaciones: { orderBy: { createdAt: 'desc' } },
-          empresa: { include: { ciudad: true } },
-          usuario: { select: { nombre: true, apellido: true, email: true, telefono: true } }
-        },
-        orderBy: { updatedAt: 'asc' } // los que llevan más tiempo esperando, primero
+        include: PROYECTO_STAFF_INCLUDE,
+        orderBy: { updatedAt: 'asc' }
       });
       res.json({ success: true, projects: proyectos });
     } catch (error: any) {
@@ -1203,13 +1788,25 @@ async function startServer() {
     }
   });
 
+  // Ajusta el stock de un lote: `delta` (suma/resta) o `cantidad` (valor absoluto, p. ej. tras un conteo físico)
   app.patch('/api/inventory/:id', requireAuth, requireRole('administrador'), async (req: any, res) => {
     try {
-      const { delta } = req.body; // ej: -1, +5
+      const { delta, cantidad } = req.body;
       const current = await prisma.inventarioProducto.findUnique({ where: { inventarioId: req.params.id } });
       if (!current) return res.status(404).json({ success: false, error: 'Registro de inventario no encontrado' });
 
-      const nuevaCantidad = Math.max(0, (current.cantidadDisponible || 0) + Number(delta));
+      let nuevaCantidad: number;
+      if (cantidad != null && cantidad !== '') {
+        nuevaCantidad = Math.max(0, Math.round(Number(cantidad)));
+      } else if (delta != null && delta !== '') {
+        nuevaCantidad = Math.max(0, (current.cantidadDisponible || 0) + Math.round(Number(delta)));
+      } else {
+        return res.status(400).json({ success: false, error: 'Envía "cantidad" (valor final) o "delta" (ajuste).' });
+      }
+      if (!Number.isFinite(nuevaCantidad)) {
+        return res.status(400).json({ success: false, error: 'La cantidad no es válida.' });
+      }
+
       const updated = await prisma.inventarioProducto.update({
         where: { inventarioId: req.params.id },
         data: { cantidadDisponible: nuevaCantidad },
@@ -1220,6 +1817,53 @@ async function startServer() {
     } catch (error: any) {
       console.error('[patch-inventory]', error);
       res.status(400).json({ success: false, error: 'No se pudo ajustar el stock' });
+    }
+  });
+
+  // Registra una entrada de mercancía (nuevo lote en una bodega)
+  app.post('/api/inventory', requireAuth, requireRole('administrador'), async (req: any, res) => {
+    try {
+      const { productoId, ciudadId, nombreBodega, numeroLote, cantidadDisponible, tiempoDespacho } = req.body;
+      const cantidad = Math.round(Number(cantidadDisponible));
+      if (!productoId || !ciudadId || !nombreBodega || !Number.isFinite(cantidad) || cantidad < 0) {
+        return res.status(400).json({ success: false, error: 'Producto, ciudad, bodega y una cantidad válida son requeridos.' });
+      }
+
+      const [producto, ciudad] = await Promise.all([
+        prisma.producto.findUnique({ where: { productoId } }),
+        prisma.ciudad.findUnique({ where: { ciudadId: Number(ciudadId) } })
+      ]);
+      if (!producto) return res.status(404).json({ success: false, error: 'Producto no encontrado' });
+      if (!ciudad) return res.status(404).json({ success: false, error: 'Ciudad no encontrada' });
+
+      const item = await prisma.inventarioProducto.create({
+        data: {
+          productoId,
+          ciudadId: ciudad.ciudadId,
+          nombreBodega: String(nombreBodega).trim(),
+          numeroLote: numeroLote ? String(numeroLote).trim() : `LT-${new Date().getFullYear()}-${Date.now().toString().slice(-5)}`,
+          cantidadDisponible: cantidad,
+          fechaTinturado: new Date(),
+          tiempoDespacho: tiempoDespacho != null && tiempoDespacho !== '' ? Math.round(Number(tiempoDespacho)) : null
+        },
+        include: { producto: true, ciudad: true }
+      });
+
+      res.json({ success: true, item });
+    } catch (error: any) {
+      console.error('[create-inventory]', error);
+      res.status(400).json({ success: false, error: 'No se pudo registrar la entrada de inventario' });
+    }
+  });
+
+  // Ciudades con bodega (para los selectores del ERP)
+  app.get('/api/cities', requireAuth, async (_req, res) => {
+    try {
+      const ciudades = await prisma.ciudad.findMany({ orderBy: { ciudad: 'asc' } });
+      res.json({ success: true, cities: ciudades });
+    } catch (error: any) {
+      console.error('[get-cities]', error);
+      res.status(500).json({ success: false, error: 'No se pudieron cargar las ciudades' });
     }
   });
 
@@ -1362,18 +2006,33 @@ async function startServer() {
     }
   });
 
-  // Todas las órdenes (panel ERP / administrador)
-  app.get('/api/orders/all', requireAuth, requireRole('administrador'), async (req, res) => {
+  // Todas las órdenes (panel ERP): administrador y despachos operan; asesor solo consulta
+  app.get('/api/orders/all', requireAuth, requireRole('administrador', 'despachos', 'asesor'), async (req, res) => {
     try {
       const ordenes = await prisma.orden.findMany({
         include: {
           items: { include: { producto: true } },
           historial: { orderBy: { fecha: 'asc' } },
-          usuario: { select: { nombre: true, apellido: true, email: true, telefono: true } }
+          usuario: { select: { nombre: true, apellido: true, email: true, telefono: true, company: true, documentId: true } }
         },
         orderBy: { createdAt: 'desc' }
       });
-      res.json({ success: true, orders: ordenes });
+
+      // Nombre y rol de quien hizo cada cambio de estado (para la línea de tiempo del ERP)
+      const ids = Array.from(new Set(ordenes.flatMap(o => o.historial.map(h => h.usuarioId)).filter((x): x is string => !!x)));
+      const actores = ids.length
+        ? await prisma.usuario.findMany({
+            where: { usuarioId: { in: ids } },
+            select: { usuarioId: true, nombre: true, apellido: true, rol: { select: { rol: true } } }
+          })
+        : [];
+      const mapa = new Map(actores.map(a => [a.usuarioId, { nombre: `${a.nombre} ${a.apellido || ''}`.trim(), rol: a.rol.rol }]));
+      const conActores = ordenes.map(o => ({
+        ...o,
+        historial: o.historial.map(h => ({ ...h, actor: h.usuarioId ? (mapa.get(h.usuarioId) || null) : null }))
+      }));
+
+      res.json({ success: true, orders: conActores });
     } catch (error: any) {
       console.error('[get-all-orders]', error);
       res.status(500).json({ success: false, error: 'No se pudieron cargar las órdenes' });
@@ -1381,12 +2040,27 @@ async function startServer() {
   });
 
   // Cambia el estado de una orden: dispara correo + WhatsApp automáticamente
-  app.patch('/api/orders/:id/status', requireAuth, requireRole('administrador'), async (req: any, res) => {
+  app.patch('/api/orders/:id/status', requireAuth, requireRole('administrador', 'despachos'), async (req: any, res) => {
     try {
       const { estado, comentario } = req.body;
       const estadosValidos = ['creado', 'confirmado', 'en_alistamiento', 'en_camino', 'listo_recoger', 'entregado', 'cancelado'];
       if (!estadosValidos.includes(estado)) {
         return res.status(400).json({ success: false, error: 'Estado inválido' });
+      }
+
+      const actual = await prisma.orden.findUnique({ where: { ordenId: req.params.id } });
+      if (!actual) return res.status(404).json({ success: false, error: 'Pedido no encontrado' });
+      if (['entregado', 'cancelado'].includes(actual.estado)) {
+        return res.status(400).json({ success: false, error: `Este pedido ya está ${actual.estado} y no admite más cambios.` });
+      }
+      if (estado === actual.estado) {
+        return res.status(400).json({ success: false, error: 'El pedido ya tiene ese estado.' });
+      }
+      if (estado === 'listo_recoger' && actual.metodoEntrega !== 'recoger_tienda') {
+        return res.status(400).json({ success: false, error: '"Listo para recoger" solo aplica a pedidos de retiro en sucursal.' });
+      }
+      if (estado === 'en_camino' && actual.metodoEntrega !== 'domicilio') {
+        return res.status(400).json({ success: false, error: '"En camino" solo aplica a pedidos a domicilio.' });
       }
 
       const orden = await prisma.orden.update({
@@ -1414,7 +2088,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/orders/validate-pickup', requireAuth, requireRole('administrador', 'asesor'), async (req: any, res) => {
+  app.post('/api/orders/validate-pickup', requireAuth, requireRole('administrador', 'despachos', 'asesor'), async (req: any, res) => {
     try {
       const code = String(req.body.code || '').trim();
       if (!code) {

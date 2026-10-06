@@ -46,6 +46,7 @@ model Usuario {
   proyectosComoAsesor Proyecto[] @relation("ProyectoAsesor")
   proyectosComoPerito Proyecto[] @relation("ProyectoPerito")
   ordenes Orden[]
+  activo       Boolean             @default(true)
 
   @@map("usuario")
 }
@@ -104,8 +105,51 @@ model Proyecto {
   asesorAsignado   Usuario?      @relation("ProyectoAsesor", fields: [asesorAsignadoId], references: [usuarioId])
   peritoAsignadoId String?       @map("perito_asignado_id")
   peritoAsignado   Usuario?      @relation("ProyectoPerito", fields: [peritoAsignadoId], references: [usuarioId])
+  observacionImagen String?      @map("observacion_imagen")
+  historial        EstadoProyectoHistorial[]
+  despacho         DespachoProyecto?
 
   @@map("proyecto")
+}
+
+// Trazabilidad de cada proyecto: quién cambió qué y cuándo (snapshot del nombre y rol del actor)
+model EstadoProyectoHistorial {
+  id             String   @id @default(uuid())
+  proyectoId     String   @map("proyecto_id")
+  proyecto       Proyecto @relation(fields: [proyectoId], references: [proyectoId], onDelete: Cascade)
+  estadoAnterior String?  @map("estado_anterior")
+  estadoNuevo    String   @map("estado_nuevo")
+  comentario     String?
+  usuarioId      String?  @map("usuario_id")
+  usuarioNombre  String?  @map("usuario_nombre")
+  rolNombre      String?  @map("rol_nombre")
+  fecha          DateTime @default(now())
+
+  @@index([proyectoId])
+  @@map("estado_proyecto_historial")
+}
+
+// Datos logísticos del despacho de un proyecto a obra (guía, vehículo, conductor, recibo)
+model DespachoProyecto {
+  despachoId          String    @id @default(uuid()) @map("despacho_id")
+  proyectoId          String    @unique @map("proyecto_id")
+  proyecto            Proyecto  @relation(fields: [proyectoId], references: [proyectoId], onDelete: Cascade)
+  numeroGuia          String    @map("numero_guia")
+  transportador       String?
+  placaVehiculo       String?   @map("placa_vehiculo")
+  conductorNombre     String?   @map("conductor_nombre")
+  conductorTelefono   String?   @map("conductor_telefono")
+  bodegaOrigen        String?   @map("bodega_origen")
+  direccionEntrega    String?   @map("direccion_entrega")
+  ciudadEntrega       String?   @map("ciudad_entrega")
+  tiempoEstimadoHoras Int?      @map("tiempo_estimado_horas")
+  horaSalida          DateTime  @default(now()) @map("hora_salida")
+  recibidoPor         String?   @map("recibido_por")
+  documentoRecibe     String?   @map("documento_recibe")
+  fechaEntrega        DateTime? @map("fecha_entrega")
+  despachadoPorId     String?   @map("despachado_por_id")
+
+  @@map("despacho_proyecto")
 }
 
 model Orden {
