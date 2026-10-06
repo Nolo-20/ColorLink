@@ -1396,7 +1396,8 @@ async function startServer() {
   // ----------------------------------------------------------------
   const EMPLOYEE_SELECT = {
     usuarioId: true, nombre: true, apellido: true, email: true, telefono: true,
-    activo: true, createdAt: true, rol: { select: { rol: true } }
+    activo: true, createdAt: true, documentId: true, company: true, city: true,
+    rol: { select: { rol: true } }
   } as const;
 
   app.get('/api/admin/employees', requireAuth, requireRole('administrador'), async (_req, res) => {
@@ -1415,7 +1416,7 @@ async function startServer() {
 
   app.post('/api/admin/employees', requireAuth, requireRole('administrador'), async (req: any, res) => {
     try {
-      const { email, nombre, apellido, telefono, rol, password } = req.body;
+      const { email, nombre, apellido, telefono, rol, password, documentId, company, city } = req.body;
       if (!email || !nombre || !apellido || !rol || !password) {
         return res.status(400).json({ success: false, error: 'Correo, nombre, apellido, rol y contraseña temporal son requeridos' });
       }
@@ -1440,6 +1441,9 @@ async function startServer() {
           nombre: String(nombre).trim(),
           apellido: String(apellido).trim(),
           telefono: telefono ? String(telefono).trim() : null,
+          documentId: documentId ? String(documentId).trim() : null,
+          company: company ? String(company).trim() : null,
+          ...(city ? { city: String(city).trim() } : {}),
           rolId: rolRow.rolId,
           passwordHash: await bcrypt.hash(String(password), 10),
           authProvider: 'credentials'
@@ -1520,7 +1524,7 @@ async function startServer() {
   // Acceso libre: cualquier miembro de calidad puede emitir veredicto; el primero que lo hace queda auto-asignado.
   app.put('/api/projects/:id/quality-verdict', requireAuth, requireRole('calidad', 'administrador'), async (req: any, res) => {
     try {
-      const { humedadRelativa, severidadFisuras, notasPerito, aprobadoCalidad } = req.body;
+      const { humedadRelativa, severidadFisuras, notasPerito, aprobadoCalidad, sistemaRecomendado } = req.body;
 
       const proyectoActual = await prisma.proyecto.findUnique({ where: { proyectoId: req.params.id } });
       if (!proyectoActual) return res.status(404).json({ success: false, error: 'Proyecto no encontrado' });
@@ -1536,6 +1540,7 @@ async function startServer() {
           humedadRelativa: humedadRelativa != null ? Number(humedadRelativa) : undefined,
           severidadFisuras: severidadFisuras || undefined,
           notasPerito: notasPerito || undefined,
+          sistemaRecomendado: sistemaRecomendado ? String(sistemaRecomendado) : undefined,
           aprobadoCalidad: aprobadoCalidad != null ? Boolean(aprobadoCalidad) : undefined,
           peritoNombre: actor.usuarioNombre,
           fechaVeredicto: new Date()
@@ -1545,6 +1550,7 @@ async function startServer() {
           humedadRelativa: humedadRelativa != null ? Number(humedadRelativa) : null,
           severidadFisuras: severidadFisuras || null,
           notasPerito: notasPerito || null,
+          sistemaRecomendado: sistemaRecomendado ? String(sistemaRecomendado) : null,
           aprobadoCalidad: aprobadoCalidad != null ? Boolean(aprobadoCalidad) : null,
           peritoNombre: actor.usuarioNombre,
           fechaVeredicto: new Date()
@@ -2100,7 +2106,11 @@ async function startServer() {
           estado,
           historial: { create: { estado, comentario: comentario || null, usuarioId: req.user.id } }
         },
-        include: { usuario: true, items: { include: { producto: true } } }
+        // Solo los datos del cliente que hacen falta; nunca el usuario completo (trae el hash de la contraseña)
+        include: {
+          usuario: { select: { nombre: true, apellido: true, email: true, telefono: true } },
+          items: { include: { producto: true } }
+        }
       });
 
       await sendOrderStatusEmail(orden.usuario.email, orden, estado);
