@@ -43,6 +43,9 @@ model Usuario {
   documentId   String?             @map("document_id")
   address      String?             
   city         String?             @default("Medellin")
+  proyectosComoAsesor Proyecto[] @relation("ProyectoAsesor")
+  proyectosComoPerito Proyecto[] @relation("ProyectoPerito")
+  ordenes Orden[]
 
   @@map("usuario")
 }
@@ -97,8 +100,56 @@ model Proyecto {
   cotizaciones   Cotizacion[]
   descuentoAsesorPct  Float?     @map("descuento_asesor_pct")
   observacionesAsesor String?    @map("observaciones_asesor")
+  asesorAsignadoId String?       @map("asesor_asignado_id")
+  asesorAsignado   Usuario?      @relation("ProyectoAsesor", fields: [asesorAsignadoId], references: [usuarioId])
+  peritoAsignadoId String?       @map("perito_asignado_id")
+  peritoAsignado   Usuario?      @relation("ProyectoPerito", fields: [peritoAsignadoId], references: [usuarioId])
 
   @@map("proyecto")
+}
+
+model Orden {
+  ordenId          String   @id @default(uuid()) @map("orden_id")
+  usuarioId        String   @map("usuario_id")
+  usuario          Usuario  @relation(fields: [usuarioId], references: [usuarioId])
+  total            Float
+  estado           String   @default("creado") // creado, confirmado, en_alistamiento, en_camino, listo_recoger, entregado, cancelado
+  metodoEntrega    String   @map("metodo_entrega") // domicilio | recoger_tienda
+  direccionEntrega String?  @map("direccion_entrega")
+  qrToken          String   @unique @default(uuid()) @map("qr_token")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at")
+  items            OrdenItem[]
+  historial        EstadoOrdenHistorial[]
+
+  @@map("orden")
+}
+
+model OrdenItem {
+  ordenItemId            String    @id @default(uuid()) @map("orden_item_id")
+  ordenId                String    @map("orden_id")
+  orden                  Orden     @relation(fields: [ordenId], references: [ordenId])
+  productoId             String?   @map("producto_id")
+  producto               Producto? @relation(fields: [productoId], references: [productoId])
+  codigoProductoExterno  String?   @map("codigo_producto_externo")
+  nombreProducto         String    @map("nombre_producto")
+  cantidad               Int
+  precioUnitario         Float     @map("precio_unitario")
+  subtotal               Float
+
+  @@map("orden_item")
+}
+
+model EstadoOrdenHistorial {
+  id          String   @id @default(uuid())
+  ordenId     String   @map("orden_id")
+  orden       Orden    @relation(fields: [ordenId], references: [ordenId])
+  estado      String
+  comentario  String?
+  usuarioId   String?  @map("usuario_id")
+  fecha       DateTime @default(now())
+
+  @@map("estado_orden_historial")
 }
 
 model DiagnosticoIA {
@@ -144,6 +195,7 @@ model Producto {
   precio          Float?
   inventarios     InventarioProducto[]
   cotizacionItems CotizacionItem[]
+  ordenItems OrdenItem[]
 
   @@map("producto")
 }

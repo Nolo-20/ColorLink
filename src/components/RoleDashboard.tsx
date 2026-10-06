@@ -254,196 +254,228 @@ export const RoleDashboard: React.FC<RoleDashboardProps> = ({
                       </div>
                     </div>
 
-                    <div className="lg:col-span-4 bg-slate-50 rounded-2xl p-5 border border-slate-200 flex flex-col justify-between space-y-4">
-                      <div className="space-y-2">
-                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">Seguimiento Comercial</span>
+                    <div className="lg:col-span-4 bg-gradient-to-br from-slate-50 to-emerald-50 rounded-2xl p-5 border border-slate-200 shadow-sm flex flex-col justify-between gap-4">
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.18em]">Seguimiento Comercial</span>
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-1 border border-emerald-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            Activo
+                          </span>
+                        </div>
+
                         <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center border-2 border-emerald-500">
-                            <Users className="w-6 h-6" />
+                          <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center border-2 border-emerald-500 shadow-sm">
+                            <Users className="w-5 h-5" />
                           </div>
-                          <div>
-                            <h4 className="font-extrabold text-sm text-slate-900">Equipo ColorLink</h4>
-                            <p className="text-xs text-slate-500">Un asesor revisará tu proyecto pronto</p>
+                          <div className="min-w-0">
+                            <h4 className="font-extrabold text-sm text-slate-900 truncate">
+                              {p.asesorAsignado ? `${p.asesorAsignado.nombre} ${p.asesorAsignado.apellido}` : 'Equipo ColorLink'}
+                            </h4>
+                            <p className="text-xs text-slate-500">
+                              {p.asesorAsignado ? 'Tu asesor asignado' : 'Un asesor revisará tu proyecto pronto'}
+                            </p>
                           </div>
+                        </div>
+
+                        <div className="rounded-xl bg-white border border-slate-200 p-3 space-y-2">
+                          <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 uppercase">
+                            <span>Próximo paso</span>
+                            <span className="text-emerald-700">24h</span>
+                          </div>
+                          <p className="text-xs text-slate-700 leading-relaxed">
+                            {p.asesorAsignado
+                              ? 'Revisión y coordinación de la cotización con el cliente.'
+                              : 'Asignación de asesor y revisión comercial del proyecto.'}
+                          </p>
                         </div>
                       </div>
 
                       <div className="space-y-2">
                         <button
                           onClick={() => setActiveTab('captura')}
-                          className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow transition-all cursor-pointer text-center block"
+                          className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-sm transition-all cursor-pointer text-center block"
                         >
                           Ver Detalle Completo
                         </button>
                       </div>
                     </div>
                   </div>
-                ))}
+               ))}
+            </div>
+
+          {
+            misProyectos.length > proyectosCola.length && (
+              <div className="text-center">
+                <button onClick={() => setActiveTab('captura')} className="text-xs font-bold text-emerald-700 hover:underline">
+                  Ver los {misProyectos.length - proyectosCola.length} proyectos restantes en Mis Proyectos →
+                </button>
               </div>
-
-              {misProyectos.length > proyectosCola.length && (
-                <div className="text-center">
-                  <button onClick={() => setActiveTab('captura')} className="text-xs font-bold text-emerald-700 hover:underline">
-                    Ver los {misProyectos.length - proyectosCola.length} proyectos restantes en Mis Proyectos →
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-        </div>
+            )
+          }
+        </>
       )}
-
-      {/* ========================================================================= */}
-      {/* 2.B ASESOR COMERCIAL & TÉCNICO DASHBOARD */}
-      {/* ========================================================================= */}
-      {user.role === 'asesor' && (
-        <div className="space-y-6">
-          {/* Asesor Metrics */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-1">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Proyectos Asignados</span>
-              <div className="text-2xl font-black text-slate-900">4 Obras</div>
-              <span className="text-xs text-blue-600 font-semibold">Valle de Aburrá</span>
-            </div>
-
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-1">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Volumen Cotizado</span>
-              <div className="text-2xl font-black text-emerald-600">$14.280.000</div>
-              <span className="text-xs text-slate-500">COP en cartera activa</span>
-            </div>
-
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-1">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Área Total Evaluada</span>
-              <div className="text-2xl font-black text-purple-700">895 m²</div>
-              <span className="text-xs text-slate-500">Fachadas, pisos y drywall</span>
-            </div>
-
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-1">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Margen de Ajuste</span>
-              <div className="text-2xl font-black text-amber-600">Hasta 15%</div>
-              <span className="text-xs text-slate-500">Descuentos autorizados</span>
-            </div>
-          </div>
-
-          {/* Direct CTA to Manager */}
-          <div className="bg-blue-50 border border-blue-200 rounded-3xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="space-y-1">
-              <h3 className="text-lg font-black text-blue-950">Módulo de Modificación Manual para Asesores</h3>
-              <p className="text-xs text-blue-800">
-                Puedes ingresar a cualquiera de las 4 obras de clientes para ajustar metrajes, aplicar descuentos comerciales o cambiar la formulación de acabado.
-              </p>
-            </div>
-            <button
-              onClick={() => setActiveTab('proyectos_asesor')}
-              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow shrink-0 cursor-pointer flex items-center gap-2"
-            >
-              <span>Abrir Bandeja de Proyectos</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 2.C CONTROL DE CALIDAD DASHBOARD */}
-      {/* ========================================================================= */}
-      {user.role === 'calidad' && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-1">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Peritajes Pendientes</span>
-              <div className="text-2xl font-black text-purple-900">{stats ? stats.peritajesPendientes : '...'} Obras</div>
-              <span className="text-xs text-purple-700 font-semibold">Pendientes de dictamen</span>
-            </div>
-
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-1">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Certificados Emitidos</span>
-              <div className="text-2xl font-black text-emerald-600">{stats ? stats.certificadosEmitidos : '...'} Certificaciones</div>
-              <span className="text-xs text-slate-500">Norma NTC 5828 & ISO</span>
-            </div>
-
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-1">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Índice Humedad Promedio</span>
-              <div className="text-2xl font-black text-amber-600">{stats ? stats.humedadPromedio : '...'}%</div>
-              <span className="text-xs text-slate-500">Requiere sellador hidrófugo</span>
-            </div>
-          </div>
-
-          <div className="bg-purple-50 border border-purple-200 rounded-3xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="space-y-1">
-              <h3 className="text-lg font-black text-purple-950">Panel de Inspección de Patologías & Sustratos</h3>
-              <p className="text-xs text-purple-800">
-                Dictamina el estado técnico de fisuras, humedad capilar y caleo en las obras enviadas por los clientes.
-              </p>
-            </div>
-            <button
-              onClick={() => setActiveTab('calidad_revision')}
-              className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow shrink-0 cursor-pointer flex items-center gap-2"
-            >
-              <span>Revisar Patologías</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 2.D ADMINISTRADOR / BODEGA DASHBOARD */}
-      {/* ========================================================================= */}
-      {user.role === 'administrador' && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-1">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Stock Cuñetes (5G)</span>
-              <div className="text-2xl font-black text-slate-900">57 Cuñetes</div>
-              <span className="text-xs text-emerald-600 font-bold">Bodega Central Itagüí</span>
-            </div>
-
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-1">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Stock Galones (1G)</span>
-              <div className="text-2xl font-black text-slate-900">169 Galones</div>
-              <span className="text-xs text-slate-500">Centro Logístico Guayabal</span>
-            </div>
-
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-1">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Alertas de Bajo Stock</span>
-              <div className="text-2xl font-black text-amber-600">1 SKU Crítico</div>
-              <span className="text-xs text-amber-700 font-semibold">Vinilo Satinado Rionegro</span>
-            </div>
-
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-1">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Lotes Activos</span>
-              <div className="text-2xl font-black text-blue-700">5 Lotes</div>
-              <span className="text-xs text-slate-500">Tintometría calibrada</span>
-            </div>
-          </div>
-
-          <div className="bg-slate-900 text-white rounded-3xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="space-y-1">
-              <h3 className="text-lg font-black text-white">Módulo de Inventario, Bodegas & Monitoreo</h3>
-              <p className="text-xs text-slate-300">
-                Controla existencias físicas de cuñetes, lotes de tintometría y el estado operativo del sistema API.
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setActiveTab('trazabilidad_arquitectura')}
-                className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl border border-slate-700 shadow shrink-0 cursor-pointer flex items-center gap-2"
-              >
-                <span>Monitoreo & Logs</span>
-              </button>
-              <button
-                onClick={() => setActiveTab('inventario')}
-                className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl shadow shrink-0 cursor-pointer flex items-center gap-2"
-              >
-                <span>Abrir Inventario</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
     </div>
-  );
+  )
+}
+
+{/* ========================================================================= */ }
+{/* 2.B ASESOR COMERCIAL & TÉCNICO DASHBOARD */ }
+{/* ========================================================================= */ }
+{
+  user.role === 'asesor' && (
+    <div className="space-y-6">
+      {/* Asesor Metrics */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-1">
+          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Proyectos Asignados</span>
+          <div className="text-2xl font-black text-slate-900">4 Obras</div>
+          <span className="text-xs text-blue-600 font-semibold">Valle de Aburrá</span>
+        </div>
+
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-1">
+          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Volumen Cotizado</span>
+          <div className="text-2xl font-black text-emerald-600">$14.280.000</div>
+          <span className="text-xs text-slate-500">COP en cartera activa</span>
+        </div>
+
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-1">
+          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Área Total Evaluada</span>
+          <div className="text-2xl font-black text-purple-700">895 m²</div>
+          <span className="text-xs text-slate-500">Fachadas, pisos y drywall</span>
+        </div>
+
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-1">
+          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Margen de Ajuste</span>
+          <div className="text-2xl font-black text-amber-600">Hasta 15%</div>
+          <span className="text-xs text-slate-500">Descuentos autorizados</span>
+        </div>
+      </div>
+
+      {/* Direct CTA to Manager */}
+      <div className="bg-blue-50 border border-blue-200 rounded-3xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="space-y-1">
+          <h3 className="text-lg font-black text-blue-950">Módulo de Modificación Manual para Asesores</h3>
+          <p className="text-xs text-blue-800">
+            Puedes ingresar a cualquiera de las 4 obras de clientes para ajustar metrajes, aplicar descuentos comerciales o cambiar la formulación de acabado.
+          </p>
+        </div>
+        <button
+          onClick={() => setActiveTab('proyectos_asesor')}
+          className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow shrink-0 cursor-pointer flex items-center gap-2"
+        >
+          <span>Abrir Bandeja de Proyectos</span>
+          <ArrowRight className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+{/* ========================================================================= */ }
+{/* 2.C CONTROL DE CALIDAD DASHBOARD */ }
+{/* ========================================================================= */ }
+{
+  user.role === 'calidad' && (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-1">
+          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Peritajes Pendientes</span>
+          <div className="text-2xl font-black text-purple-900">{stats ? stats.peritajesPendientes : '...'} Obras</div>
+          <span className="text-xs text-purple-700 font-semibold">Pendientes de dictamen</span>
+        </div>
+
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-1">
+          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Certificados Emitidos</span>
+          <div className="text-2xl font-black text-emerald-600">{stats ? stats.certificadosEmitidos : '...'} Certificaciones</div>
+          <span className="text-xs text-slate-500">Norma NTC 5828 & ISO</span>
+        </div>
+
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-1">
+          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Índice Humedad Promedio</span>
+          <div className="text-2xl font-black text-amber-600">{stats ? stats.humedadPromedio : '...'}%</div>
+          <span className="text-xs text-slate-500">Requiere sellador hidrófugo</span>
+        </div>
+      </div>
+
+      <div className="bg-purple-50 border border-purple-200 rounded-3xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="space-y-1">
+          <h3 className="text-lg font-black text-purple-950">Panel de Inspección de Patologías & Sustratos</h3>
+          <p className="text-xs text-purple-800">
+            Dictamina el estado técnico de fisuras, humedad capilar y caleo en las obras enviadas por los clientes.
+          </p>
+        </div>
+        <button
+          onClick={() => setActiveTab('calidad_revision')}
+          className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow shrink-0 cursor-pointer flex items-center gap-2"
+        >
+          <span>Revisar Patologías</span>
+          <ArrowRight className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+{/* ========================================================================= */ }
+{/* 2.D ADMINISTRADOR / BODEGA DASHBOARD */ }
+{/* ========================================================================= */ }
+{
+  user.role === 'administrador' && (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-1">
+          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Stock Cuñetes (5G)</span>
+          <div className="text-2xl font-black text-slate-900">57 Cuñetes</div>
+          <span className="text-xs text-emerald-600 font-bold">Bodega Central Itagüí</span>
+        </div>
+
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-1">
+          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Stock Galones (1G)</span>
+          <div className="text-2xl font-black text-slate-900">169 Galones</div>
+          <span className="text-xs text-slate-500">Centro Logístico Guayabal</span>
+        </div>
+
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-1">
+          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Alertas de Bajo Stock</span>
+          <div className="text-2xl font-black text-amber-600">1 SKU Crítico</div>
+          <span className="text-xs text-amber-700 font-semibold">Vinilo Satinado Rionegro</span>
+        </div>
+
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-1">
+          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Lotes Activos</span>
+          <div className="text-2xl font-black text-blue-700">5 Lotes</div>
+          <span className="text-xs text-slate-500">Tintometría calibrada</span>
+        </div>
+      </div>
+
+      <div className="bg-slate-900 text-white rounded-3xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="space-y-1">
+          <h3 className="text-lg font-black text-white">Módulo de Inventario, Bodegas & Monitoreo</h3>
+          <p className="text-xs text-slate-300">
+            Controla existencias físicas de cuñetes, lotes de tintometría y el estado operativo del sistema API.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setActiveTab('trazabilidad_arquitectura')}
+            className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl border border-slate-700 shadow shrink-0 cursor-pointer flex items-center gap-2"
+          >
+            <span>Monitoreo & Logs</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('inventario')}
+            className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl shadow shrink-0 cursor-pointer flex items-center gap-2"
+          >
+            <span>Abrir Inventario</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+        </div >
+      );
 };

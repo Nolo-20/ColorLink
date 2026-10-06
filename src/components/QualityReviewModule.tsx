@@ -67,6 +67,34 @@ export const QualityReviewModule: React.FC<QualityReviewModuleProps> = ({
     }
   }, [selectedProjectId, projectsList]);
 
+  const [equipoAsesores, setEquipoAsesores] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetch('/api/users?role=calidad')
+      .then(res => res.json())
+      .then(data => { if (data.success) setEquipoAsesores(data.users); });
+  }, []);
+
+  const handleEscalate = async (nuevoUsuarioId: string) => {
+    const res = await fetch(`/api/projects/${currentProject.proyectoId}/reassign`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: 'calidad', nuevoUsuarioId })
+    });
+    const data = await res.json();
+    if (data.success) {
+      setProjectsList(prev => prev.map(p => p.proyectoId === data.project.proyectoId ? data.project : p));
+    }
+  };
+
+  const [equipoCalidad, setEquipoCalidad] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetch('/api/users?role=calidad')
+      .then(res => res.json())
+      .then(data => { if (data.success) setEquipoCalidad(data.users); });
+  }, []);
+
   const handleSaveVerdict = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentProject) return;
@@ -172,7 +200,21 @@ export const QualityReviewModule: React.FC<QualityReviewModuleProps> = ({
                 </span>
               </div>
             </div>
-
+            <div className="flex items-center justify-between text-xs py-3 border-b border-slate-100">
+              <span className="text-slate-500">
+                Perito a cargo: <strong>{currentProject?.peritoAsignado ? `${currentProject.peritoAsignado.nombre} ${currentProject.peritoAsignado.apellido}` : 'Sin asignar (se te asignará al guardar)'}</strong>
+              </span>
+              <select
+                onChange={(e) => e.target.value && handleEscalate(e.target.value)}
+                className="text-xs border border-slate-300 rounded-lg px-2 py-1"
+                defaultValue=""
+              >
+                <option value="" disabled>Escalar a...</option>
+                {equipoCalidad.filter(a => a.usuarioId !== currentProject?.peritoAsignado?.usuarioId).map(a => (
+                  <option key={a.usuarioId} value={a.usuarioId}>{a.nombre} {a.apellido}</option>
+                ))}
+              </select>
+            </div>
             {isSaved && (
               <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs rounded-xl font-bold flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />

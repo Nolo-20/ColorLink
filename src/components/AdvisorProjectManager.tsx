@@ -49,6 +49,26 @@ export const AdvisorProjectManager: React.FC<AdvisorProjectManagerProps> = ({
       .finally(() => setLoadingList(false));
   }, []);
 
+  const [equipoAsesores, setEquipoAsesores] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetch('/api/users?role=asesor')
+      .then(res => res.json())
+      .then(data => { if (data.success) setEquipoAsesores(data.users); });
+  }, []);
+
+  const handleEscalate = async (nuevoUsuarioId: string) => {
+    const res = await fetch(`/api/projects/${currentProject.proyectoId}/reassign`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: 'asesor', nuevoUsuarioId })
+    });
+    const data = await res.json();
+    if (data.success) {
+      setProjectsList(prev => prev.map(p => p.proyectoId === data.project.proyectoId ? data.project : p));
+    }
+  };
+
 
   const [searchFilter, setSearchFilter] = useState('');
 
@@ -192,6 +212,22 @@ export const AdvisorProjectManager: React.FC<AdvisorProjectManagerProps> = ({
                 <FileText className="w-3.5 h-3.5 text-cyan-400" />
                 <span>Ver PDF Oficial</span>
               </button>
+            </div>
+
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-500">
+                Asignado a: <strong>{currentProject.asesorAsignado ? `${currentProject.asesorAsignado.nombre} ${currentProject.asesorAsignado.apellido}` : 'Sin asignar (se te asignará al guardar)'}</strong>
+              </span>
+              <select
+                onChange={(e) => e.target.value && handleEscalate(e.target.value)}
+                className="text-xs border border-slate-300 rounded-lg px-2 py-1"
+                defaultValue=""
+              >
+                <option value="" disabled>Escalar a...</option>
+                {equipoAsesores.filter(a => a.usuarioId !== currentProject.asesorAsignado?.usuarioId).map(a => (
+                  <option key={a.usuarioId} value={a.usuarioId}>{a.nombre} {a.apellido}</option>
+                ))}
+              </select>
             </div>
 
             {/* Saved Banner */}

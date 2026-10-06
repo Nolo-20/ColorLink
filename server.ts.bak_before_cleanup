@@ -10,7 +10,6 @@ import nodemailer from 'nodemailer';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import { createHash } from 'crypto';
-import QRCode from 'qrcode';
 
 dotenv.config();
 
@@ -71,15 +70,11 @@ async function sendWhatsAppMessage(_toPhone: string, _body: string) {
   return;
 }
 
-const escapeHtml = (s: any) =>
-  String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
-
 async function sendOrderStatusEmail(email: string, orden: any, estado: string) {
   if (!process.env.SMTP_HOST) {
     console.warn(`[EMAIL] SMTP no configurado. Actualización de orden ${orden.ordenId} para ${email}: ${estado}`);
     return;
   }
-
   const estadoLabels: Record<string, string> = {
     creado: 'Pedido recibido',
     confirmado: 'Pago confirmado',
@@ -90,53 +85,10 @@ async function sendOrderStatusEmail(email: string, orden: any, estado: string) {
     cancelado: 'Cancelado'
   };
 
-  const orderCode = orden.ordenId.slice(0, 8).toUpperCase();
-  const isPickup = orden.metodoEntrega === 'recoger_tienda';
-  // El QR se envía al confirmar la compra y cuando el pedido queda listo para retirar
-  const showQr = isPickup && (estado === 'confirmado' || estado === 'listo_recoger');
-  const pickupCode = String(orden.qrToken || '').slice(0, 8).toUpperCase();
-
-  const attachments: any[] = [];
-  let qrBlock = '';
-
-  if (showQr && orden.qrToken) {
-    const qrBuffer = await QRCode.toBuffer(String(orden.qrToken), { width: 240, margin: 1, errorCorrectionLevel: 'M' });
-    attachments.push({ filename: 'qr-retiro.png', content: qrBuffer, cid: 'qr-retiro@colorlink' });
-
-    qrBlock = `
-      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:20px; text-align:center; margin:20px 0;">
-        <p style="margin:0 0 12px; color:#0A1A36; font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:0.5px;">
-          Tu código de retiro
-        </p>
-        <img src="cid:qr-retiro@colorlink" width="180" height="180" alt="Código QR de retiro" style="display:block; margin:0 auto; border:6px solid #ffffff; border-radius:8px;" />
-        <p style="margin:14px 0 2px; font-family: 'Courier New', monospace; font-size:24px; font-weight:800; letter-spacing:4px; color:#0A1A36;">
-          ${pickupCode}
-        </p>
-        <p style="margin:0; color:#64748b; font-size:11px;">Si el QR no se puede escanear, dicta este código en la sucursal.</p>
-        <p style="margin:16px 0 0; color:#334155; font-size:13px;">
-          <strong>Sucursal de retiro:</strong><br/>${escapeHtml(orden.direccionEntrega || 'Sucursal asignada')}
-        </p>
-      </div>`;
-  }
-
-  const itemsRows = (orden.items || []).map((it: any) => `
-    <tr>
-      <td style="padding:8px 0; color:#334155; font-size:13px; border-bottom:1px solid #f1f5f9;">${escapeHtml(it.nombreProducto)} × ${it.cantidad}</td>
-      <td style="padding:8px 0; color:#0A1A36; font-size:13px; font-weight:700; text-align:right; border-bottom:1px solid #f1f5f9;">$${Number(it.subtotal).toLocaleString('es-CO')}</td>
-    </tr>`).join('');
-
-  const intro =
-    showQr && estado === 'confirmado'
-      ? 'Tu pago fue confirmado. Presenta este código en la sucursal junto con tu documento de identidad para retirar tu pedido.'
-      : showQr && estado === 'listo_recoger'
-        ? '¡Tu pedido ya está listo! Acércate a la sucursal con este código y tu documento de identidad.'
-        : `Tu pedido por un total de <strong style="color:#0A1A36;">$${Number(orden.total).toLocaleString('es-CO')} COP</strong> cambió de estado.`;
-
   await transporter.sendMail({
     from: process.env.SMTP_FROM || '"ColorLink" <no-reply@colorlink.com>',
     to: email,
-    subject: `Tu pedido #${orderCode} - ${estadoLabels[estado] || estado}`,
-    attachments,
+    subject: `Tu pedido #${orden.ordenId.slice(0, 8)} - ${estadoLabels[estado] || estado}`,
     html: `
     <div style="font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #f1f5f9;">
       <div style="background: #0A1A36; padding: 24px 32px; border-radius: 12px 12px 0 0;">
@@ -149,20 +101,11 @@ async function sendOrderStatusEmail(email: string, orden: any, estado: string) {
         <span style="display:inline-block; background:#d1fae5; color:#065f46; font-size:11px; font-weight:800; padding:4px 10px; border-radius:999px; text-transform:uppercase; letter-spacing:0.5px;">
           ${estadoLabels[estado] || estado}
         </span>
-        <h2 style="color: #0A1A36; margin: 14px 0 6px; font-size: 20px;">Pedido #${orderCode}</h2>
-        <p style="color: #475569; font-size: 14px; line-height: 1.6; margin: 0;">${intro}</p>
-
-        ${qrBlock}
-
-        ${itemsRows ? `
-        <table style="width:100%; border-collapse:collapse; margin-top:8px;">${itemsRows}
-          <tr>
-            <td style="padding:12px 0 0; color:#0A1A36; font-size:14px; font-weight:800;">Total</td>
-            <td style="padding:12px 0 0; color:#0A1A36; font-size:14px; font-weight:800; text-align:right;">$${Number(orden.total).toLocaleString('es-CO')} COP</td>
-          </tr>
-        </table>` : ''}
-
-        <a href="${process.env.APP_URL || ''}" style="display:inline-block; background:#10B981; color:#031018; font-weight:800; font-size:13px; padding:12px 24px; border-radius:10px; text-decoration:none; margin-top:24px;">
+        <h2 style="color: #0A1A36; margin: 14px 0 6px; font-size: 20px;">Pedido #${orden.ordenId.slice(0, 8).toUpperCase()}</h2>
+        <p style="color: #475569; font-size: 14px; line-height: 1.6; margin: 0 0 20px;">
+          Tu pedido por un total de <strong style="color:#0A1A36;">$${orden.total.toLocaleString('es-CO')} COP</strong> cambió de estado.
+        </p>
+        <a href="${process.env.APP_URL || ''}" style="display:inline-block; background:#10B981; color:#031018; font-weight:800; font-size:13px; padding:12px 24px; border-radius:10px; text-decoration:none;">
           Ver mi pedido
         </a>
         <p style="color: #94a3b8; font-size: 11px; margin-top: 28px; border-top: 1px solid #e2e8f0; padding-top: 16px;">
@@ -748,8 +691,74 @@ async function startServer() {
   });
 
   // 8. Recuperar contraseña: solicitar código de restablecimiento
+  app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email) return res.status(400).json({ success: false, error: 'Correo requerido' });
+
+      const cleanEmail = String(email).trim().toLowerCase();
+      const user = await prisma.usuario.findUnique({ where: { email: cleanEmail } });
+
+      // Respuesta genérica siempre, exista o no el correo (evita revelar qué emails están registrados)
+      if (!user) {
+        return res.json({ success: true, message: 'Si el correo existe, recibirás un código para restablecer tu contraseña.' });
+      }
+
+      const code = String(Math.floor(100000 + Math.random() * 900000));
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+      await prisma.otpVerificationCode.updateMany({
+        where: { email: cleanEmail, isUsed: false },
+        data: { isUsed: true }
+      });
+      await prisma.otpVerificationCode.create({
+        data: { email: cleanEmail, code, expiresAt, usuarioId: user.usuarioId }
+      });
+
+      await sendOtpEmail(cleanEmail, code);
+
+      res.json({ success: true, message: 'Si el correo existe, recibirás un código para restablecer tu contraseña.' });
+    } catch (error: any) {
+      console.error('[forgot-password]', error);
+      res.status(500).json({ success: false, error: 'No se pudo procesar la solicitud' });
+    }
+  });
 
   // 9. Restablecer contraseña con el código recibido
+  app.post('/api/auth/reset-password', authLimiter, async (req, res) => {
+    try {
+      const { email, code, newPassword } = req.body;
+      if (!email || !code || !newPassword) {
+        return res.status(400).json({ success: false, error: 'Correo, código y nueva contraseña son requeridos' });
+      }
+      if (String(newPassword).length < 8) {
+        return res.status(400).json({ success: false, error: 'La contraseña debe tener al menos 8 caracteres' });
+      }
+
+      const cleanEmail = String(email).trim().toLowerCase();
+      const stored = await prisma.otpVerificationCode.findFirst({
+        where: { email: cleanEmail, isUsed: false },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      if (!stored || new Date() > stored.expiresAt || stored.code !== String(code).trim()) {
+        return res.status(400).json({ success: false, error: 'Código inválido o expirado' });
+      }
+
+      await prisma.otpVerificationCode.update({ where: { id: stored.id }, data: { isUsed: true } });
+
+      const passwordHash = await bcrypt.hash(newPassword, 10);
+      await prisma.usuario.update({
+        where: { email: cleanEmail },
+        data: { passwordHash }
+      });
+
+      res.json({ success: true, message: 'Contraseña actualizada. Ya puedes iniciar sesión.' });
+    } catch (error: any) {
+      console.error('[reset-password]', error);
+      res.status(500).json({ success: false, error: 'No se pudo restablecer la contraseña' });
+    }
+  });
 
   app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
     try {
@@ -1411,61 +1420,6 @@ async function startServer() {
     } catch (error: any) {
       console.error('[update-order-status]', error);
       res.status(400).json({ success: false, error: 'No se pudo actualizar el estado de la orden' });
-    }
-  });
-
-  app.post('/api/orders/validate-pickup', requireAuth, requireRole('administrador', 'asesor'), async (req: any, res) => {
-    try {
-      const code = String(req.body.code || '').trim();
-      if (!code) {
-        return res.status(400).json({ success: false, error: 'Escribe o escanea el código de retiro.' });
-      }
-
-      let orden: any = null;
-      if (code.length === 8) {
-        const matches = await prisma.orden.findMany({
-          where: { qrToken: { startsWith: code.toLowerCase() } },
-          include: { items: true, usuario: { select: { nombre: true, apellido: true, email: true } } }
-        });
-        orden = matches.length === 1 ? matches[0] : null;
-      } else {
-        orden = await prisma.orden.findUnique({
-          where: { qrToken: code },
-          include: { items: true, usuario: { select: { nombre: true, apellido: true, email: true } } }
-        });
-      }
-
-      if (!orden) {
-        return res.status(404).json({ success: false, error: 'Código no encontrado.' });
-      }
-      if (orden.metodoEntrega !== 'recoger_tienda') {
-        return res.status(400).json({ success: false, error: 'Este pedido es a domicilio, no se retira en sucursal.' });
-      }
-      if (orden.estado === 'entregado') {
-        return res.status(400).json({ success: false, error: 'Este pedido ya fue entregado.' });
-      }
-      if (orden.estado === 'cancelado') {
-        return res.status(400).json({ success: false, error: 'Este pedido fue cancelado.' });
-      }
-      if (orden.estado !== 'listo_recoger') {
-        return res.status(400).json({ success: false, error: `El pedido todavía no está listo para entrega (estado actual: ${orden.estado}).` });
-      }
-
-      const updated = await prisma.orden.update({
-        where: { ordenId: orden.ordenId },
-        data: {
-          estado: 'entregado',
-          historial: { create: { estado: 'entregado', comentario: `Entregado en sucursal. Código validado por ${req.user.email}.`, usuarioId: req.user.id } }
-        },
-        include: { items: true }
-      });
-
-      sendOrderStatusEmail(orden.usuario.email, updated, 'entregado').catch(err => console.error('[pickup-email]', err));
-
-      res.json({ success: true, order: updated, customer: orden.usuario });
-    } catch (error) {
-      console.error('[validate-pickup]', error);
-      res.status(500).json({ success: false, error: 'No se pudo validar el código.' });
     }
   });
 
