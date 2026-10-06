@@ -760,6 +760,37 @@ async function startServer() {
     }
   });
 
+  // Cambiar mi propia contraseña (exige la contraseña actual y cumple la política)
+  app.post('/api/auth/change-password', authLimiter, requireAuth, async (req: any, res) => {
+    try {
+      const { currentPassword, newPassword } = req.body;
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({ success: false, error: 'Escribe tu contraseña actual y la nueva.' });
+      }
+      const user = await prisma.usuario.findUnique({ where: { usuarioId: req.user.id } });
+      if (!user || !user.passwordHash) {
+        return res.status(400).json({ success: false, error: 'Esta cuenta no usa contraseña.' });
+      }
+      if (!(await bcrypt.compare(String(currentPassword), user.passwordHash))) {
+        return res.status(401).json({ success: false, error: 'La contraseña actual no es correcta.' });
+      }
+      const policyError = validatePasswordPolicy(String(newPassword));
+      if (policyError) return res.status(400).json({ success: false, error: policyError });
+      if (String(newPassword) === String(currentPassword)) {
+        return res.status(400).json({ success: false, error: 'La nueva contraseña debe ser distinta a la actual.' });
+      }
+
+      await prisma.usuario.update({
+        where: { usuarioId: user.usuarioId },
+        data: { passwordHash: await bcrypt.hash(String(newPassword), 10) }
+      });
+      res.json({ success: true, message: 'Contraseña actualizada.' });
+    } catch (error: any) {
+      console.error('[change-password]', error);
+      res.status(500).json({ success: false, error: 'No se pudo cambiar la contraseña' });
+    }
+  });
+
   // 12. Estadísticas reales del dashboard, según el rol
   app.get('/api/dashboard/stats', requireAuth, async (req: any, res) => {
     try {
