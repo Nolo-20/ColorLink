@@ -60,23 +60,6 @@ services:
     restart: always
 
   db:
-        condition: service_healthy
-    env_file:
-      - .env
-    environment:
-      DATABASE_URL: postgresql://colorlink_user:${POSTGRES_PASSWORD}@db:5432/colorlink_db
-    restart: always
-
-  # ERP interno (repo ColorLink-ERP, clonado junto a este proyecto): nginx sirve el ERP en :8080 y reenvía /api al backend
-  erp:
-    build: ../ColorLink-ERP
-    container_name: colorlink-erp
-    network_mode: service:tailscale
-    depends_on:
-      - colorlink
-    restart: always
-
-  db:
     image: postgres:16-alpine
     container_name: colorlink_db
     environment:
