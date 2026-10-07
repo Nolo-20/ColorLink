@@ -30,6 +30,43 @@ services:
       DATABASE_URL: postgresql://colorlink_user:${POSTGRES_PASSWORD}@db:5432/colorlink_db
     restart: always
 
+  # ERP interno: su propio nodo de Tailscale (https://colorlink-erp.<tailnet>.ts.net), independiente de la tienda.
+  # Solo accesible desde dispositivos de tu tailnet. nginx sirve el ERP en :8080 y reenvía /api al backend por la red de Docker.
+  tailscale-erp:
+    image: tailscale/tailscale:latest
+    container_name: colorlink-erp-tailscale
+    hostname: colorlink-erp
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "false"
+      TS_SERVE_CONFIG: /config/erp-serve.json
+    volumes:
+      - ts_state_erp:/var/lib/tailscale
+      - ./tailscale/erp-serve.json:/config/erp-serve.json:ro
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    restart: always
+
+  erp:
+    build: ../ColorLink-ERP
+    container_name: colorlink-erp
+    network_mode: service:tailscale-erp
+    depends_on:
+      - tailscale-erp
+      - colorlink
+    restart: always
+
+  db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://colorlink_user:${POSTGRES_PASSWORD}@db:5432/colorlink_db
+    restart: always
+
   # ERP interno (repo ColorLink-ERP, clonado junto a este proyecto): nginx sirve el ERP en :8080 y reenvía /api al backend
   erp:
     build: ../ColorLink-ERP
@@ -59,4 +96,5 @@ services:
 
 volumes:
   ts_state:
+  ts_state_erp:
   colorlink_pgdata:
