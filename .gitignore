@@ -7,3 +7,6 @@ coverage/
 .env*
 !.env.example
 .preview/
+tools/visualizer-scenes/node_modules/
+tools/visualizer-scenes/out/
+tools/visualizer-scenes/bundle.js
