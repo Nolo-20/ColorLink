@@ -28,6 +28,39 @@ interface ChatMessage {
   timestamp: string;
 }
 
+// Formato mínimo para las respuestas: **negrita** y viñetas "- " o "* "
+const renderInline = (text: string) =>
+  text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
+    part.startsWith('**') && part.endsWith('**') && part.length > 4
+      ? <strong key={i} className="font-bold">{part.slice(2, -2)}</strong>
+      : <React.Fragment key={i}>{part.replace(/\*\*/g, '')}</React.Fragment>
+  );
+
+const FormattedMessage: React.FC<{ text: string }> = ({ text }) => {
+  const lines = text.split('\n');
+  const blocks: React.ReactNode[] = [];
+  let bullets: string[] = [];
+  const flush = () => {
+    if (bullets.length) {
+      blocks.push(
+        <ul key={`ul-${blocks.length}`} className="list-disc pl-4 space-y-1">
+          {bullets.map((b, i) => <li key={i}>{renderInline(b)}</li>)}
+        </ul>
+      );
+      bullets = [];
+    }
+  };
+  lines.forEach((raw) => {
+    const line = raw.trim();
+    const m = line.match(/^(?:[-*•]|\d+\.)\s+(.*)$/);
+    if (m) { if (m[1].replace(/\*/g, '').trim()) bullets.push(m[1]); return; }
+    flush();
+    if (line) blocks.push(<p key={`p-${blocks.length}`}>{renderInline(line)}</p>);
+  });
+  flush();
+  return <div className="space-y-2">{blocks}</div>;
+};
+
 export const VirtualAssistantModal: React.FC<VirtualAssistantModalProps> = ({
   isOpen,
   onClose,
@@ -134,7 +167,7 @@ export const VirtualAssistantModal: React.FC<VirtualAssistantModalProps> = ({
                 <div
                   className={`max-w-[85%] p-3 rounded-2xl text-xs leading-relaxed ${isBot ? 'bg-slate-900 text-slate-100 border border-slate-800 shadow-md' : 'bg-emerald-600 text-slate-950 font-medium rounded-br-none shadow-md'}`}
                 >
-                  <p className="whitespace-pre-line">{msg.text}</p>
+                  <FormattedMessage text={msg.text} />
                   <span className={`text-[9px] block mt-1 ${isBot ? 'text-slate-400' : 'text-emerald-950 font-bold'} text-right`}>
                     {msg.timestamp}
                   </span>

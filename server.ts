@@ -2228,14 +2228,53 @@ async function startServer() {
       ).join('\n');
 
       const contextoProyecto = proyecto
-        ? `\nProyecto que el cliente está cotizando ahora: ${[proyecto.proyecto, proyecto.areaM2 ? proyecto.areaM2 + ' m²' : '', proyecto.superficie, proyecto.ambiente, proyecto.color].filter(Boolean).join(' · ')}.`
+        ? `\nEl cliente tiene abierto el formulario de cotización con estos datos (todavía NO es un proyecto guardado): ${[proyecto.proyecto, proyecto.areaM2 ? proyecto.areaM2 + ' m²' : '', proyecto.superficie, proyecto.ambiente, proyecto.color].filter(Boolean).join(' · ')}.`
         : '';
 
+      // Si hay sesión, el asistente ve los proyectos y pedidos REALES del cliente (solo los suyos)
+      let sesion: any = null;
+      try { if (req.cookies?.session) sesion = jwt.verify(req.cookies.session, JWT_SECRET); } catch { sesion = null; }
+
+      const ESTADO_PROY_TXT: Record<string, string> = {
+        en_revision: 'en revisión', imagen_por_corregir: 'imagen por corregir (debe subir otra foto)', en_peritaje: 'en peritaje técnico',
+        cotizado: 'cotizado', aprobado_calidad: 'aprobado por calidad', rechazado: 'requiere ajustes técnicos', despachado: 'despachado', cancelado: 'cancelado'
+      };
+      const ESTADO_ORDEN_TXT: Record<string, string> = {
+        creado: 'creado', confirmado: 'comprado', en_alistamiento: 'en preparación en bodega', en_camino: 'en camino',
+        listo_recoger: 'listo para retirar en tienda', entregado: 'entregado', cancelado: 'cancelado'
+      };
+
+      let contextoCuenta = '\nEl usuario NO ha iniciado sesión: no puedes ver sus proyectos ni pedidos. Si pregunta por ellos, pídele que inicie sesión y los revise en "Mis Proyectos" o "Mis Pedidos".';
+      if (sesion?.id) {
+        const [misProyectos, misOrdenes] = await Promise.all([
+          prisma.proyecto.findMany({
+            where: { usuarioId: sesion.id },
+            select: { nombreProyecto: true, estadoPipeline: true, area: true, color: true, createdAt: true, cotizaciones: { select: { total: true }, orderBy: { createdAt: 'desc' }, take: 1 } },
+            orderBy: { updatedAt: 'desc' },
+            take: 10
+          }),
+          prisma.orden.findMany({
+            where: { usuarioId: sesion.id },
+            select: { ordenId: true, estado: true, total: true, metodoEntrega: true, createdAt: true },
+            orderBy: { createdAt: 'desc' },
+            take: 10
+          })
+        ]);
+        const fecha = (d: Date) => d.toLocaleDateString('es-CO');
+        const proyTxt = misProyectos.length
+          ? misProyectos.map(p => `- "${p.nombreProyecto}": ${ESTADO_PROY_TXT[p.estadoPipeline || ''] || p.estadoPipeline || 'en revisión'}${p.area ? `, ${p.area} m²` : ''}${p.color ? `, color ${p.color}` : ''}${p.cotizaciones[0]?.total ? `, cotizado en $${Math.round(p.cotizaciones[0].total).toLocaleString('es-CO')} COP` : ''} (creado el ${fecha(p.createdAt)})`).join('\n')
+          : '(ninguno: el cliente NO tiene proyectos registrados)';
+        const ordTxt = misOrdenes.length
+          ? misOrdenes.map(o => `- Pedido CL-${o.ordenId.slice(0, 8).toUpperCase()}: ${ESTADO_ORDEN_TXT[o.estado] || o.estado}, $${Math.round(o.total).toLocaleString('es-CO')} COP, ${o.metodoEntrega === 'recoger_tienda' ? 'retiro en tienda' : 'envío a domicilio'} (${fecha(o.createdAt)})`).join('\n')
+          : '(ninguno: el cliente NO tiene pedidos)';
+        contextoCuenta = `\nDatos reales de la cuenta del cliente (fuente única de verdad, consultada ahora mismo):\nProyectos:\n${proyTxt}\nPedidos:\n${ordTxt}`;
+      }
+
       const systemPrompt = `Eres el Asistente Virtual de COLORLINK, una plataforma colombiana de pinturas y recubrimientos con tienda en línea y cotización de proyectos de obra (Valle de Aburrá, Medellín).
-Hablas en español, cálido, claro y breve (máximo ~120 palabras salvo que pidan detalle). Puedes usar viñetas cortas.
+Hablas en español, cálido, claro y breve (máximo ~120 palabras salvo que pidan detalle). Formato: texto plano; puedes usar **negrita** y viñetas que empiecen con "- ". No uses tablas ni encabezados.
 Ayudas con: elegir productos, rendimientos y cuñetes/galones (fórmula: área × manos ÷ rendimiento m²/gal, más ~10% de desperdicio), preparación de superficies (humedad, fisuras, selladores), cómo funciona la tienda (pedidos, retiro en tienda con QR, cancelación solo mientras el pedido está en "Comprado") y cómo funciona la cotización de proyectos (revisión, peritaje, cotización, despacho).
-Reglas: no inventes stock, precios, plazos, descuentos ni nombres de personas; usa solo el catálogo de abajo para productos y precios y, si no sabes algo, dilo y sugiere hablar con un asesor. No des información interna del equipo ni de otros clientes. No respondas sobre temas ajenos a pinturas, obra y la plataforma.
-${contextoProyecto}
+Reglas: NUNCA inventes proyectos, pedidos, estados, stock, precios, plazos, descuentos ni nombres de personas. Sobre los proyectos y pedidos del cliente responde SOLO con la lista de "Datos reales de la cuenta"; si esa lista dice que no hay, di claramente que no tiene ninguno y explica cómo crearlo; usa solo el catálogo de abajo para productos y precios y, si no sabes algo, dilo y sugiere hablar con un asesor. No des información interna del equipo ni de otros clientes. No respondas sobre temas ajenos a pinturas, obra y la plataforma.
+${contextoCuenta}${contextoProyecto}
 
 Catálogo disponible:
 ${catalogo || '(catálogo no disponible)'}`;
@@ -2256,7 +2295,7 @@ ${catalogo || '(catálogo no disponible)'}`;
           const response = await ai.models.generateContent({
             model: modelName,
             contents,
-            config: { systemInstruction: systemPrompt, temperature: 0.4, maxOutputTokens: 600 }
+            config: { systemInstruction: systemPrompt, temperature: 0.3, maxOutputTokens: 2048 }
           });
           const reply = (response.text || '').trim();
           if (reply) return res.json({ success: true, source: modelName, reply });
