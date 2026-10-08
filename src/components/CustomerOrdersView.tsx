@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { ProductThumb } from './ProductThumb';
 import { 
   Package, 
   Search, 
@@ -330,23 +331,7 @@ export const CustomerOrdersView: React.FC<CustomerOrdersViewProps> = ({
                           
                           {/* Thumbnail / Swatch */}
                           <div className="w-16 h-16 rounded-xl bg-white border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center p-1 relative shadow-xs">
-                            {item.colorHex ? (
-                              <div 
-                                className="w-full h-full rounded-lg flex flex-col items-center justify-center text-white relative shadow-inner" 
-                                style={{ backgroundColor: item.colorHex }}
-                              >
-                                <span className="text-[8px] font-black px-1 py-0.5 rounded bg-black/40 backdrop-blur-xs">
-                                  {item.colorName?.slice(0, 10)}
-                                </span>
-                              </div>
-                            ) : (
-                              <img
-                                src={item.image}
-                                alt={item.name}
-                                className="w-full h-full object-contain"
-                                referrerPolicy="no-referrer"
-                              />
-                            )}
+                            <ProductThumb productId={item.productId} name={item.name} sizeName={item.sizeName} colorHex={item.colorHex} colorName={item.colorName} />
                           </div>
 
                           {/* Info */}

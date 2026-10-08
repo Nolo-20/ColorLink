@@ -1,4 +1,5 @@
 import React from 'react';
+import { ProductThumb } from './ProductThumb';
 import { 
   X, 
   ShoppingCart, 
@@ -174,20 +175,7 @@ export const MiniCartDrawer: React.FC<MiniCartDrawerProps> = ({
                         
                         {/* Thumbnail */}
                         <div className="w-16 h-16 rounded-xl bg-slate-100 border border-slate-200 overflow-hidden shrink-0 relative flex items-center justify-center p-1">
-                          {item.colorHex ? (
-                            <div className="w-full h-full rounded-lg flex flex-col items-center justify-center text-white relative shadow-inner" style={{ backgroundColor: item.colorHex }}>
-                              <span className="text-[9px] font-black px-1 py-0.5 rounded bg-black/40 backdrop-blur-xs">
-                                {item.colorCode}
-                              </span>
-                            </div>
-                          ) : (
-                            <img 
-                              src={item.image} 
-                              alt={item.name} 
-                              className="w-full h-full object-cover rounded-lg"
-                              referrerPolicy="no-referrer"
-                            />
-                          )}
+                          <ProductThumb productId={item.productId} name={item.name} sizeName={item.sizeName} colorHex={item.colorHex} colorName={item.colorName} />
                         </div>
 
                         {/* Info */}

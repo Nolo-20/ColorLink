@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { ProductThumb } from './ProductThumb';
 import { 
   ShoppingCart, 
   Trash2, 
@@ -149,23 +150,7 @@ export const FullCartPage: React.FC<FullCartPageProps> = ({
 
                   {/* Thumbnail */}
                   <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-xl bg-slate-50 border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center p-2 relative">
-                    {item.colorHex ? (
-                      <div 
-                        className="w-full h-full rounded-lg shadow-inner flex flex-col items-center justify-center text-white relative"
-                        style={{ backgroundColor: item.colorHex }}
-                      >
-                        <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-black/50 backdrop-blur-xs text-white">
-                          {item.colorCode}
-                        </span>
-                      </div>
-                    ) : (
-                      <img
-                        src={item.image}
-                        alt={item.name}
-                        className="w-full h-full object-cover rounded-lg"
-                        referrerPolicy="no-referrer"
-                      />
-                    )}
+                    <ProductThumb productId={item.productId} name={item.name} sizeName={item.sizeName} colorHex={item.colorHex} colorName={item.colorName} />
                   </div>
 
                   {/* Details */}

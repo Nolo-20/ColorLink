@@ -1,8 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { StoreProduct, StoreProductColor, StoreProductSize } from '../types';
-import { PaintCanGraphic } from './PaintCanGraphic';
-import { Eye, X, Sparkles, Car, Building2, Factory, Home } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { Eye, X, Car, Building2, Factory, Home, MousePointerClick, RotateCcw, Loader2, SplitSquareHorizontal } from 'lucide-react';
+import { analyze, growRegion, paintSurface, closeMask, Analysis } from '../lib/surfacePainter';
 
 interface AmbientWallVisualizerProps {
   currentProduct: StoreProduct;
@@ -30,8 +29,10 @@ interface SceneData {
   lightingType: string;
   photoUrl: string;
   thumbUrl: string;
-  wallMask: string;
+  wallMask: string; // (heredado, ya no se usa para pintar)
   blendStyle: 'car' | 'floor' | 'facade' | 'interior';
+  /** Máscara precisa (PNG con alfa) de la superficie pintable; si existe, se pinta sola al abrir. */
+  maskUrl?: string;
 }
 
 const CATEGORY_SCENES: Record<string, SceneData[]> = {
@@ -183,15 +184,12 @@ export const AmbientWallVisualizer: React.FC<AmbientWallVisualizerProps> = ({
   selectedSize,
   onClose
 }) => {
-  // Determine scenes based on product category
-  const categoryKey = (currentProduct.category && CATEGORY_SCENES[currentProduct.category]) 
-    ? currentProduct.category 
+  const categoryKey = (currentProduct.category && CATEGORY_SCENES[currentProduct.category])
+    ? currentProduct.category
     : 'hogar';
-
   const categoryScenes = CATEGORY_SCENES[categoryKey] || CATEGORY_SCENES.hogar;
   const [activeSceneId, setActiveSceneId] = useState<string>(categoryScenes[0].id);
 
-  // Sync active scene when product category changes
   useEffect(() => {
     if (categoryScenes.length > 0 && !categoryScenes.some(s => s.id === activeSceneId)) {
       setActiveSceneId(categoryScenes[0].id);
@@ -201,207 +199,303 @@ export const AmbientWallVisualizer: React.FC<AmbientWallVisualizerProps> = ({
   const currentColorHex = selectedColor?.hex || '#FAF9F6';
   const currentColorName = selectedColor?.name || 'Blanco Nieve';
   const currentColorCode = selectedColor?.code || 'CL-1001';
-
   const isLight = isLightColor(currentColorHex);
   const activeScene = categoryScenes.find(s => s.id === activeSceneId) || categoryScenes[0];
 
-  // Context category icon and meta label
+  // ---------------- Motor de pintado sobre la foto ----------------
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const baseRef = useRef<ImageData | null>(null);          // foto original a resolución de trabajo
+  const analysisRef = useRef<Analysis | null>(null);       // foto en Lab a baja resolución
+  const outRef = useRef<ImageData | null>(null);
+  const [selection, setSelection] = useState<Uint8Array | null>(null); // máscara en resolución de análisis
+  const [presetAlpha, setPresetAlpha] = useState<Uint8ClampedArray | null>(null); // máscara precisa (si la escena la trae)
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [showOriginal, setShowOriginal] = useState(false);
+  const [history, setHistory] = useState<Uint8Array[]>([]);
+
+  // Carga la escena: foto + (opcional) máscara precisa
+  useEffect(() => {
+    let cancelled = false;
+    setStatus('loading');
+    setSelection(null);
+    setPresetAlpha(null);
+    setHistory([]);
+
+    const loadImage = (src: string) => new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = src;
+    });
+
+    (async () => {
+      try {
+        const img = await loadImage(activeScene.photoUrl);
+        if (cancelled) return;
+        const W = Math.min(1200, img.naturalWidth);
+        const H = Math.round(img.naturalHeight * W / img.naturalWidth);
+        const work = document.createElement('canvas');
+        work.width = W; work.height = H;
+        const wctx = work.getContext('2d', { willReadFrequently: true })!;
+        wctx.drawImage(img, 0, 0, W, H);
+        const base = wctx.getImageData(0, 0, W, H); // lanza SecurityError si la foto no permite CORS
+
+        const AW = 480, AH = Math.round(H * AW / W);
+        const small = document.createElement('canvas');
+        small.width = AW; small.height = AH;
+        const sctx = small.getContext('2d', { willReadFrequently: true })!;
+        sctx.drawImage(img, 0, 0, AW, AH);
+        const an = analyze(sctx.getImageData(0, 0, AW, AH));
+
+        let preset: Uint8ClampedArray | null = null;
+        if (activeScene.maskUrl) {
+          try {
+            const m = await loadImage(activeScene.maskUrl);
+            const mc = document.createElement('canvas');
+            mc.width = W; mc.height = H;
+            const mctx = mc.getContext('2d', { willReadFrequently: true })!;
+            mctx.drawImage(m, 0, 0, W, H);
+            preset = mctx.getImageData(0, 0, W, H).data;
+          } catch { preset = null; }
+        }
+        if (cancelled) return;
+
+        baseRef.current = base;
+        analysisRef.current = an;
+        outRef.current = new ImageData(W, H);
+        const canvas = canvasRef.current;
+        if (canvas) { canvas.width = W; canvas.height = H; }
+        setPresetAlpha(preset);
+        setSelection(new Uint8Array(AW * AH));
+        setStatus('ready');
+      } catch {
+        if (!cancelled) setStatus('error');
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [activeScene.photoUrl, activeScene.maskUrl]);
+
+  // Convierte la selección (baja resolución) en un alfa suave a resolución de trabajo
+  const selectionAlpha = useCallback((): Uint8ClampedArray | null => {
+    const an = analysisRef.current, base = baseRef.current;
+    if (!an || !base || !selection) return null;
+    const m = document.createElement('canvas');
+    m.width = an.width; m.height = an.height;
+    const mctx = m.getContext('2d')!;
+    const img = mctx.createImageData(an.width, an.height);
+    let any = false;
+    for (let i = 0; i < selection.length; i++) if (selection[i]) { img.data[i * 4 + 3] = 255; any = true; }
+    if (!any) return null;
+    mctx.putImageData(img, 0, 0);
+    const up = document.createElement('canvas');
+    up.width = base.width; up.height = base.height;
+    const uctx = up.getContext('2d', { willReadFrequently: true })!;
+    uctx.imageSmoothingEnabled = true;
+    uctx.imageSmoothingQuality = 'high';
+    uctx.filter = 'blur(1.5px)';
+    uctx.drawImage(m, 0, 0, base.width, base.height);
+    return uctx.getImageData(0, 0, base.width, base.height).data;
+  }, [selection]);
+
+  // Pinta cada vez que cambia el color, la selección o el modo "ver original"
+  useEffect(() => {
+    if (status !== 'ready') return;
+    const canvas = canvasRef.current, base = baseRef.current, out = outRef.current;
+    if (!canvas || !base || !out) return;
+    const ctx = canvas.getContext('2d')!;
+    if (showOriginal) { ctx.putImageData(base, 0, 0); return; }
+
+    const sel = selectionAlpha();
+    let alpha: Uint8ClampedArray | null = presetAlpha;
+    if (sel && presetAlpha) {
+      alpha = new Uint8ClampedArray(presetAlpha);
+      for (let i = 3; i < alpha.length; i += 4) alpha[i] = Math.max(alpha[i], sel[i]);
+    } else if (sel) {
+      alpha = sel;
+    }
+    if (!alpha) { ctx.putImageData(base, 0, 0); return; }
+    paintSurface(base, alpha, currentColorHex, out);
+    ctx.putImageData(out, 0, 0);
+  }, [status, currentColorHex, selection, presetAlpha, showOriginal, selectionAlpha]);
+
+  // Toque/clic: pinta la superficie tocada; si ya estaba pintada, la despinta
+  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current, an = analysisRef.current;
+    if (!canvas || !an || !selection || status !== 'ready') return;
+    const rect = canvas.getBoundingClientRect();
+    // object-cover: la foto se escala para cubrir y se recorta centrada
+    const scale = Math.max(rect.width / canvas.width, rect.height / canvas.height);
+    const dispW = canvas.width * scale, dispH = canvas.height * scale;
+    const offX = (rect.width - dispW) / 2, offY = (rect.height - dispH) / 2;
+    const nx = (e.clientX - rect.left - offX) / dispW;
+    const ny = (e.clientY - rect.top - offY) / dispH;
+    if (nx < 0 || ny < 0 || nx > 1 || ny > 1) return;
+
+    const ax = Math.round(nx * (an.width - 1)), ay = Math.round(ny * (an.height - 1));
+    const idx = ay * an.width + ax;
+    const next = new Uint8Array(selection);
+
+    if (selection[idx]) {
+      // Quitar la región conectada que contiene el punto
+      const stack = [idx];
+      next[idx] = 0;
+      while (stack.length) {
+        const p = stack.pop()!;
+        const x = p % an.width, y = (p - x) / an.width;
+        const nb = [x > 0 ? p - 1 : -1, x < an.width - 1 ? p + 1 : -1, y > 0 ? p - an.width : -1, y < an.height - 1 ? p + an.width : -1];
+        for (const q of nb) if (q >= 0 && next[q]) { next[q] = 0; stack.push(q); }
+      }
+    } else {
+      const region = growRegion(an, [nx, ny], { maxFraction: 0.55, minFraction: 0.002 });
+      if (!region) return;
+      const closed = closeMask(region, an.width, an.height, 2); // tapa motas de textura
+      for (let i = 0; i < next.length; i++) if (closed[i]) next[i] = 1;
+    }
+    setHistory(h => [...h.slice(-9), selection]);
+    setSelection(next);
+  };
+
+  const undo = () => {
+    setHistory(h => {
+      if (!h.length) return h;
+      setSelection(h[h.length - 1]);
+      return h.slice(0, -1);
+    });
+  };
+  const clearAll = () => {
+    if (!analysisRef.current || !selection) return;
+    setHistory(h => [...h.slice(-9), selection]);
+    setSelection(new Uint8Array(selection.length));
+  };
+
+  const hasUserPaint = !!selection && selection.some(v => v === 1);
+  const hasPaint = hasUserPaint || !!presetAlpha;
+
   const getCategoryMeta = () => {
     switch (categoryKey) {
       case 'automotriz':
-        return {
-          icon: <Car className="w-3.5 h-3.5 text-blue-400" />,
-          label: 'Contexto Automotriz',
-          title: 'Visualización de Acabado Automotriz 2K',
-          selectorTitle: 'Selecciona el entorno automotriz:'
-        };
+        return { icon: <Car className="w-3.5 h-3.5 text-blue-400" />, label: 'Contexto Automotriz', hint: 'Toca la carrocería para pintarla', selectorTitle: 'Selecciona el entorno automotriz:' };
       case 'industrial':
-        return {
-          icon: <Factory className="w-3.5 h-3.5 text-amber-400" />,
-          label: 'Contexto Industrial',
-          title: 'Visualización de Pisos & Tráfico Pesado',
-          selectorTitle: 'Selecciona la superficie industrial:'
-        };
+        return { icon: <Factory className="w-3.5 h-3.5 text-amber-400" />, label: 'Contexto Industrial', hint: 'Toca el piso para pintarlo', selectorTitle: 'Selecciona la superficie industrial:' };
       case 'construccion':
-        return {
-          icon: <Building2 className="w-3.5 h-3.5 text-emerald-400" />,
-          label: 'Contexto Construcción & Fachadas',
-          title: 'Visualización de Fachada e Intemperie',
-          selectorTitle: 'Selecciona la fachada exterior:'
-        };
+        return { icon: <Building2 className="w-3.5 h-3.5 text-emerald-400" />, label: 'Fachadas & Exterior', hint: 'Toca la fachada para pintarla', selectorTitle: 'Selecciona la fachada exterior:' };
       case 'hogar':
       default:
-        return {
-          icon: <Home className="w-3.5 h-3.5 text-indigo-400" />,
-          label: 'Contexto Hogar & Decoración',
-          title: 'Visualización de Muros Interiores',
-          selectorTitle: 'Selecciona el ambiente interior:'
-        };
+        return { icon: <Home className="w-3.5 h-3.5 text-indigo-400" />, label: 'Hogar & Decoración', hint: 'Toca una pared para pintarla', selectorTitle: 'Selecciona el ambiente interior:' };
     }
   };
-
   const meta = getCategoryMeta();
 
   return (
     <div className="w-full flex flex-col gap-3">
-      
-      {/* Visualizer Stage Container */}
-      <div 
-        className="relative w-full aspect-[16/10] sm:aspect-[16/10.5] rounded-3xl overflow-hidden border shadow-xl transition-colors duration-500 bg-slate-900"
+      <div
+        className="relative w-full aspect-[16/10] rounded-3xl overflow-hidden border shadow-xl bg-slate-900"
         style={{ borderColor: isLight ? '#CBD5E1' : `${currentColorHex}66` }}
       >
-        
-        {/* ======================================================== */}
-        {/* BASE PHOTOGRAPH ACCORDING TO CATEGORY CONTEXT */}
-        {/* ======================================================== */}
-        <img
-          src={activeScene.photoUrl}
-          alt={activeScene.name}
-          className="w-full h-full object-cover select-none pointer-events-none transition-all duration-500"
+        {/* Foto pintada (canvas). Si la foto no se puede procesar, se muestra tal cual. */}
+        <canvas
+          ref={canvasRef}
+          onClick={handleCanvasClick}
+          className={`absolute inset-0 w-full h-full object-cover select-none ${status === 'ready' ? 'cursor-crosshair' : 'opacity-0'}`}
+          aria-label={`Vista de ${activeScene.name} pintada en ${currentColorName}`}
         />
-
-        {/* ======================================================== */}
-        {/* REALISTIC SURFACE SHADING (AUTOMOTIVE, FLOOR, OR WALL) */}
-        {/* Preserves texture, reflections, highlights, and ambient light */}
-        {/* ======================================================== */}
-        <div 
-          className="absolute inset-0 pointer-events-none transition-all duration-700 ease-out"
-          style={{
-            maskImage: activeScene.wallMask,
-            WebkitMaskImage: activeScene.wallMask
-          }}
-        >
-          {/* Multiply / Soft-light Pass: Sinks pigment into bodywork curves or floor grain */}
-          <div 
-            className="absolute inset-0 transition-colors duration-500"
-            style={{
-              backgroundColor: currentColorHex,
-              mixBlendMode: isLight ? 'soft-light' : 'multiply',
-              opacity: activeScene.blendStyle === 'car' ? (isLight ? 0.70 : 0.85) : (isLight ? 0.65 : 0.82)
-            }}
+        {status !== 'ready' && (
+          <img
+            src={activeScene.photoUrl}
+            alt={activeScene.name}
+            className="absolute inset-0 w-full h-full object-cover select-none pointer-events-none"
           />
+        )}
+        {status === 'loading' && (
+          <div className="absolute inset-0 flex items-center justify-center bg-slate-950/30">
+            <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950/80 text-white text-xs font-bold">
+              <Loader2 className="w-4 h-4 animate-spin" /> Preparando el ambiente…
+            </span>
+          </div>
+        )}
 
-          {/* Color Tint Pass: Accurately renders the exact brand pigment hue */}
-          <div 
-            className="absolute inset-0 transition-colors duration-500"
-            style={{
-              backgroundColor: currentColorHex,
-              mixBlendMode: 'color',
-              opacity: activeScene.blendStyle === 'car' ? (isLight ? 0.65 : 0.78) : (isLight ? 0.55 : 0.70)
-            }}
-          />
-
-          {/* Gloss / Sheen / Specular Pass for high-grade finishes */}
-          <div 
-            className="absolute inset-0 transition-colors duration-500"
-            style={{
-              backgroundColor: currentColorHex,
-              mixBlendMode: 'overlay',
-              opacity: activeScene.blendStyle === 'car' ? 0.35 : (isLight ? 0.28 : 0.18)
-            }}
-          />
-        </div>
-
-        {/* ======================================================== */}
-        {/* TOP BAR: COLOR BADGE + SURFACE TAG + CLOSE BUTTON */}
-        {/* ======================================================== */}
-        <div className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between pointer-events-auto gap-2">
-          {/* Top-Left Color & Surface Badge */}
-          <div 
-            className={`px-3 py-1.5 rounded-2xl shadow-lg border backdrop-blur-md flex items-center gap-2.5 transition-all ${
-              isLight 
-                ? 'bg-white/95 border-slate-300 shadow-slate-900/10 text-slate-950' 
-                : 'border-white/30 shadow-black/30 text-white'
-            }`}
-            style={{
-              backgroundColor: isLight ? '#FFFFFF' : `${currentColorHex}EE`
-            }}
-          >
-            <div 
-              className="w-4 h-4 rounded-full border border-white/70 shadow-xs shrink-0 ring-1 ring-black/10" 
-              style={{ backgroundColor: currentColorHex }}
-            />
-            <div>
+        {/* Barra superior: color + cerrar */}
+        <div className="absolute top-3 left-3 right-3 z-20 flex items-start justify-between gap-2 pointer-events-none">
+          <div className="pointer-events-auto px-3 py-1.5 rounded-2xl shadow-lg bg-white/95 backdrop-blur-md border border-slate-200 flex items-center gap-2.5 text-slate-950 max-w-[65%]">
+            <div className="w-5 h-5 rounded-full shadow-inner ring-1 ring-black/10 shrink-0" style={{ backgroundColor: currentColorHex }} />
+            <div className="min-w-0">
               <div className="flex items-center gap-1.5 leading-tight">
-                <span className="text-xs font-black tracking-wide drop-shadow-xs">
-                  {currentColorName}
-                </span>
-                <span className={`text-[10px] font-bold ${isLight ? 'text-slate-500' : 'text-white/80'}`}>
-                  ({currentColorCode})
-                </span>
+                <span className="text-xs font-black truncate">{currentColorName}</span>
+                <span className="text-[10px] font-bold text-slate-500 shrink-0">{currentColorCode}</span>
               </div>
-              <span className={`block text-[9.5px] font-bold leading-tight ${isLight ? 'text-slate-600' : 'text-white/90'}`}>
-                {activeScene.surfaceType}
-              </span>
+              <span className="block text-[10px] font-semibold text-slate-500 leading-tight truncate">{activeScene.surfaceType}</span>
             </div>
           </div>
-
-          {/* Top-Right: Category Tag & "Cerrar" Action Button */}
-          <div className="flex items-center gap-2">
-            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-900/80 text-white text-[10px] font-bold border border-white/15 backdrop-blur-md shadow-md">
-              {meta.icon}
-              <span>{meta.label}</span>
+          <div className="pointer-events-auto flex items-center gap-2">
+            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-900/80 text-white text-[10px] font-bold border border-white/15 backdrop-blur-md">
+              {meta.icon}<span>{meta.label}</span>
             </div>
-
             {onClose && (
               <button
                 type="button"
                 onClick={onClose}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-950 text-white text-[11px] font-extrabold shadow-xl backdrop-blur-md border border-white/20 transition-all cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-950 text-white text-[11px] font-extrabold shadow-xl border border-white/20 cursor-pointer"
               >
-                <X className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                <span>Cerrar</span>
+                <X className="w-3.5 h-3.5 text-rose-400" /><span>Cerrar</span>
               </button>
             )}
           </div>
         </div>
 
-        {/* ======================================================== */}
-        {/* ANIMATED DOCKED PAINT CAN IN CORNER */}
-        {/* Synchronized with active product line and selected size */}
-        {/* ======================================================== */}
-        <div className="absolute bottom-2.5 left-2.5 sm:bottom-3.5 sm:left-3.5 z-20 pointer-events-none drop-shadow-2xl">
-          <AnimatePresence mode="wait">
-            <motion.div 
-              key={`docked-can-${currentProduct.id}-${selectedSize?.id || 'galon'}-${currentColorHex}`}
-              initial={{ y: 25, opacity: 0, scale: 0.85 }}
-              animate={{ y: 0, opacity: 1, scale: 1 }}
-              exit={{ y: 15, opacity: 0, scale: 0.85 }}
-              transition={{ duration: 0.3, ease: 'easeOut' }}
-              className="relative"
-            >
-              {/* Floor Shadow */}
-              <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-20 h-3 bg-black/60 blur-xs rounded-full" />
-              
-              {/* Responsive Paint Can Graphic */}
-              <PaintCanGraphic
-                colorHex={currentColorHex}
-                colorName={currentColorName}
-                productLine={currentProduct.name.split(' ')[0]}
-                sizeName={selectedSize?.name || '1 Galón'}
-                className="w-20 h-26 sm:w-24 sm:h-32"
-              />
-            </motion.div>
-          </AnimatePresence>
-        </div>
-
+        {/* Ayuda y controles */}
+        {status === 'ready' && (
+          <div className="absolute bottom-3 left-3 right-3 z-20 flex items-end justify-between gap-2 pointer-events-none">
+            {!hasPaint ? (
+              <span className="pointer-events-none inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-950/80 text-white text-[11px] font-bold backdrop-blur-md shadow-lg">
+                <MousePointerClick className="w-4 h-4 text-emerald-400" /> {meta.hint}
+              </span>
+            ) : <span />}
+            <div className="pointer-events-auto flex items-center gap-1.5">
+              {hasPaint && (
+                <button
+                  type="button"
+                  onMouseDown={() => setShowOriginal(true)}
+                  onMouseUp={() => setShowOriginal(false)}
+                  onMouseLeave={() => setShowOriginal(false)}
+                  onTouchStart={() => setShowOriginal(true)}
+                  onTouchEnd={() => setShowOriginal(false)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white/90 hover:bg-white text-slate-800 text-[10px] font-bold shadow cursor-pointer"
+                  title="Mantén presionado para ver la foto original"
+                >
+                  <SplitSquareHorizontal className="w-3.5 h-3.5" /> Antes
+                </button>
+              )}
+              {history.length > 0 && (
+                <button type="button" onClick={undo} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white/90 hover:bg-white text-slate-800 text-[10px] font-bold shadow cursor-pointer">
+                  <RotateCcw className="w-3.5 h-3.5" /> Deshacer
+                </button>
+              )}
+              {hasUserPaint && (
+                <button type="button" onClick={clearAll} className="px-2.5 py-1.5 rounded-lg bg-white/90 hover:bg-white text-slate-800 text-[10px] font-bold shadow cursor-pointer">
+                  Limpiar
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+        {status === 'error' && (
+          <div className="absolute bottom-3 left-3 z-20 px-3 py-2 rounded-xl bg-slate-950/80 text-white text-[11px] font-bold">
+            No pudimos preparar este ambiente. Prueba con otro.
+          </div>
+        )}
       </div>
 
-      {/* ======================================================== */}
-      {/* CONTEXT SELECTOR BAR (Specific to Product Category) */}
-      {/* ======================================================== */}
+      {/* Selector de escenas */}
       <div className="bg-slate-50 p-2.5 rounded-2xl border border-slate-200">
-        <div className="flex items-center justify-between mb-2 px-1">
+        <div className="flex items-center justify-between mb-2 px-1 gap-2">
           <span className="text-[11px] font-black uppercase text-slate-700 tracking-wider flex items-center gap-1.5">
             <Eye className="w-3.5 h-3.5 text-emerald-600" />
             <span>{meta.selectorTitle}</span>
           </span>
-          <span className="text-[10px] font-bold text-slate-500">
-            {activeScene.lightingType}
-          </span>
+          <span className="text-[10px] font-bold text-slate-500 truncate">{activeScene.lightingType}</span>
         </div>
-
-        {/* Photographic Thumbnails Carousel */}
         <div className="grid grid-cols-3 gap-2">
           {categoryScenes.map((scene) => {
             const isSelected = activeSceneId === scene.id;
@@ -411,40 +505,18 @@ export const AmbientWallVisualizer: React.FC<AmbientWallVisualizerProps> = ({
                 type="button"
                 onClick={() => setActiveSceneId(scene.id)}
                 className={`relative rounded-xl overflow-hidden aspect-[4/3] border-2 transition-all cursor-pointer group flex flex-col justify-end p-2 ${
-                  isSelected 
-                    ? 'border-[#0B1E48] ring-2 ring-[#0B1E48] scale-102 shadow-md' 
-                    : 'border-slate-200 hover:border-slate-400 opacity-75 hover:opacity-100'
+                  isSelected ? 'border-[#0B1E48] ring-2 ring-[#0B1E48] shadow-md' : 'border-slate-200 hover:border-slate-400 opacity-80 hover:opacity-100'
                 }`}
               >
-                {/* Real photo background */}
-                <img
-                  src={scene.thumbUrl}
-                  alt={scene.name}
-                  className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform"
-                />
-                
-                {/* Gradient overlay for label legibility */}
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/35 to-transparent" />
-
-                {/* Color Dot preview */}
-                <div 
-                  className="absolute top-1.5 right-1.5 w-3 h-3 rounded-full border border-white/80 shadow-xs" 
-                  style={{ backgroundColor: currentColorHex }}
-                />
-
-                {/* Scene Name Label */}
-                <span className="relative z-10 text-[10px] sm:text-[11px] font-black text-white leading-tight truncate text-left">
-                  {scene.name}
-                </span>
-                <span className="relative z-10 text-[8.5px] font-semibold text-slate-300 leading-tight truncate text-left">
-                  {scene.surfaceType.split('•')[0]}
-                </span>
+                <img src={scene.thumbUrl} alt={scene.name} className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/30 to-transparent" />
+                <span className="relative z-10 text-[10px] sm:text-[11px] font-black text-white leading-tight truncate text-left">{scene.name}</span>
+                <span className="relative z-10 text-[8.5px] font-semibold text-slate-300 leading-tight truncate text-left">{scene.surfaceType.split('•')[0]}</span>
               </button>
             );
           })}
         </div>
       </div>
-
     </div>
   );
 };

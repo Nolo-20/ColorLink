@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useId } from 'react';
 
 interface PaintCanGraphicProps {
   colorHex?: string;
@@ -13,6 +13,87 @@ interface PaintCanGraphicProps {
   category?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Utilidades de color y texto
+// ---------------------------------------------------------------------------
+
+const clampHex = (hex: string) => {
+  const c = (hex || '#FFFFFF').replace('#', '');
+  const full = c.length === 3 ? c.split('').map(ch => ch + ch).join('') : c.padEnd(6, 'F').slice(0, 6);
+  return `#${full}`;
+};
+
+const luminance = (hex: string) => {
+  const c = clampHex(hex).slice(1);
+  const r = parseInt(c.slice(0, 2), 16);
+  const g = parseInt(c.slice(2, 4), 16);
+  const b = parseInt(c.slice(4, 6), 16);
+  return (r * 299 + g * 587 + b * 114) / 1000;
+};
+
+const shade = (hex: string, amount: number) => {
+  // amount -1..1: negativo oscurece, positivo aclara
+  const c = clampHex(hex).slice(1);
+  const ch = [0, 2, 4].map(i => parseInt(c.slice(i, i + 2), 16));
+  const out = ch.map(v => Math.round(amount < 0 ? v * (1 + amount) : v + (255 - v) * amount));
+  return `#${out.map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, '0')).join('')}`;
+};
+
+/**
+ * Texto que nunca se sale de su ancho: si el tamaño estimado excede maxWidth,
+ * se comprime con textLength (sin cortar letras).
+ */
+const FitText: React.FC<{
+  x: number; y: number; maxWidth: number; size: number; children: string;
+  fill: string; weight?: number; spacing?: number; opacity?: number; italic?: boolean;
+}> = ({ x, y, maxWidth, size, children, fill, weight = 800, spacing = 0, opacity = 1, italic }) => {
+  const text = children || '';
+  const estimated = text.length * size * (weight >= 800 ? 0.62 : 0.56) + Math.max(0, text.length - 1) * spacing;
+  const tooWide = estimated > maxWidth;
+  return (
+    <text
+      x={x}
+      y={y}
+      fill={fill}
+      fontSize={size}
+      fontWeight={weight}
+      letterSpacing={tooWide ? 0 : spacing}
+      opacity={opacity}
+      textAnchor="middle"
+      fontFamily="'Inter', 'Helvetica Neue', Arial, sans-serif"
+      fontStyle={italic ? 'italic' : undefined}
+      {...(tooWide ? { textLength: maxWidth, lengthAdjust: 'spacingAndGlyphs' } : {})}
+    >
+      {text}
+    </text>
+  );
+};
+
+// Separa "Koraza Protección Sol & Lluvia" en { main: 'KORAZA', sub: 'Protección Sol & Lluvia' }
+const splitLine = (productLine: string, subtitle: string) => {
+  const words = (productLine || 'ColorLink').trim().split(/\s+/);
+  const main = words[0];
+  const rest = words.slice(1).join(' ');
+  return { main: main.toUpperCase(), sub: rest || subtitle };
+};
+
+const shortSize = (sizeName: string) => {
+  const s = sizeName.toLowerCase();
+  if (s.includes('aerosol') || s.includes('spray')) return '400 ml';
+  if (s.includes('1/4') || s.includes('cuarto')) return '1/4 GAL · 0.95 L';
+  if (s.includes('2.5')) return '2.5 GAL · 9.46 L';
+  if (s.includes('5 gal') || s.includes('cuñete') || s.includes('cunete') || s.includes('caneca')) return '5 GAL · 18.9 L';
+  if (s.includes('gal')) return '1 GAL · 3.78 L';
+  return sizeName.toUpperCase();
+};
+
+const FONT = "'Inter', 'Helvetica Neue', Arial, sans-serif";
+const NAVY = '#0B1E48';
+
+// ---------------------------------------------------------------------------
+// Componente
+// ---------------------------------------------------------------------------
+
 export const PaintCanGraphic: React.FC<PaintCanGraphicProps> = ({
   colorHex = '#FAF9F6',
   colorName = 'Blanco Puro',
@@ -21,1077 +102,277 @@ export const PaintCanGraphic: React.FC<PaintCanGraphicProps> = ({
   sizeName = '1 Galón',
   className = 'w-36 h-44',
   subtitle = 'Pintura Arquitectónica',
-  productCode = 'CL-1001',
-  isDetailed = false,
   category
 }) => {
-  const isAutomotive = 
-    category === 'automotriz' ||
-    productLine.toLowerCase().includes('poliuretano') || 
-    productLine.toLowerCase().includes('auto') || 
-    subtitle.toLowerCase().includes('automotriz') ||
-    sizeName.toLowerCase().includes('catalizador') || 
-    sizeName.toLowerCase().includes('endurecedor') ||
-    sizeName.toLowerCase().includes('kit con');
+  const uid = useId().replace(/[^a-zA-Z0-9]/g, '');
+  const id = (name: string) => `${name}-${uid}`;
+  const url = (name: string) => `url(#${id(name)})`;
 
-  const isAerosol = 
-    sizeName.toLowerCase().includes('aerosol') || 
-    sizeName.toLowerCase().includes('spray');
+  const color = clampHex(colorHex);
+  const isLightPaint = luminance(color) > 165;
+  const onColor = isLightPaint ? '#0F172A' : '#FFFFFF';
+  const onColorSoft = isLightPaint ? 'rgba(15,23,42,0.65)' : 'rgba(255,255,255,0.8)';
 
-  const isCunete = sizeName.toLowerCase().includes('5 gal') || 
-                   sizeName.toLowerCase().includes('cuñete') || 
-                   sizeName.toLowerCase().includes('cunete') ||
-                   sizeName.toLowerCase().includes('caneca');
+  const lower = `${productLine} ${subtitle} ${sizeName}`.toLowerCase();
+  const isAutomotive = category === 'automotriz' || /poliuretano|automotriz|catalizador|endurecedor|kit con|\bauto\b/.test(lower);
+  const isAerosol = /aerosol|spray/.test(sizeName.toLowerCase());
+  const s = sizeName.toLowerCase();
+  const isCuarto = s.includes('1/4') || s.includes('cuarto');
+  const isMedio = s.includes('2.5');
+  const isCunete = !isMedio && (s.includes('5 gal') || s.includes('cuñete') || s.includes('cunete') || s.includes('caneca'));
 
-  const isCuarto = sizeName.toLowerCase().includes('1/4') || 
-                   sizeName.toLowerCase().includes('cuarto');
+  const { main, sub } = splitLine(productLine, subtitle);
+  const sizeText = shortSize(sizeName);
+  const brand = (brandName || 'ColorLink').split(' ')[0].toUpperCase();
 
-  const isMedioCunete = sizeName.toLowerCase().includes('2.5');
+  // Definiciones comunes: metal, plástico, sombreado cilíndrico y sombra de piso
+  const commonDefs = (
+    <>
+      <linearGradient id={id('metal')} x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stopColor="#5B6573" />
+        <stop offset="0.12" stopColor="#AEB6C2" />
+        <stop offset="0.32" stopColor="#F4F6F9" />
+        <stop offset="0.48" stopColor="#C9CFD8" />
+        <stop offset="0.75" stopColor="#8A93A1" />
+        <stop offset="1" stopColor="#4A5260" />
+      </linearGradient>
+      <linearGradient id={id('metalTop')} x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stopColor="#F8FAFC" />
+        <stop offset="0.5" stopColor="#CBD2DC" />
+        <stop offset="1" stopColor="#8D96A5" />
+      </linearGradient>
+      <linearGradient id={id('cyl')} x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stopColor="#000" stopOpacity="0.42" />
+        <stop offset="0.14" stopColor="#000" stopOpacity="0.12" />
+        <stop offset="0.3" stopColor="#FFF" stopOpacity="0.22" />
+        <stop offset="0.38" stopColor="#FFF" stopOpacity="0.05" />
+        <stop offset="0.7" stopColor="#000" stopOpacity="0.08" />
+        <stop offset="1" stopColor="#000" stopOpacity="0.5" />
+      </linearGradient>
+      <linearGradient id={id('labelNavy')} x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stopColor="#13306E" />
+        <stop offset="1" stopColor={NAVY} />
+      </linearGradient>
+      <linearGradient id={id('paint')} x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stopColor={shade(color, 0.08)} />
+        <stop offset="1" stopColor={shade(color, -0.12)} />
+      </linearGradient>
+      <radialGradient id={id('floor')} cx="0.5" cy="0.5" r="0.5">
+        <stop offset="0" stopColor="#0F172A" stopOpacity="0.38" />
+        <stop offset="0.7" stopColor="#0F172A" stopOpacity="0.1" />
+        <stop offset="1" stopColor="#0F172A" stopOpacity="0" />
+      </radialGradient>
+    </>
+  );
 
-  // --- RENDER AUTOMOTIVE AEROSOL (400 ml Express Touch-up with Pro Fan Valve) ---
-  if (isAutomotive && isAerosol) {
+  // Franja de color con nombre del tono (como el color impreso en la lata real)
+  const ColorBand = ({ cx, y, w, h, arc, nameSize, sizeSize }: { cx: number; y: number; w: number; h: number; arc: number; nameSize: number; sizeSize: number }) => {
+    const x0 = cx - w / 2;
+    const x1 = cx + w / 2;
     return (
-      <div className={`relative flex items-center justify-center select-none ${className}`}>
-        <svg 
-          viewBox="0 0 160 250" 
-          className="w-full h-full drop-shadow-2xl filter"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <defs>
-            <radialGradient id="sprayFloorShadow" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#020617" stopOpacity="0.6" />
-              <stop offset="60%" stopColor="#0F172A" stopOpacity="0.2" />
-              <stop offset="100%" stopColor="#000000" stopOpacity="0" />
-            </radialGradient>
-            <linearGradient id="aerosolCanBody" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#09090B" />
-              <stop offset="15%" stopColor="#27272A" />
-              <stop offset="35%" stopColor="#52525B" />
-              <stop offset="50%" stopColor="#71717A" />
-              <stop offset="70%" stopColor="#3F3F46" />
-              <stop offset="85%" stopColor="#18181B" />
-              <stop offset="100%" stopColor="#09090B" />
-            </linearGradient>
-            <linearGradient id="sprayChrome" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#475569" />
-              <stop offset="25%" stopColor="#CBD5E1" />
-              <stop offset="50%" stopColor="#FFFFFF" />
-              <stop offset="75%" stopColor="#94A3B8" />
-              <stop offset="100%" stopColor="#334155" />
-            </linearGradient>
-          </defs>
-
-          {/* Floor Shadow */}
-          <ellipse cx="80" cy="235" rx="55" ry="8" fill="url(#sprayFloorShadow)" />
-
-          {/* Aerosol Body */}
-          <path d="M 44 80 L 44 220 C 44 228, 116 228, 116 220 L 116 80 Z" fill="url(#aerosolCanBody)" />
-
-          {/* Color Banner Band */}
-          <path d="M 44 135 L 44 200 C 65 204, 95 204, 116 200 L 116 135 Z" fill={colorHex} />
-          <path d="M 44 135 L 44 200 C 65 204, 95 204, 116 200 L 116 135 Z" fill="#000000" opacity="0.25" />
-
-          {/* Tapered Shoulder Dome */}
-          <path d="M 44 80 C 44 58, 116 58, 116 80 Z" fill="url(#sprayChrome)" />
-          <ellipse cx="80" cy="80" rx="36" ry="6" fill="#18181B" />
-
-          {/* Chime Rings */}
-          <ellipse cx="80" cy="62" rx="20" ry="4" fill="url(#sprayChrome)" />
-          <rect x="74" y="44" width="12" height="18" rx="2" fill="#E2E8F0" />
-
-          {/* Red Professional Actuator Spray Nozzle */}
-          <path d="M 72 34 L 88 34 L 88 44 L 72 44 Z" fill="#DC2626" />
-          <circle cx="80" cy="38" r="2.5" fill="#18181B" />
-          <rect x="79" y="37" width="2" height="2" fill="#F8FAFC" />
-
-          {/* Brand & Text */}
-          <text x="80" y="102" fill="#FFFFFF" fontSize="9" fontWeight="950" letterSpacing="0.8" textAnchor="middle" fontFamily="sans-serif">
-            COLORLINK AUTO
-          </text>
-          <text x="80" y="114" fill="#38BDF8" fontSize="7" fontWeight="900" letterSpacing="0.5" textAnchor="middle" fontFamily="sans-serif">
-            AEROSOL 2K PRO
-          </text>
-          <text x="80" y="125" fill="#E2E8F0" fontSize="5.5" fontWeight="700" textAnchor="middle" fontFamily="sans-serif">
-            VÁLVULA ABANICO • 400 ML
-          </text>
-
-          {/* Tone Name in color swatch */}
-          <g transform="translate(48, 155)">
-            <rect x="0" y="0" width="64" height="22" rx="5" fill="#09090B" opacity="0.85" />
-            <circle cx="10" cy="11" r="5" fill={colorHex} stroke="#FFFFFF" strokeWidth="1" />
-            <text x="20" y="13" fill="#FFFFFF" fontSize="6.5" fontWeight="900" fontFamily="sans-serif">
-              {colorName.length > 9 ? colorName.slice(0, 9) + '..' : colorName}
-            </text>
-          </g>
-
-          {/* Bottom Chime */}
-          <ellipse cx="80" cy="220" rx="36" ry="5.5" fill="url(#sprayChrome)" />
-        </svg>
-      </div>
+      <g>
+        <path d={`M ${x0} ${y} Q ${cx} ${y + arc * 2} ${x1} ${y} L ${x1} ${y + h} Q ${cx} ${y + h + arc * 2} ${x0} ${y + h} Z`} fill={url('paint')} />
+        {isLightPaint && (
+          <path d={`M ${x0} ${y} Q ${cx} ${y + arc * 2} ${x1} ${y}`} fill="none" stroke="#0F172A" strokeOpacity="0.12" strokeWidth="0.8" />
+        )}
+        <FitText x={cx} y={y + h * 0.48 + arc} maxWidth={w * 0.8} size={nameSize} fill={onColor} weight={800}>
+          {colorName}
+        </FitText>
+        <FitText x={cx} y={y + h * 0.8 + arc} maxWidth={w * 0.7} size={sizeSize} fill={onColorSoft} weight={700} spacing={0.6}>
+          {sizeText}
+        </FitText>
+      </g>
     );
-  }
+  };
 
-  // --- RENDER AUTOMOTIVE 2K SYSTEM (Image 3 Match: Poliuretano Can + Endurecedor Hardener Can) ---
-  if (isAutomotive) {
-    const isBigKit = sizeName.toLowerCase().includes('galón') || sizeName.toLowerCase().includes('galon');
-    return (
-      <div className={`relative flex items-center justify-center select-none ${className}`}>
-        <svg 
-          viewBox="0 0 280 240" 
-          className="w-full h-full drop-shadow-2xl filter"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <defs>
-            {/* Grounding Floor Shadow for Both Cans */}
-            <radialGradient id="autoDualFloorShadow" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#020617" stopOpacity="0.75" />
-              <stop offset="50%" stopColor="#0F172A" stopOpacity="0.35" />
-              <stop offset="100%" stopColor="#000000" stopOpacity="0" />
-            </radialGradient>
-
-            {/* High-Gloss Automotive Metallic Black Finish for Poliuretano Can */}
-            <linearGradient id="autoBodyGloss" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#09090B" />
-              <stop offset="12%" stopColor="#18181B" />
-              <stop offset="28%" stopColor="#27272A" />
-              <stop offset="42%" stopColor="#3F3F46" />
-              <stop offset="50%" stopColor="#52525B" />
-              <stop offset="58%" stopColor="#3F3F46" />
-              <stop offset="75%" stopColor="#18181B" />
-              <stop offset="100%" stopColor="#09090B" />
-            </linearGradient>
-
-            {/* Chrome Mirror Chimes */}
-            <linearGradient id="autoChrome" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#334155" />
-              <stop offset="20%" stopColor="#94A3B8" />
-              <stop offset="45%" stopColor="#FFFFFF" />
-              <stop offset="60%" stopColor="#E2E8F0" />
-              <stop offset="85%" stopColor="#64748B" />
-              <stop offset="100%" stopColor="#1E293B" />
-            </linearGradient>
-
-            {/* Hardener Can Brushed Tin Finish */}
-            <linearGradient id="hardenerBody" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#1E293B" />
-              <stop offset="20%" stopColor="#475569" />
-              <stop offset="45%" stopColor="#CBD5E1" />
-              <stop offset="55%" stopColor="#F1F5F9" />
-              <stop offset="75%" stopColor="#64748B" />
-              <stop offset="100%" stopColor="#0F172A" />
-            </linearGradient>
-
-            {/* Glossy Hood Reflection Highlight */}
-            <linearGradient id="hoodGlossHighlight" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.8" />
-              <stop offset="40%" stopColor="#FFFFFF" stopOpacity="0.2" />
-              <stop offset="100%" stopColor="#000000" stopOpacity="0.4" />
-            </linearGradient>
-          </defs>
-
-          {/* Unified Ground Floor Shadow */}
-          <ellipse cx="140" cy="222" rx="120" ry="14" fill="url(#autoDualFloorShadow)" />
-
-          {/* ======================================================== */}
-          {/* 1. LEFT/MAIN CAN: POLIURETANO 2K (Exact Image 3 Styling) */}
-          {/* ======================================================== */}
-          <g id="main-poliuretano-can">
-            {/* Can Body (x: 25 to 175, w: 150, h: 155) */}
-            <path 
-              d="M 25 58 L 25 204 C 25 216, 175 216, 175 204 L 175 58 Z" 
-              fill="url(#autoBodyGloss)" 
-            />
-
-            {/* Automotive Sports Car Hood / Curved Silhouette Graphic (Image 3 Art) */}
-            {/* Dynamic Swatch Layer: renders vibrant vehicle hood sweep in selected color */}
-            <path 
-              d="M 25 125 C 55 110, 110 105, 175 130 L 175 200 C 130 212, 60 212, 25 200 Z" 
-              fill={colorHex} 
-            />
-            {/* Dynamic Aerodynamic Hood Reflections & Light Lines */}
-            <path 
-              d="M 25 125 C 55 110, 110 105, 175 130 L 175 170 C 120 145, 60 150, 25 160 Z" 
-              fill="url(#hoodGlossHighlight)" 
-            />
-
-            {/* Car Hood Stylized Aerodynamic Ridges */}
-            <path 
-              d="M 40 135 C 75 125, 125 125, 160 142" 
-              fill="none" 
-              stroke="#FFFFFF" 
-              strokeWidth="1.5" 
-              opacity="0.6" 
-            />
-            <path 
-              d="M 50 148 C 80 140, 120 140, 150 154" 
-              fill="none" 
-              stroke="#FFFFFF" 
-              strokeWidth="1" 
-              opacity="0.4" 
-            />
-
-            {/* --- LABEL GRAPHICS (Matching Image 3 Pintuco / ColorLink Poliuretano) --- */}
-            {/* ColorLink Automotive Badge (Image 3: Oval Brand Badge) */}
-            <g transform="translate(100, 78)">
-              <ellipse cx="0" cy="0" rx="34" ry="14" fill="#0B1A3A" stroke="#38BDF8" strokeWidth="1.2" />
-              <text 
-                x="0" 
-                y="4" 
-                fill="#FFFFFF" 
-                fontSize="9.5" 
-                fontWeight="950" 
-                letterSpacing="0.8" 
-                textAnchor="middle" 
-                fontFamily="sans-serif"
-              >
-                COLORLINK
-              </text>
-            </g>
-
-            {/* Big Bold "POLIURETANO" (Image 3 Typography) */}
-            <text 
-              x="100" 
-              y="104" 
-              fill="#FFFFFF" 
-              fontSize="14.5" 
-              fontWeight="950" 
-              letterSpacing="0.6" 
-              textAnchor="middle" 
-              fontFamily="sans-serif"
-            >
-              POLIURETANO
-            </text>
-
-            {/* Italic Subtitle: "Brillo y color que perdura" (Exact phrase from Image 3!) */}
-            <text 
-              x="100" 
-              y="114" 
-              fill="#FDE047" 
-              fontSize="6.5" 
-              fontStyle="italic" 
-              fontWeight="700" 
-              textAnchor="middle" 
-              fontFamily="serif, sans-serif"
-            >
-              Brillo y color que perdura
-            </text>
-
-            {/* Line Type Tag (Image 3: Single Stage / Serie 600) */}
-            <text 
-              x="100" 
-              y="123" 
-              fill="#94A3B8" 
-              fontSize="5.5" 
-              fontWeight="800" 
-              letterSpacing="0.4" 
-              textAnchor="middle" 
-              fontFamily="sans-serif"
-            >
-              SINGLE STAGE • SERIE 600 • 2K
-            </text>
-
-            {/* Color Swatch & Specification Tag */}
-            <g transform="translate(38, 166)">
-              <rect x="0" y="0" width="124" height="26" rx="6" fill="#09090B" opacity="0.88" />
-              <rect x="1" y="1" width="122" height="24" rx="5" stroke="#FFFFFF" strokeWidth="0.8" fill="none" opacity="0.3" />
-              <circle cx="14" cy="13" r="6" fill={colorHex} stroke="#FFFFFF" strokeWidth="1.2" />
-              <text 
-                x="26" 
-                y="12" 
-                fill="#FFFFFF" 
-                fontSize="8" 
-                fontWeight="900" 
-                fontFamily="sans-serif"
-              >
-                {colorName.length > 15 ? colorName.slice(0, 15) + '...' : colorName}
-              </text>
-              <text 
-                x="26" 
-                y="20" 
-                fill="#38BDF8" 
-                fontSize="6.2" 
-                fontWeight="800" 
-                fontFamily="sans-serif"
-              >
-                {sizeName} • Dureza OEM 2K
-              </text>
-            </g>
-
-            {/* Bottom Chrome Chime */}
-            <path 
-              d="M 25 200 C 25 212, 175 212, 175 200 L 175 206 C 175 218, 25 218, 25 206 Z" 
-              fill="url(#autoChrome)" 
-            />
-
-            {/* Top Metallic Chime Rim & Friction Lid */}
-            <ellipse cx="100" cy="58" rx="75" ry="12.5" fill="url(#autoChrome)" />
-            <ellipse cx="100" cy="58" rx="70" ry="11" fill="#27272A" />
-            <ellipse cx="100" cy="57" rx="66" ry="10" fill="url(#autoChrome)" />
-            <ellipse cx="100" cy="56" rx="58" ry="8" fill="#52525B" />
-            <ellipse cx="100" cy="55.5" rx="44" ry="6" fill="url(#autoChrome)" />
-          </g>
-
-          {/* ======================================================== */}
-          {/* 2. RIGHT/COMPANION CAN: ENDURECEDOR (Image 3 Hardener Can) */}
-          {/* ======================================================== */}
-          <g id="companion-endurecedor-can" transform="translate(180, 20)">
-            {/* Slender Metal Can Body (w: 66, h: 125, y: 65 to 190) */}
-            <path 
-              d="M 6 65 L 6 182 C 6 190, 72 190, 72 182 L 72 65 Z" 
-              fill="url(#hardenerBody)" 
-            />
-
-            {/* Metallic Threaded Pouring Cap (Image 3 screw top) */}
-            <rect x="27" y="32" width="24" height="18" rx="3" fill="url(#autoChrome)" />
-            {/* Ridges on Cap */}
-            <line x1="31" y1="34" x2="31" y2="48" stroke="#334155" strokeWidth="1" />
-            <line x1="35" y1="34" x2="35" y2="48" stroke="#334155" strokeWidth="1" />
-            <line x1="39" y1="34" x2="39" y2="48" stroke="#334155" strokeWidth="1" />
-            <line x1="43" y1="34" x2="43" y2="48" stroke="#334155" strokeWidth="1" />
-            <line x1="47" y1="34" x2="47" y2="48" stroke="#334155" strokeWidth="1" />
-
-            {/* Tapered Chime Neck below Cap */}
-            <path d="M 22 56 L 27 50 L 51 50 L 56 56 Z" fill="url(#autoChrome)" />
-            <ellipse cx="39" cy="65" rx="33" ry="6.5" fill="url(#autoChrome)" />
-
-            {/* Red Accent Header Band (Image 3 Hardener Styling) */}
-            <path 
-              d="M 6 80 L 6 112 C 22 116, 56 116, 72 112 L 72 80 C 56 78, 22 78, 6 80 Z" 
-              fill="#DC2626" 
-            />
-
-            {/* "ENDURECEDOR" Title on Can (Exact word from Image 3!) */}
-            <text 
-              x="39" 
-              y="95" 
-              fill="#FFFFFF" 
-              fontSize="7" 
-              fontWeight="950" 
-              letterSpacing="0.4" 
-              textAnchor="middle" 
-              fontFamily="sans-serif"
-            >
-              ENDURECEDOR
-            </text>
-            <text 
-              x="39" 
-              y="104" 
-              fill="#FEF08A" 
-              fontSize="5.2" 
-              fontWeight="900" 
-              textAnchor="middle" 
-              fontFamily="sans-serif"
-            >
-              HARDENER 2K
-            </text>
-
-            {/* Component B Designation */}
-            <g transform="translate(10, 118)">
-              <rect x="0" y="0" width="58" height="15" rx="3" fill="#09090B" opacity="0.7" />
-              <text 
-                x="29" 
-                y="10.5" 
-                fill="#38BDF8" 
-                fontSize="6" 
-                fontWeight="900" 
-                textAnchor="middle" 
-                fontFamily="sans-serif"
-              >
-                COMPONENTE B
-              </text>
-            </g>
-
-            {/* Volume on Hardener */}
-            <text 
-              x="39" 
-              y="146" 
-              fill="#FFFFFF" 
-              fontSize="6" 
-              fontWeight="800" 
-              textAnchor="middle" 
-              fontFamily="sans-serif"
-            >
-              {isBigKit ? '1 LITRO' : '250 ML'}
-            </text>
-            <text 
-              x="39" 
-              y="154" 
-              fill="#CBD5E1" 
-              fontSize="4.8" 
-              fontWeight="600" 
-              textAnchor="middle" 
-              fontFamily="sans-serif"
-            >
-              ISOCIANATO ALIFÁTICO
-            </text>
-
-            {/* Bottom Chime on Hardener */}
-            <path 
-              d="M 6 180 C 6 186, 72 186, 72 180 L 72 184 C 72 190, 6 190, 6 184 Z" 
-              fill="url(#autoChrome)" 
-            />
-          </g>
-
-          {/* Top Badge: "KIT BICOMPONENTE 2K (A + B)" */}
-          <g transform="translate(15, 20)">
-            <rect x="0" y="0" width="138" height="18" rx="4" fill="#09090B" opacity="0.9" stroke="#38BDF8" strokeWidth="0.8" />
-            <text 
-              x="69" 
-              y="12" 
-              fill="#38BDF8" 
-              fontSize="6.8" 
-              fontWeight="950" 
-              letterSpacing="0.4" 
-              textAnchor="middle" 
-              fontFamily="sans-serif"
-            >
-              KIT 2K: PINTURA + ENDURECEDOR
-            </text>
-          </g>
-        </svg>
-      </div>
-    );
-  }
-
-  // --- RENDER 5 GALONES CUÑETE (Image 4 Style: White Tapered Plastic Bucket, Big Blue Lid, Ribs & Metal Handle) ---
-  if (isCunete || isMedioCunete) {
-    return (
-      <div className={`relative flex items-center justify-center select-none ${className}`}>
-        <svg 
-          viewBox="0 0 240 280" 
-          className="w-full h-full drop-shadow-2xl filter"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <defs>
-            {/* Floor Drop Shadow */}
-            <radialGradient id="bucketFloorShadow" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#020617" stopOpacity="0.6" />
-              <stop offset="55%" stopColor="#0F172A" stopOpacity="0.25" />
-              <stop offset="100%" stopColor="#000000" stopOpacity="0" />
-            </radialGradient>
-
-            {/* Blue Lid Plastic Gradient */}
-            <linearGradient id="blueLidGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#0A2558" />
-              <stop offset="15%" stopColor="#134199" />
-              <stop offset="45%" stopColor="#2563EB" />
-              <stop offset="55%" stopColor="#3B82F6" />
-              <stop offset="75%" stopColor="#1D4ED8" />
-              <stop offset="100%" stopColor="#0A2558" />
-            </linearGradient>
-
-            {/* Bucket Plastic White Tapered Body 3D Lighting */}
-            <linearGradient id="whiteBucketSheen" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#94A3B8" stopOpacity="0.8" />
-              <stop offset="12%" stopColor="#CBD5E1" stopOpacity="0.4" />
-              <stop offset="35%" stopColor="#FFFFFF" stopOpacity="0.3" />
-              <stop offset="50%" stopColor="#FFFFFF" stopOpacity="0.6" />
-              <stop offset="70%" stopColor="#E2E8F0" stopOpacity="0.2" />
-              <stop offset="90%" stopColor="#94A3B8" stopOpacity="0.5" />
-              <stop offset="100%" stopColor="#64748B" stopOpacity="0.9" />
-            </linearGradient>
-
-            {/* Metal Handle Gradient */}
-            <linearGradient id="metalBail" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#64748B" />
-              <stop offset="30%" stopColor="#E2E8F0" />
-              <stop offset="50%" stopColor="#FFFFFF" />
-              <stop offset="80%" stopColor="#CBD5E1" />
-              <stop offset="100%" stopColor="#475569" />
-            </linearGradient>
-
-            {/* Swatch Sheen */}
-            <linearGradient id="bucketSwatchSheen" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.4" />
-              <stop offset="50%" stopColor="#FFFFFF" stopOpacity="0.05" />
-              <stop offset="100%" stopColor="#000000" stopOpacity="0.25" />
-            </linearGradient>
-          </defs>
-
-          {/* Floor Shadow */}
-          <ellipse cx="120" cy="265" rx="85" ry="12" fill="url(#bucketFloorShadow)" />
-
-          {/* --- METAL WIRE BAIL HANDLE (Curved Behind/Around Bucket) --- */}
-          <path 
-            d="M 24 95 C 24 15, 216 15, 216 95" 
-            fill="none" 
-            stroke="url(#metalBail)" 
-            strokeWidth="4" 
-            strokeLinecap="round" 
-          />
-          {/* Plastic Center Grip on Wire Handle */}
-          <path 
-            d="M 100 24 C 112 23, 128 23, 140 24" 
-            fill="none" 
-            stroke="#F8FAFC" 
-            strokeWidth="8" 
-            strokeLinecap="round" 
-          />
-          <path 
-            d="M 102 24 C 112 23, 128 23, 138 24" 
-            fill="none" 
-            stroke="#CBD5E1" 
-            strokeWidth="2" 
-            strokeLinecap="round" 
-          />
-
-          {/* --- TAPERED BUCKET PLASTIC BODY (White base) --- */}
-          {/* Top width: ~180 (x from 30 to 210), Bottom width: ~156 (x from 42 to 198) */}
-          <path 
-            d="M 30 65 L 42 245 C 42 258, 198 258, 198 245 L 210 65 Z" 
-            fill="#F1F5F9" 
-            stroke="#CBD5E1" 
-            strokeWidth="1.5" 
-          />
-
-          {/* Bottom Rim Ellipse */}
-          <ellipse cx="120" cy="245" rx="78" ry="11" fill="#E2E8F0" />
-          <ellipse cx="120" cy="247" rx="76" ry="9" fill="#CBD5E1" />
-
-          {/* --- VINILTEX / KORAZA LARGE LABEL (Matching Image 4) --- */}
-          {/* Lower Label Body - Dynamically reflects selected color */}
-          <path 
-            d="M 34 110 L 40 236 C 70 246, 170 246, 200 236 L 206 110 C 170 118, 70 118, 34 110 Z" 
-            fill={colorHex} 
-          />
-          {/* Subtle contrast gradient over colored body */}
-          <path 
-            d="M 34 110 L 40 236 C 70 246, 170 246, 200 236 L 206 110 C 170 118, 70 118, 34 110 Z" 
-            fill="#020617" 
-            opacity="0.25"
-          />
-
-          {/* Upper Navy Wave on Label (Image 4: Navy upper section with ColorLink ribbon) */}
-          <path 
-            d="M 34 110 L 36 160 C 90 182, 160 152, 206 162 L 206 110 C 170 118, 70 118, 34 110 Z" 
-            fill="#0B1A3A" 
-          />
-
-          {/* Brand Logo in Upper Navy Wave */}
-          <g transform="translate(120, 126)">
-            {/* Color ribbon swirl icon */}
-            <path 
-              d="M -35 -4 C -20 -12, 5 2, 25 -8 C 15 5, -10 -2, -35 -4 Z" 
-              fill="#F97316" 
-            />
-            <path 
-              d="M -25 -2 C -10 -8, 10 4, 32 -4" 
-              fill="none" 
-              stroke="#10B981" 
-              strokeWidth="2.5" 
-              strokeLinecap="round" 
-            />
-            <text 
-              x="0" 
-              y="16" 
-              fill="#FFFFFF" 
-              fontSize="16" 
-              fontWeight="900" 
-              letterSpacing="0.8"
-              textAnchor="middle"
-              fontFamily="system-ui, -apple-system, sans-serif"
-            >
-              COLORLINK
-            </text>
-          </g>
-
-          {/* Big Product Name (e.g. VINILTEX / KORAZA) */}
-          <text 
-            x="120" 
-            y="180" 
-            fill="#FFFFFF" 
-            fontSize="17" 
-            fontWeight="950" 
-            letterSpacing="0.5"
-            textAnchor="middle"
-            fontFamily="system-ui, -apple-system, sans-serif"
-          >
-            {productLine.toUpperCase().slice(0, 14)}
-          </text>
-
-          {/* Subtitle / Type */}
-          <text 
-            x="120" 
-            y="193" 
-            fill="#FEF08A" 
-            fontSize="8.5" 
-            fontWeight="800" 
-            letterSpacing="0.4"
-            textAnchor="middle"
-            fontFamily="system-ui, -apple-system, sans-serif"
-          >
-            CUÑETE 5 GALONES • ULTRA PROTECT
-          </text>
-
-          {/* Clean Color Badge inside Label - No overflowing text, NO hex code */}
-          <g transform="translate(46, 200)">
-            <rect x="0" y="0" width="148" height="26" rx="13" fill="#020617" opacity="0.65" />
-            <rect x="1.5" y="1.5" width="145" height="23" rx="11.5" stroke="#FFFFFF" strokeWidth="1" fill="none" opacity="0.4" />
-            <circle cx="16" cy="13" r="7" fill={colorHex} stroke="#FFFFFF" strokeWidth="1.5" />
-            <text 
-              x="30" 
-              y="16.5" 
-              fill="#FFFFFF" 
-              fontSize="9" 
-              fontWeight="900" 
-              fontFamily="system-ui, -apple-system, sans-serif"
-            >
-              {colorName.length > 17 ? colorName.slice(0, 17) + '...' : colorName}
-            </text>
-          </g>
-
-          {/* 3D Specular Shading Over Tapered Body */}
-          <path 
-            d="M 30 65 L 42 245 C 42 258, 198 258, 198 245 L 210 65 Z" 
-            fill="url(#whiteBucketSheen)" 
-            pointerEvents="none" 
-          />
-
-          {/* --- UPPER REINFORCING RIBS / COLLAR (Image 4: 3 horizontal strengthening ridges) --- */}
-          {/* Rib 1 (Lowest) */}
-          <path 
-            d="M 31 100 C 60 107, 180 107, 209 100 L 208 96 C 180 103, 60 103, 32 96 Z" 
-            fill="#CBD5E1" 
-          />
-          {/* Rib 2 (Middle) */}
-          <path 
-            d="M 30 86 C 60 93, 180 93, 210 86 L 209 82 C 180 89, 60 89, 31 82 Z" 
-            fill="#CBD5E1" 
-          />
-          {/* Rib 3 (Top collar under lid) */}
-          <path 
-            d="M 29 72 C 60 79, 180 79, 211 72 L 210 68 C 180 75, 60 75, 30 68 Z" 
-            fill="#CBD5E1" 
-          />
-
-          {/* Handle Side Ear Brackets (White Plastic Brackets holding the bail) */}
-          <rect x="20" y="85" width="10" height="16" rx="3" fill="#E2E8F0" stroke="#94A3B8" strokeWidth="1" />
-          <circle cx="25" cy="93" r="3" fill="#334155" />
-          <rect x="210" y="85" width="10" height="16" rx="3" fill="#E2E8F0" stroke="#94A3B8" strokeWidth="1" />
-          <circle cx="215" cy="93" r="3" fill="#334155" />
-
-          {/* --- LARGE BLUE SNAP-ON LID (Image 4 Style: Wide Plastic Lid with Rim Lip) --- */}
-          {/* Lid Overhang Lip */}
-          <path 
-            d="M 22 56 C 22 42, 218 42, 218 56 L 217 66 C 217 76, 23 76, 23 66 Z" 
-            fill="url(#blueLidGradient)" 
-          />
-          {/* Top Lid Ellipse Outer */}
-          <ellipse cx="120" cy="56" rx="98" ry="16" fill="url(#blueLidGradient)" />
-          {/* Lid Rim Border Ring */}
-          <ellipse cx="120" cy="55.5" rx="93" ry="14.5" fill="#1E40AF" />
-          {/* Recessed Basin inside Lid */}
-          <ellipse cx="120" cy="54" rx="88" ry="13" fill="#1D4ED8" />
-          {/* Center Reinforcement Ring on Lid */}
-          <ellipse cx="120" cy="53" rx="66" ry="9.5" fill="#2563EB" />
-          <ellipse cx="120" cy="52.5" rx="58" ry="7.5" fill="#1E3A8A" />
-
-          {/* Size Badge Overlay (5 Galones / 18.9L) */}
-          <g transform="translate(168, 48)">
-            <rect x="0" y="0" width="46" height="16" rx="4" fill="#F59E0B" />
-            <text 
-              x="23" 
-              y="11.5" 
-              fill="#0F172A" 
-              fontSize="7.5" 
-              fontWeight="900" 
-              textAnchor="middle"
-              fontFamily="monospace"
-            >
-              5 GALONES
-            </text>
-          </g>
-        </svg>
-      </div>
-    );
-  }
-
-  // --- RENDER 1/4 GALÓN (Compact Tin Container with Friction Plug Lid) ---
-  if (isCuarto) {
-    return (
-      <div className={`relative flex items-center justify-center select-none ${className}`}>
-        <svg 
-          viewBox="0 0 200 240" 
-          className="w-full h-full drop-shadow-xl filter"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <defs>
-            <linearGradient id="quartMetal" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#475569" />
-              <stop offset="15%" stopColor="#94A3B8" />
-              <stop offset="35%" stopColor="#E2E8F0" />
-              <stop offset="50%" stopColor="#FFFFFF" />
-              <stop offset="70%" stopColor="#CBD5E1" />
-              <stop offset="90%" stopColor="#64748B" />
-              <stop offset="100%" stopColor="#334155" />
-            </linearGradient>
-
-            <linearGradient id="quartCan3D" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#0B1528" stopOpacity="0.8" />
-              <stop offset="15%" stopColor="#1E293B" stopOpacity="0.3" />
-              <stop offset="40%" stopColor="#FFFFFF" stopOpacity="0.25" />
-              <stop offset="50%" stopColor="#FFFFFF" stopOpacity="0.5" />
-              <stop offset="70%" stopColor="#FFFFFF" stopOpacity="0.1" />
-              <stop offset="88%" stopColor="#0F172A" stopOpacity="0.4" />
-              <stop offset="100%" stopColor="#020617" stopOpacity="0.85" />
-            </linearGradient>
-
-            <radialGradient id="quartShadow" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#020617" stopOpacity="0.55" />
-              <stop offset="60%" stopColor="#0F172A" stopOpacity="0.2" />
-              <stop offset="100%" stopColor="#000000" stopOpacity="0" />
-            </radialGradient>
-          </defs>
-
-          {/* Floor Shadow */}
-          <ellipse cx="100" cy="222" rx="66" ry="8" fill="url(#quartShadow)" />
-
-          {/* Compact Tin Cylinder with Dynamic Color Tint */}
-          <path 
-            d="M 44 68 L 44 205 C 44 216, 156 216, 156 205 L 156 68 Z" 
-            fill="#1E293B" 
-          />
-          {/* Dynamic Color Accent Band */}
-          <path 
-            d="M 44 110 L 44 195 C 80 200, 120 200, 156 195 L 156 110 C 120 114, 80 114, 44 110 Z" 
-            fill={colorHex} 
-          />
-          <path 
-            d="M 44 110 L 44 195 C 80 200, 120 200, 156 195 L 156 110 C 120 114, 80 114, 44 110 Z" 
-            fill="#020617" 
-            opacity="0.35"
-          />
-
-          {/* Deep Navy Upper Header on Label */}
-          <path 
-            d="M 44 74 L 44 110 C 80 114, 120 114, 156 110 L 156 74 Z" 
-            fill="#0B1A3A" 
-          />
-
-          {/* Brand & Product */}
-          <text 
-            x="100" 
-            y="93" 
-            fill="#FFFFFF" 
-            fontSize="10" 
-            fontWeight="900" 
-            letterSpacing="0.8"
-            textAnchor="middle"
-            fontFamily="system-ui, -apple-system, sans-serif"
-          >
-            COLORLINK PRO
-          </text>
-          <text 
-            x="100" 
-            y="104" 
-            fill="#34D399" 
-            fontSize="6.5" 
-            fontWeight="800" 
-            textAnchor="middle"
-            fontFamily="monospace"
-          >
-            1/4 GALÓN (0.95L)
-          </text>
-
-          {/* Swatch in Quart Can - Clean, centered, NO hex code */}
-          <g transform="translate(50, 134)">
-            <rect x="0" y="0" width="100" height="34" rx="7" fill="#020617" opacity="0.7" />
-            <rect x="1" y="1" width="98" height="32" rx="6" stroke="#FFFFFF" strokeWidth="1" fill="none" opacity="0.3" />
-            <circle cx="16" cy="17" r="7" fill={colorHex} stroke="#FFFFFF" strokeWidth="1.5" />
-            <text 
-              x="30" 
-              y="16" 
-              fill="#FFFFFF" 
-              fontSize="8" 
-              fontWeight="900" 
-              fontFamily="system-ui, -apple-system, sans-serif"
-            >
-              {colorName.length > 12 ? colorName.slice(0, 12) + '...' : colorName}
-            </text>
-            <text 
-              x="30" 
-              y="24" 
-              fill="#FDE047" 
-              fontSize="6.5" 
-              fontWeight="800" 
-              fontFamily="system-ui, -apple-system, sans-serif"
-            >
-              Tono Seleccionado
-            </text>
-          </g>
-
-          {/* 3D Cylindrical Sheen */}
-          <path 
-            d="M 44 68 L 44 205 C 44 216, 156 216, 156 205 L 156 68 Z" 
-            fill="url(#quartCan3D)" 
-            pointerEvents="none" 
-          />
-
-          {/* Bottom Chime Metallic Rim */}
-          <path 
-            d="M 44 202 C 44 212, 156 212, 156 202 L 156 207 C 156 217, 44 217, 44 207 Z" 
-            fill="url(#quartMetal)" 
-          />
-
-          {/* Top Rim & Friction Plug Lid */}
-          <ellipse cx="100" cy="68" rx="56" ry="11" fill="url(#quartMetal)" />
-          <ellipse cx="100" cy="67.5" rx="51" ry="9.5" fill="#475569" />
-          <ellipse cx="100" cy="66" rx="46" ry="8" fill="url(#quartMetal)" />
-          <ellipse cx="100" cy="65" rx="40" ry="6.5" fill="#F1F5F9" />
-          <ellipse cx="100" cy="64.5" rx="30" ry="4.5" fill="url(#quartMetal)" />
-        </svg>
-      </div>
-    );
-  }
-
-  // --- RENDER 1 GALÓN (Classic Metallic Paint Can Matching Image 3: Koraza / Viniltex Style) ---
-  return (
+  const Wrapper: React.FC<{ viewBox: string; children: React.ReactNode }> = ({ viewBox, children }) => (
     <div className={`relative flex items-center justify-center select-none ${className}`}>
-      <svg 
-        viewBox="0 0 200 240" 
-        className="w-full h-full drop-shadow-2xl filter"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <defs>
-          {/* Metallic Rim Gradients (Image 3 metal sheen) */}
-          <linearGradient id="metalBevel1G" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#475569" />
-            <stop offset="10%" stopColor="#94A3B8" />
-            <stop offset="28%" stopColor="#CBD5E1" />
-            <stop offset="42%" stopColor="#F8FAFC" />
-            <stop offset="55%" stopColor="#FFFFFF" />
-            <stop offset="72%" stopColor="#CBD5E1" />
-            <stop offset="88%" stopColor="#94A3B8" />
-            <stop offset="100%" stopColor="#334155" />
-          </linearGradient>
-
-          {/* Cylindrical 3D Lighting for Metal Can */}
-          <linearGradient id="canBody3D1G" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#0B1528" stopOpacity="0.88" />
-            <stop offset="14%" stopColor="#1E293B" stopOpacity="0.32" />
-            <stop offset="38%" stopColor="#FFFFFF" stopOpacity="0.25" />
-            <stop offset="50%" stopColor="#FFFFFF" stopOpacity="0.5" />
-            <stop offset="62%" stopColor="#FFFFFF" stopOpacity="0.15" />
-            <stop offset="85%" stopColor="#0F172A" stopOpacity="0.4" />
-            <stop offset="100%" stopColor="#020617" stopOpacity="0.92" />
-          </linearGradient>
-
-          {/* Floor Shadow */}
-          <radialGradient id="canFloorShadow1G" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#020617" stopOpacity="0.55" />
-            <stop offset="50%" stopColor="#0F172A" stopOpacity="0.25" />
-            <stop offset="85%" stopColor="#1E293B" stopOpacity="0.08" />
-            <stop offset="100%" stopColor="#000000" stopOpacity="0" />
-          </radialGradient>
-
-          {/* Gold Shield Gradient (Matching Koraza shield in Image 3) */}
-          <linearGradient id="goldShield" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#FDE047" />
-            <stop offset="35%" stopColor="#EAB308" />
-            <stop offset="70%" stopColor="#CA8A04" />
-            <stop offset="100%" stopColor="#A16207" />
-          </linearGradient>
-
-          {/* Swatch Sheen */}
-          <linearGradient id="swatchSheen1G" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.35" />
-            <stop offset="40%" stopColor="#FFFFFF" stopOpacity="0.05" />
-            <stop offset="100%" stopColor="#000000" stopOpacity="0.25" />
-          </linearGradient>
-        </defs>
-
-        {/* Floor Shadow */}
-        <ellipse cx="100" cy="226" rx="76" ry="10" fill="url(#canFloorShadow1G)" />
-
-        {/* Wire Bail Handle Behind Can */}
-        <path 
-          d="M 28 85 C 28 15, 172 15, 172 85" 
-          fill="none" 
-          stroke="url(#metalBevel1G)" 
-          strokeWidth="3.5" 
-          strokeLinecap="round" 
-        />
-        {/* Wire Handle Plastic Grip */}
-        <path 
-          d="M 85 24 C 95 23, 105 23, 115 24" 
-          fill="none" 
-          stroke="#1E293B" 
-          strokeWidth="6" 
-          strokeLinecap="round" 
-        />
-
-        {/* --- CAN CYLINDRICAL BODY --- */}
-        {/* Base Cylinder Outer (Deep Navy / Royal Blue like Image 3) */}
-        <path 
-          d="M 32 50 L 32 208 C 32 220, 168 220, 168 208 L 168 50 Z" 
-          fill="#0B1A3A" 
-        />
-        {/* Dynamic Color Accent Band reflecting the chosen paint color */}
-        <path 
-          d="M 32 140 L 32 205 C 32 218, 168 218, 168 205 L 168 140 C 130 148, 70 148, 32 140 Z" 
-          fill={colorHex} 
-        />
-        <path 
-          d="M 32 140 L 32 205 C 32 218, 168 218, 168 205 L 168 140 C 130 148, 70 148, 32 140 Z" 
-          fill="#020617" 
-          opacity="0.3"
-        />
-
-        {/* --- LABEL GRAPHICS (Matching Image 3 Pintuco / Koraza Style) --- */}
-        {/* Dynamic Colorful Wave Ribbon at Top (Red, Yellow, Blue, Green swirl) */}
-        <path 
-          d="M 60 62 C 80 50, 110 70, 140 56 C 130 68, 90 62, 60 62 Z" 
-          fill="#EF4444" 
-        />
-        <path 
-          d="M 70 64 C 90 54, 120 72, 148 60" 
-          fill="none" 
-          stroke="#10B981" 
-          strokeWidth="2" 
-          strokeLinecap="round" 
-        />
-
-        {/* Bold Brand Name: COLORLINK (Like Pintuco in Image 3) */}
-        <text 
-          x="100" 
-          y="84" 
-          fill="#FFFFFF" 
-          fontSize="16" 
-          fontWeight="950" 
-          letterSpacing="0.5"
-          textAnchor="middle"
-          fontFamily="system-ui, -apple-system, sans-serif"
-        >
-          COLORLINK
-        </text>
-
-        {/* Product Emblem / Gold Shield (Like Koraza shield in Image 3) */}
-        <g transform="translate(62, 92)">
-          {/* Outer Shield with Gold Gradient */}
-          <path 
-            d="M 0 4 C 20 2, 56 2, 76 4 C 76 26, 48 42, 38 48 C 28 42, 0 26, 0 4 Z" 
-            fill="url(#goldShield)" 
-            stroke="#FEF08A" 
-            strokeWidth="1.5" 
-          />
-          {/* Inner Navy Shield Fill */}
-          <path 
-            d="M 3 6 C 22 5, 54 5, 73 6 C 73 24, 46 38, 38 44 C 30 38, 3 24, 3 6 Z" 
-            fill="#0F172A" 
-          />
-          {/* Shield Title (e.g. Koraza / Viniltex) */}
-          <text 
-            x="38" 
-            y="20" 
-            fill="#FFFFFF" 
-            fontSize="9" 
-            fontWeight="950" 
-            letterSpacing="0.4"
-            textAnchor="middle"
-            fontFamily="system-ui, -apple-system, sans-serif"
-          >
-            {productLine.split(' ')[0].toUpperCase()}
-          </text>
-          <text 
-            x="38" 
-            y="28" 
-            fill="#FACC15" 
-            fontSize="5.5" 
-            fontWeight="800" 
-            letterSpacing="0.3"
-            textAnchor="middle"
-            fontFamily="system-ui, -apple-system, sans-serif"
-          >
-            SOL & LLUVIA PRO
-          </text>
-
-          {/* Split Sun / Rain circular graphic inside shield (Image 3) */}
-          <circle cx="28" cy="36" r="5" fill="#F59E0B" />
-          <circle cx="48" cy="36" r="5" fill="#3B82F6" />
-        </g>
-
-        {/* Selected Dynamic Color Swatch Ribbon - Clean, centered, NO hex code */}
-        <g transform="translate(36, 148)">
-          <rect x="0" y="0" width="128" height="34" rx="8" fill="#020617" opacity="0.75" />
-          <rect 
-            x="1" 
-            y="1" 
-            width="126" 
-            height="32" 
-            rx="7" 
-            stroke="#FFFFFF" 
-            strokeWidth="1" 
-            fill="none"
-            opacity="0.4"
-          />
-          <circle cx="17" cy="17" r="7.5" fill={colorHex} stroke="#FFFFFF" strokeWidth="1.5" />
-          <text 
-            x="32" 
-            y="16" 
-            fill="#FFFFFF" 
-            fontSize="8.5" 
-            fontWeight="900" 
-            fontFamily="system-ui, -apple-system, sans-serif"
-          >
-            {colorName.length > 15 ? colorName.slice(0, 15) + '...' : colorName}
-          </text>
-          <text 
-            x="32" 
-            y="24" 
-            fill="#FDE047" 
-            fontSize="7" 
-            fontWeight="800" 
-            fontFamily="system-ui, -apple-system, sans-serif"
-          >
-            {sizeName} • Protección Total
-          </text>
-        </g>
-
-        {/* Dot Matrix Gradient Pattern Near Bottom (Image 3 Feature) */}
-        <g opacity="0.3" fill="#FFFFFF">
-          <circle cx="48" cy="204" r="0.8" />
-          <circle cx="56" cy="204" r="0.8" />
-          <circle cx="64" cy="204" r="1.2" />
-          <circle cx="72" cy="204" r="1.2" />
-          <circle cx="80" cy="204" r="1.5" />
-          <circle cx="88" cy="204" r="1.5" />
-          <circle cx="96" cy="204" r="1.8" />
-          <circle cx="104" cy="204" r="1.8" />
-          <circle cx="112" cy="204" r="1.5" />
-          <circle cx="120" cy="204" r="1.5" />
-          <circle cx="128" cy="204" r="1.2" />
-          <circle cx="136" cy="204" r="1.2" />
-          <circle cx="144" cy="204" r="0.8" />
-          <circle cx="152" cy="204" r="0.8" />
-        </g>
-
-        {/* 3D Specular Sheen Overlay */}
-        <path 
-          d="M 32 50 L 32 208 C 32 220, 168 220, 168 208 L 168 50 Z" 
-          fill="url(#canBody3D1G)" 
-          pointerEvents="none" 
-        />
-
-        {/* Bottom Metallic Rim */}
-        <path 
-          d="M 32 204 C 32 216, 168 216, 168 204 L 168 210 C 168 222, 32 222, 32 210 Z" 
-          fill="url(#metalBevel1G)" 
-        />
-
-        {/* Top Metallic Rim & Recessed Can Lid (Image 3 Detail) */}
-        <ellipse cx="100" cy="50" rx="68" ry="13" fill="url(#metalBevel1G)" />
-        <ellipse cx="100" cy="50" rx="63" ry="11.5" fill="#475569" />
-        <ellipse cx="100" cy="49.5" rx="60" ry="10.5" fill="url(#metalBevel1G)" />
-        <ellipse cx="100" cy="48" rx="55" ry="9" fill="#E2E8F0" />
-        <ellipse cx="100" cy="47.5" rx="44" ry="7" fill="url(#metalBevel1G)" />
-        <ellipse cx="100" cy="47" rx="38" ry="5.5" fill="#F8FAFC" />
-
-        {/* Handle Fasteners */}
-        <circle cx="28" cy="85" r="5" fill="url(#metalBevel1G)" />
-        <circle cx="28" cy="85" r="2" fill="#334155" />
-        <circle cx="172" cy="85" r="5" fill="url(#metalBevel1G)" />
-        <circle cx="172" cy="85" r="2" fill="#334155" />
+      <svg viewBox={viewBox} className="w-full h-full" xmlns="http://www.w3.org/2000/svg" role="img" aria-label={`${productLine} ${colorName} ${sizeName}`}>
+        <defs>{commonDefs}</defs>
+        {children}
       </svg>
     </div>
+  );
+
+  // -------------------------------------------------------------------------
+  // AEROSOL AUTOMOTRIZ
+  // -------------------------------------------------------------------------
+  if (isAerosol) {
+    const cx = 100, x0 = 70, x1 = 130, top = 74, bottom = 216;
+    return (
+      <Wrapper viewBox="0 0 200 240">
+        <ellipse cx={cx} cy={bottom + 9} rx="46" ry="7" fill={url('floor')} />
+        {/* Tapa del color de la pintura */}
+        <path d={`M 76 40 L 124 40 L 126 64 Q 100 70 74 64 Z`} fill={url('paint')} />
+        <path d={`M 76 40 L 124 40 L 126 64 Q 100 70 74 64 Z`} fill={url('cyl')} />
+        <ellipse cx={cx} cy="40" rx="24" ry="4" fill={shade(color, 0.25)} />
+        {/* Hombro */}
+        <path d={`M ${x0} ${top} Q ${x0} 60 ${cx} 58 Q ${x1} 60 ${x1} ${top} Z`} fill={url('metal')} />
+        {/* Cuerpo */}
+        <path d={`M ${x0} ${top} L ${x0} ${bottom} Q ${cx} ${bottom + 8} ${x1} ${bottom} L ${x1} ${top} Q ${cx} ${top + 6} ${x0} ${top} Z`} fill="#111827" />
+        <FitText x={cx} y={98} maxWidth={52} size={8} fill="#FFFFFF" weight={900} spacing={1.2}>{brand}</FitText>
+        <FitText x={cx} y={114} maxWidth={52} size={11} fill="#FFFFFF" weight={900}>{main}</FitText>
+        <FitText x={cx} y={125} maxWidth={52} size={6} fill="#7DD3FC" weight={700}>AEROSOL 2K</FitText>
+        <ColorBand cx={cx} y={150} w={x1 - x0} h={44} arc={3} nameSize={7.5} sizeSize={5.5} />
+        <path d={`M ${x0} ${top} L ${x0} ${bottom} Q ${cx} ${bottom + 8} ${x1} ${bottom} L ${x1} ${top} Q ${cx} ${top + 6} ${x0} ${top} Z`} fill={url('cyl')} />
+        <path d={`M ${x0} ${bottom - 4} Q ${cx} ${bottom + 4} ${x1} ${bottom - 4} L ${x1} ${bottom} Q ${cx} ${bottom + 8} ${x0} ${bottom} Z`} fill={url('metal')} />
+      </Wrapper>
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // KIT AUTOMOTRIZ 2K: lata de poliuretano + endurecedor
+  // -------------------------------------------------------------------------
+  if (isAutomotive) {
+    const cx = 92, x0 = 38, x1 = 146, top = 70, bottom = 206, ry = 9;
+    const bx0 = 158, bx1 = 196, bcx = 177;
+    return (
+      <Wrapper viewBox="0 0 220 240">
+        <ellipse cx="112" cy={bottom + 12} rx="92" ry="8" fill={url('floor')} />
+        {/* Lata principal */}
+        <path d={`M ${x0} ${top} L ${x0} ${bottom} A ${(x1 - x0) / 2} ${ry} 0 0 0 ${x1} ${bottom} L ${x1} ${top} Z`} fill="#0F172A" />
+        <FitText x={cx} y={top + 30} maxWidth={88} size={10} fill="#FFFFFF" weight={900} spacing={2}>{brand}</FitText>
+        <FitText x={cx} y={top + 52} maxWidth={92} size={19} fill="#FFFFFF" weight={900}>{main}</FitText>
+        <FitText x={cx} y={top + 66} maxWidth={88} size={7} fill="#7DD3FC" weight={700} spacing={0.5}>{sub.toUpperCase()}</FitText>
+        <ColorBand cx={cx} y={top + 84} w={x1 - x0} h={40} arc={ry * 0.5} nameSize={10} sizeSize={6.5} />
+        <path d={`M ${x0} ${top} L ${x0} ${bottom} A ${(x1 - x0) / 2} ${ry} 0 0 0 ${x1} ${bottom} L ${x1} ${top} Z`} fill={url('cyl')} />
+        <path d={`M ${x0} ${bottom - 6} A ${(x1 - x0) / 2} ${ry} 0 0 0 ${x1} ${bottom - 6} L ${x1} ${bottom} A ${(x1 - x0) / 2} ${ry} 0 0 1 ${x0} ${bottom} Z`} fill={url('metal')} />
+        <ellipse cx={cx} cy={top} rx={(x1 - x0) / 2} ry={ry} fill={url('metal')} />
+        <ellipse cx={cx} cy={top} rx={(x1 - x0) / 2 - 7} ry={ry - 2.5} fill={url('metalTop')} />
+        <ellipse cx={cx} cy={top} rx={(x1 - x0) / 2 - 18} ry={ry - 4.5} fill="none" stroke="#7B8494" strokeWidth="1.2" />
+
+        {/* Endurecedor */}
+        <path d={`M ${bx0} 120 L ${bx0} ${bottom} Q ${bcx} ${bottom + 6} ${bx1} ${bottom} L ${bx1} 120 Q ${bcx} 112 ${bx0} 120 Z`} fill={url('metal')} />
+        <path d={`M ${bx0 + 6} 120 Q ${bcx} 100 ${bx1 - 6} 120 Z`} fill={url('metal')} />
+        <rect x={bcx - 6} y="92" width="12" height="14" rx="2" fill="#475569" />
+        <rect x={bcx - 7} y="88" width="14" height="6" rx="1.5" fill="#1F2937" />
+        <rect x={bx0} y="142" width={bx1 - bx0} height="40" fill="#B91C1C" />
+        <FitText x={bcx} y={158} maxWidth={32} size={6} fill="#FFFFFF" weight={900}>ENDURECEDOR</FitText>
+        <FitText x={bcx} y={170} maxWidth={30} size={5} fill="#FECACA" weight={700}>COMP. B · 2K</FitText>
+        <path d={`M ${bx0} 120 L ${bx0} ${bottom} Q ${bcx} ${bottom + 6} ${bx1} ${bottom} L ${bx1} 120 Q ${bcx} 112 ${bx0} 120 Z`} fill={url('cyl')} />
+      </Wrapper>
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // CUÑETE (5 gal) y BALDE (2.5 gal): balde plástico cónico con tapa y asa
+  // -------------------------------------------------------------------------
+  if (isCunete || isMedio) {
+    const cx = 100;
+    const topY = isMedio ? 74 : 58, botY = 214;
+    const tw = isMedio ? 128 : 146, bw = isMedio ? 110 : 124; // ancho arriba / abajo
+    const tx0 = cx - tw / 2, tx1 = cx + tw / 2, bx0 = cx - bw / 2, bx1 = cx + bw / 2;
+    const lerpX = (t: number, side: 0 | 1) => side === 0 ? tx0 + (bx0 - tx0) * t : tx1 + (bx1 - tx1) * t;
+    const yAt = (t: number) => topY + (botY - topY) * t;
+    const lt = 0.2, lb = 0.94; // etiqueta
+    const ly0 = yAt(lt), ly1 = yAt(lb);
+    const lx0a = lerpX(lt, 0), lx1a = lerpX(lt, 1), lx0b = lerpX(lb, 0), lx1b = lerpX(lb, 1);
+    const ry = 11;
+    const labelW = lx1a - lx0a;
+    const bandT0 = 0.66, bandT1 = 0.9;
+    return (
+      <Wrapper viewBox="0 0 200 240">
+        <defs>
+          <linearGradient id={id('plastic')} x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stopColor="#C7CDD6" />
+            <stop offset="0.3" stopColor="#FFFFFF" />
+            <stop offset="0.7" stopColor="#E5E9EF" />
+            <stop offset="1" stopColor="#AEB6C2" />
+          </linearGradient>
+          <linearGradient id={id('lid')} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#2B4FA8" />
+            <stop offset="1" stopColor="#13306E" />
+          </linearGradient>
+        </defs>
+        <ellipse cx={cx} cy={botY + 10} rx={bw / 2 + 14} ry="8" fill={url('floor')} />
+        {/* Cuerpo */}
+        <path d={`M ${tx0} ${topY} L ${bx0} ${botY} Q ${cx} ${botY + ry * 1.4} ${bx1} ${botY} L ${tx1} ${topY} Z`} fill={url('plastic')} />
+        {/* Etiqueta impresa */}
+        <path d={`M ${lx0a} ${ly0} Q ${cx} ${ly0 + ry * 1.6} ${lx1a} ${ly0} L ${lx1b} ${ly1} Q ${cx} ${ly1 + ry * 1.4} ${lx0b} ${ly1} Z`} fill={url('labelNavy')} />
+        <FitText x={cx} y={yAt(0.36) + 6} maxWidth={labelW * 0.72} size={12} fill="#FFFFFF" weight={900} spacing={2.5}>{brand}</FitText>
+        <FitText x={cx} y={yAt(0.48) + 7} maxWidth={labelW * 0.8} size={22} fill="#FFFFFF" weight={900}>{main}</FitText>
+        <FitText x={cx} y={yAt(0.56) + 7} maxWidth={labelW * 0.76} size={8} fill="#93C5FD" weight={700} spacing={0.4}>{sub}</FitText>
+        {(() => {
+          const y0 = yAt(bandT0) + 4, y1 = yAt(bandT1) + 4;
+          const a0 = lerpX(bandT0, 0), a1 = lerpX(bandT0, 1), b0 = lerpX(bandT1, 0), b1 = lerpX(bandT1, 1);
+          return (
+            <g>
+              <path d={`M ${a0} ${y0} Q ${cx} ${y0 + ry * 1.5} ${a1} ${y0} L ${b1} ${y1} Q ${cx} ${y1 + ry * 1.4} ${b0} ${y1} Z`} fill={url('paint')} />
+              <FitText x={cx} y={(y0 + y1) / 2 + 6} maxWidth={(a1 - a0) * 0.78} size={12} fill={onColor} weight={800}>{colorName}</FitText>
+              <FitText x={cx} y={(y0 + y1) / 2 + 17} maxWidth={(a1 - a0) * 0.6} size={7} fill={onColorSoft} weight={700} spacing={0.6}>{sizeText}</FitText>
+            </g>
+          );
+        })()}
+        <path d={`M ${tx0} ${topY} L ${bx0} ${botY} Q ${cx} ${botY + ry * 1.4} ${bx1} ${botY} L ${tx1} ${topY} Z`} fill={url('cyl')} />
+        {/* Aros de refuerzo */}
+        {[0.08, 0.14].map(t => (
+          <path key={t} d={`M ${lerpX(t, 0)} ${yAt(t)} Q ${cx} ${yAt(t) + ry * 1.6} ${lerpX(t, 1)} ${yAt(t)}`} fill="none" stroke="#94A3B8" strokeOpacity="0.6" strokeWidth="1.4" />
+        ))}
+        {/* Tapa */}
+        <ellipse cx={cx} cy={topY} rx={tw / 2 + 3} ry={ry + 1} fill={url('lid')} />
+        <path d={`M ${tx0 - 3} ${topY} L ${tx0 - 3} ${topY + 7} Q ${cx} ${topY + ry * 2.2} ${tx1 + 3} ${topY + 7} L ${tx1 + 3} ${topY} Q ${cx} ${topY + ry * 2} ${tx0 - 3} ${topY} Z`} fill="#0F2557" />
+        <ellipse cx={cx} cy={topY - 1} rx={tw / 2 - 8} ry={ry - 3} fill="#1E3F8F" />
+        <ellipse cx={cx} cy={topY - 1} rx={tw / 2 - 20} ry={ry - 5} fill="none" stroke="#3B63C4" strokeWidth="1.2" />
+        {/* Asa */}
+        <circle cx={tx0 + 2} cy={topY + 16} r="3.2" fill="#64748B" />
+        <circle cx={tx1 - 2} cy={topY + 16} r="3.2" fill="#64748B" />
+        <path d={`M ${tx0 + 2} ${topY + 16} Q ${cx} ${topY - 34} ${tx1 - 2} ${topY + 16}`} fill="none" stroke="#475569" strokeWidth="2.4" strokeLinecap="round" />
+        <rect x={cx - 16} y={topY - 15} width="32" height="7" rx="3.5" fill="#1F2937" />
+      </Wrapper>
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // LATA METÁLICA: galón (con asa) o cuarto de galón (más baja)
+  // -------------------------------------------------------------------------
+  const cx = 100;
+  const w = isCuarto ? 112 : 136;
+  const x0 = cx - w / 2, x1 = cx + w / 2;
+  const top = isCuarto ? 96 : 56;
+  const bottom = 212;
+  const ry = isCuarto ? 9 : 10.5;
+  const r = w / 2;
+  const h = bottom - top;
+  const labelTop = top + h * 0.14;
+  const labelBottom = bottom - h * 0.08;
+  const bandTop = top + h * (isCuarto ? 0.66 : 0.62);
+  const bandH = labelBottom - bandTop - 2;
+  const body = `M ${x0} ${top} L ${x0} ${bottom} A ${r} ${ry} 0 0 0 ${x1} ${bottom} L ${x1} ${top} Z`;
+  const ring = (y: number) => `M ${x0} ${y} A ${r} ${ry} 0 0 0 ${x1} ${y}`;
+
+  return (
+    <Wrapper viewBox="0 0 200 240">
+      <ellipse cx={cx} cy={bottom + 12} rx={r + 16} ry="8" fill={url('floor')} />
+      {/* Cuerpo metálico */}
+      <path d={body} fill={url('metal')} />
+      {/* Etiqueta */}
+      <path d={`M ${x0} ${labelTop} A ${r} ${ry} 0 0 0 ${x1} ${labelTop} L ${x1} ${labelBottom} A ${r} ${ry} 0 0 1 ${x0} ${labelBottom} Z`} fill={url('labelNavy')} />
+      {/* Arco de marca */}
+      <path d={`M ${x0 + w * 0.2} ${labelTop + h * (isCuarto ? 0.09 : 0.12)} Q ${cx} ${labelTop + h * (isCuarto ? 0.01 : 0.02)} ${x1 - w * 0.2} ${labelTop + h * (isCuarto ? 0.09 : 0.12)}`} fill="none" stroke={color} strokeWidth={isCuarto ? 2.2 : 2.8} strokeLinecap="round" opacity={isLightPaint ? 0.9 : 1} />
+      <FitText x={cx} y={labelTop + h * (isCuarto ? 0.2 : 0.2)} maxWidth={w * 0.66} size={isCuarto ? 8.5 : 11} fill="#FFFFFF" weight={900} spacing={isCuarto ? 1.6 : 2.4}>{brand}</FitText>
+      <FitText x={cx} y={labelTop + h * (isCuarto ? 0.35 : 0.34)} maxWidth={w * 0.78} size={isCuarto ? 15 : 21} fill="#FFFFFF" weight={900}>{main}</FitText>
+      <FitText x={cx} y={labelTop + h * (isCuarto ? 0.44 : 0.42)} maxWidth={w * 0.74} size={isCuarto ? 6.5 : 8} fill="#93C5FD" weight={700} spacing={0.3}>{sub}</FitText>
+      <ColorBand cx={cx} y={bandTop} w={w} h={bandH} arc={ry * 0.5} nameSize={isCuarto ? 9 : 11} sizeSize={isCuarto ? 6 : 7} />
+      {/* Sombreado cilíndrico sobre todo el cuerpo */}
+      <path d={body} fill={url('cyl')} />
+      {/* Aros del cuerpo */}
+      <path d={ring(labelTop - 3)} fill="none" stroke="#FFFFFF" strokeOpacity="0.35" strokeWidth="1" />
+      <path d={`M ${x0} ${bottom - 7} A ${r} ${ry} 0 0 0 ${x1} ${bottom - 7} L ${x1} ${bottom} A ${r} ${ry} 0 0 1 ${x0} ${bottom} Z`} fill={url('metal')} />
+      <path d={ring(bottom - 7)} fill="none" stroke="#000" strokeOpacity="0.18" strokeWidth="1" />
+      {/* Tapa */}
+      <ellipse cx={cx} cy={top} rx={r} ry={ry} fill={url('metal')} />
+      <ellipse cx={cx} cy={top} rx={r - 6} ry={ry - 2.2} fill={url('metalTop')} />
+      <ellipse cx={cx} cy={top + 0.5} rx={r - 14} ry={ry - 4} fill="none" stroke="#7B8494" strokeWidth="1.2" />
+      <ellipse cx={cx} cy={top + 0.5} rx={r - 26} ry={ry - 6} fill="none" stroke="#FFFFFF" strokeOpacity="0.7" strokeWidth="1" />
+      {/* Asa del galón */}
+      {!isCuarto && (
+        <g>
+          <rect x={x0 - 3} y={top + 8} width="7" height="12" rx="2" fill="#64748B" />
+          <rect x={x1 - 4} y={top + 8} width="7" height="12" rx="2" fill="#64748B" />
+          <path d={`M ${x0} ${top + 14} Q ${x0 - 4} ${top - 40} ${cx} ${top - 42} Q ${x1 + 4} ${top - 40} ${x1} ${top + 14}`} fill="none" stroke="#9AA3B0" strokeWidth="2.2" />
+          <rect x={cx - 18} y={top - 47} width="36" height="9" rx="4.5" fill="#1F2937" />
+        </g>
+      )}
+    </Wrapper>
   );
 };

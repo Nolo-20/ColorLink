@@ -125,9 +125,6 @@ export const ToolGraphic: React.FC<ToolGraphicProps> = ({
           <text x="80" y="85" fill="#451A03" opacity="0.65" fontSize="6.5" fontWeight="900" fontFamily="sans-serif" textAnchor="middle" transform="rotate(-90 80 85)" letterSpacing="1">
             COLORLINK PRO
           </text>
-          <text x="80" y="105" fill="#5C2606" opacity="0.75" fontSize="8" fontWeight="900" fontFamily="sans-serif" textAnchor="middle">
-            {sizeLabel}
-          </text>
 
           {/* 2. VIROLA METÁLICA (Acero Inoxidable con remaches) */}
           <rect 
@@ -338,9 +335,6 @@ export const ToolGraphic: React.FC<ToolGraphicProps> = ({
           <ellipse cx="78" cy="229" rx="6" ry="2" fill="#334155" />
 
           {/* Badge de especificación */}
-          <text x="78" y="146" fill="#0B1E48" fontSize="7" fontWeight="900" fontFamily="sans-serif" textAnchor="middle">
-            9 PULGADAS PRO
-          </text>
         </svg>
       </div>
     );
@@ -418,12 +412,6 @@ export const ToolGraphic: React.FC<ToolGraphicProps> = ({
           />
 
           {/* Texto en el núcleo de la cinta */}
-          <text x="80" y="80" fill="#1E3A8A" fontSize="9" fontWeight="900" fontFamily="sans-serif" textAnchor="middle" letterSpacing="0.5">
-            COLORLINK UV
-          </text>
-          <text x="80" y="92" fill="#059669" fontSize="7.5" fontWeight="900" fontFamily="sans-serif" textAnchor="middle">
-            14 DÍAS BORDE LIMPIO
-          </text>
         </svg>
       </div>
     );
@@ -485,14 +473,8 @@ export const ToolGraphic: React.FC<ToolGraphicProps> = ({
           <line x1="30" y1="30" x2="130" y2="30" stroke="#94A3B8" strokeWidth="1" />
 
           {/* Grabado en la hoja de acero: FLEX 4" */}
-          <text x="80" y="65" fill="#475569" fontSize="8" fontWeight="900" fontFamily="sans-serif" textAnchor="middle" letterSpacing="1">
-            COLORLINK PRO
-          </text>
-          <text x="80" y="80" fill="#64748B" fontSize="12" fontWeight="900" fontFamily="sans-serif" textAnchor="middle">
-            4" / 100 mm
-          </text>
-          <text x="80" y="93" fill="#94A3B8" fontSize="6" fontWeight="700" fontFamily="sans-serif" textAnchor="middle">
-            ACERO FLEXIBLE INOX
+          <text x="80" y="68" fill="#475569" fontSize="6" fontWeight="900" fontFamily="sans-serif" textAnchor="middle" letterSpacing="0.8" opacity="0.8">
+            COLORLINK
           </text>
 
           {/* 2. MANGO BI-MATERIAL ERGONÓMICO */}
@@ -586,12 +568,6 @@ export const ToolGraphic: React.FC<ToolGraphicProps> = ({
           <rect x="71" y="136" width="18" height="66" fill="url(#aluminumShaft)" stroke="#94A3B8" strokeWidth="0.5" />
 
           {/* Medidor / Marca en el tubo de aluminio */}
-          <text x="80" y="165" fill="#475569" fontSize="6.5" fontWeight="900" fontFamily="sans-serif" textAnchor="middle" letterSpacing="0.5">
-            2.00 METROS
-          </text>
-          <text x="80" y="174" fill="#94A3B8" fontSize="5" fontWeight="800" fontFamily="sans-serif" textAnchor="middle">
-            ALUMINIO AERO
-          </text>
 
           {/* 5. EMPUÑADURA INFERIOR ANATÓMICA CON GRIP */}
           <rect x="68" y="200" width="24" height="34" rx="5" fill="url(#extensionHandle)" />
@@ -644,9 +620,6 @@ export const ToolGraphic: React.FC<ToolGraphicProps> = ({
 
         {/* Pozo / depósito inferior de pintura */}
         <polygon points="24,155 136,155 140,188 20,188" fill="#0F172A" />
-        <text x="80" y="176" fill="#64748B" fontSize="8" fontWeight="900" fontFamily="sans-serif" textAnchor="middle">
-          BANDEJA 9" · 2.5L
-        </text>
       </svg>
     </div>
   );

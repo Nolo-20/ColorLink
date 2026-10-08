@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { ProductThumb } from './ProductThumb';
 import {
   CheckCircle2,
   Truck,
@@ -536,18 +537,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
               {itemsToBuy.map(item => (
                 <div key={item.id} className="pt-4 first:pt-0 flex items-center gap-4">
                   <div className="w-14 h-14 rounded-xl bg-slate-100 border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center p-1 relative">
-                    {item.colorHex ? (
-                      <div
-                        className="w-full h-full rounded-lg shadow-inner flex items-center justify-center text-white"
-                        style={{ backgroundColor: item.colorHex }}
-                      >
-                        <span className="text-[8px] font-black px-1 py-0.2 rounded bg-black/40">
-                          {item.colorCode}
-                        </span>
-                      </div>
-                    ) : (
-                      <img src={item.image} alt={item.name} className="w-full h-full object-cover rounded-lg" referrerPolicy="no-referrer" />
-                    )}
+                    <ProductThumb productId={item.productId} name={item.name} sizeName={item.sizeName} colorHex={item.colorHex} colorName={item.colorName} />
                   </div>
 
                   <div className="flex-1 min-w-0 text-xs">
