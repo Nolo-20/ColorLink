@@ -90,6 +90,28 @@ export default function App() {
               confirmado: 'Comprado', en_alistamiento: 'Preparación', en_camino: 'Enviado',
               listo_recoger: 'Listo para Retiro', entregado: 'Entregado', cancelado: 'Cancelado'
             };
+            // Texto para el cliente: nunca mostramos quién del equipo movió el pedido ni notas internas
+            const descripcionCliente = (estado: string, comentario: string | null, isPickup: boolean): string => {
+              switch (estado) {
+                case 'confirmado': return 'Recibimos tu pedido y tu pago.';
+                case 'en_alistamiento': return 'Estamos preparando tu pedido en bodega.';
+                case 'en_camino': return 'Tu pedido salió hacia la dirección de entrega.';
+                case 'listo_recoger': return 'Tu pedido está listo. Presenta tu código de retiro en la tienda.';
+                case 'entregado': return isPickup ? 'Retiraste tu pedido en tienda.' : 'Tu pedido fue entregado.';
+                case 'cancelado': return comentario === 'Cancelado por el cliente.' ? 'Cancelaste este pedido.' : 'El pedido fue cancelado.';
+                default: return '';
+              }
+            };
+            const estadoCliente = (estado: string): 'comprado' | 'despacho' | 'enviado' | 'entregado' | 'cancelado' => {
+              switch (estado) {
+                case 'en_alistamiento':
+                case 'listo_recoger': return 'despacho';
+                case 'en_camino': return 'enviado';
+                case 'entregado': return 'entregado';
+                case 'cancelado': return 'cancelado';
+                default: return 'comprado';
+              }
+            };
             const isPickup = o.metodoEntrega === 'recoger_tienda';
             return {
               id: o.ordenId,
@@ -107,7 +129,8 @@ export default function App() {
               deliveryMethod: isPickup ? 'sucursal' : 'domicilio',
               pickupCode: isPickup ? o.qrToken.slice(0, 8).toUpperCase() : undefined,
               transactionId: o.ordenId,
-              status: o.estado === 'cancelado' ? 'cancelado' : o.estado === 'entregado' ? 'entregado' : 'comprado',
+              status: estadoCliente(o.estado),
+              readyForPickup: o.estado === 'listo_recoger',
               canCancel: o.estado === 'confirmado',
               carrier: isPickup ? 'Retiro en Sucursal Asignada' : 'Flota ColorLink',
               estimatedDelivery: isPickup ? 'Disponible en tienda' : 'Próximas 24-48 horas',
@@ -128,7 +151,7 @@ export default function App() {
               trackingHistory: (o.historial || []).map((h: any) => ({
                 status: h.estado,
                 label: estadoLabels[h.estado] || h.estado,
-                description: h.comentario || '',
+                description: descripcionCliente(h.estado, h.comentario, isPickup),
                 date: new Date(h.fecha).toLocaleDateString('es-CO'),
                 isCompleted: true,
                 isCurrent: h.estado === o.estado

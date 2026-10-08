@@ -270,7 +270,7 @@ export const CustomerOrdersView: React.FC<CustomerOrdersViewProps> = ({
                       {isDispatched && (
                         <div className="flex items-center gap-1.5 text-amber-700 font-black text-base sm:text-lg">
                           <Package className="w-5 h-5 text-amber-600" />
-                          <span>Despachado — En alistamiento de bodega</span>
+                          <span>{order.readyForPickup ? 'Listo para retiro — Te esperamos en la tienda' : 'En preparación — Estamos alistando tu pedido'}</span>
                         </div>
                       )}
                       {isPurchased && (
@@ -522,34 +522,34 @@ export const CustomerOrdersView: React.FC<CustomerOrdersViewProps> = ({
                     <span className="text-[10px] text-slate-500 font-medium hidden sm:inline">Confirmado</span>
                   </div>
 
-                  {/* Step 2: Despacho */}
+                  {/* Step 2: Despacho (en bodega: se está alistando) */}
                   <div className="flex flex-col items-center">
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs transition-all ${
-                      ['despacho', 'enviado', 'entregado'].includes(trackingOrder.status)
-                        ? 'bg-emerald-500 text-white shadow-md ring-4 ring-emerald-100'
-                        : trackingOrder.status === 'comprado'
-                        ? 'bg-amber-400 text-slate-950 ring-4 ring-amber-100 animate-pulse'
-                        : 'bg-slate-200 text-slate-500'
-                    }`}>
-                      {['despacho', 'enviado', 'entregado'].includes(trackingOrder.status) ? '✓' : '2'}
-                    </div>
-                    <span className="text-xs font-extrabold text-slate-900 mt-2">Despacho</span>
-                    <span className="text-[10px] text-slate-500 font-medium hidden sm:inline">En bodega</span>
-                  </div>
-
-                  {/* Step 3: Enviado */}
-                  <div className="flex flex-col items-center">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs transition-all ${
-                      ['enviado', 'entregado'].includes(trackingOrder.status)
+                      (['enviado', 'entregado'].includes(trackingOrder.status) || !!trackingOrder.readyForPickup)
                         ? 'bg-emerald-500 text-white shadow-md ring-4 ring-emerald-100'
                         : trackingOrder.status === 'despacho'
                         ? 'bg-amber-400 text-slate-950 ring-4 ring-amber-100 animate-pulse'
                         : 'bg-slate-200 text-slate-500'
                     }`}>
+                      {(['enviado', 'entregado'].includes(trackingOrder.status) || !!trackingOrder.readyForPickup) ? '✓' : '2'}
+                    </div>
+                    <span className="text-xs font-extrabold text-slate-900 mt-2">Despacho</span>
+                    <span className="text-[10px] text-slate-500 font-medium hidden sm:inline">En bodega</span>
+                  </div>
+
+                  {/* Step 3: Enviado (o listo para retiro en tienda) */}
+                  <div className="flex flex-col items-center">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs transition-all ${
+                      ['enviado', 'entregado'].includes(trackingOrder.status)
+                        ? 'bg-emerald-500 text-white shadow-md ring-4 ring-emerald-100'
+                        : trackingOrder.readyForPickup
+                        ? 'bg-amber-400 text-slate-950 ring-4 ring-amber-100 animate-pulse'
+                        : 'bg-slate-200 text-slate-500'
+                    }`}>
                       {['enviado', 'entregado'].includes(trackingOrder.status) ? '✓' : '3'}
                     </div>
-                    <span className="text-xs font-extrabold text-slate-900 mt-2">Enviado</span>
-                    <span className="text-[10px] text-slate-500 font-medium hidden sm:inline">En transporte</span>
+                    <span className="text-xs font-extrabold text-slate-900 mt-2">{trackingOrder.deliveryMethod === 'sucursal' ? 'Listo en tienda' : 'Enviado'}</span>
+                    <span className="text-[10px] text-slate-500 font-medium hidden sm:inline">{trackingOrder.deliveryMethod === 'sucursal' ? 'Para retirar' : 'En transporte'}</span>
                   </div>
 
                   {/* Step 4: Entregado */}

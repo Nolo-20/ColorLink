@@ -52,6 +52,7 @@ export interface CustomerOrder {
   pickupCode?: string;
   transactionId?: string;
   status: OrderStatus;
+  readyForPickup?: boolean; // pedido de retiro ya alistado, esperando al cliente en tienda
   items: Array<{
     id: string;
     productId: string;
