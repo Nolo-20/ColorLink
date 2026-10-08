@@ -164,9 +164,7 @@ async function sendOrderStatusEmail(email: string, orden: any, estado: string) {
     html: `
     <div style="font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #f1f5f9;">
       <div style="background: #0A1A36; padding: 24px 32px; border-radius: 12px 12px 0 0;">
-        <span style="font-size: 20px; font-weight: 900; color: #ffffff; letter-spacing: -0.5px;">
-          COLOR<span style="color: #10B981;">LINK</span>
-        </span>
+        <img src="${APP_URL}/brand/logo-on-dark.png" alt="ColorLink" height="34" style="display:block;height:34px;width:auto;border:0;" />
       </div>
       <div style="background: #ffffff; padding: 32px; border-radius: 0 0 12px 12px;">
         <span style="display:inline-block; background:#d1fae5; color:#065f46; font-size:11px; font-weight:800; padding:4px 10px; border-radius:999px; text-transform:uppercase; letter-spacing:0.5px;">
@@ -185,7 +183,7 @@ async function sendOrderStatusEmail(email: string, orden: any, estado: string) {
           </tr>
         </table>` : ''}
 
-        <a href="${process.env.APP_URL || ''}" style="display:inline-block; background:#10B981; color:#031018; font-weight:800; font-size:13px; padding:12px 24px; border-radius:10px; text-decoration:none; margin-top:24px;">
+        <a href="${process.env.APP_URL || ''}" style="display:inline-block; background:#F2C417; color:#14216B; font-weight:800; font-size:13px; padding:12px 24px; border-radius:10px; text-decoration:none; margin-top:24px;">
           Ver mi pedido
         </a>
         <p style="color: #94a3b8; font-size: 11px; margin-top: 28px; border-top: 1px solid #e2e8f0; padding-top: 16px;">
@@ -229,14 +227,14 @@ async function sendPasswordResetEmail(email: string, firstName: string, link: st
     html: `
     <div style="font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #f1f5f9;">
       <div style="background: #0A1A36; padding: 24px 32px; border-radius: 12px 12px 0 0;">
-        <span style="font-size: 20px; font-weight: 900; color: #ffffff;">COLOR<span style="color: #10B981;">LINK</span></span>
+        <img src="${APP_URL}/brand/logo-on-dark.png" alt="ColorLink" height="34" style="display:block;height:34px;width:auto;border:0;" />
       </div>
       <div style="background: #ffffff; padding: 32px; border-radius: 0 0 12px 12px;">
         <h2 style="color: #0A1A36; margin: 0 0 10px;">Hola, ${firstName}</h2>
         <p style="color: #475569; font-size: 14px; line-height: 1.6;">
           Recibimos una solicitud para restablecer la contraseña de tu cuenta. El enlace es válido por 30 minutos y solo se puede usar una vez.
         </p>
-        <a href="${link}" style="display:inline-block; background:#10B981; color:#031018; font-weight:800; font-size:13px; padding:12px 24px; border-radius:10px; text-decoration:none; margin-top:16px;">
+        <a href="${link}" style="display:inline-block; background:#F2C417; color:#14216B; font-weight:800; font-size:13px; padding:12px 24px; border-radius:10px; text-decoration:none; margin-top:16px;">
           Crear nueva contraseña
         </a>
         <p style="color: #94a3b8; font-size: 11px; margin-top: 28px; border-top: 1px solid #e2e8f0; padding-top: 16px;">
@@ -259,16 +257,14 @@ async function sendWelcomeEmail(email: string, firstName: string) {
     html: `
     <div style="font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #f1f5f9;">
       <div style="background: #0A1A36; padding: 24px 32px; border-radius: 12px 12px 0 0;">
-        <span style="font-size: 20px; font-weight: 900; color: #ffffff;">
-          COLOR<span style="color: #10B981;">LINK</span>
-        </span>
+        <img src="${APP_URL}/brand/logo-on-dark.png" alt="ColorLink" height="34" style="display:block;height:34px;width:auto;border:0;" />
       </div>
       <div style="background: #ffffff; padding: 32px; border-radius: 0 0 12px 12px;">
         <h2 style="color: #0A1A36; margin: 0 0 10px;">¡Hola, ${firstName}! 👋</h2>
         <p style="color: #475569; font-size: 14px; line-height: 1.6;">
           Tu cuenta en ColorLink ya está lista. Ya puedes cotizar proyectos con diagnóstico de IA o comprar directo en nuestra tienda de pinturas y recubrimientos.
         </p>
-        <a href="${process.env.APP_URL || ''}" style="display:inline-block; background:#10B981; color:#031018; font-weight:800; font-size:13px; padding:12px 24px; border-radius:10px; text-decoration:none; margin-top:16px;">
+        <a href="${process.env.APP_URL || ''}" style="display:inline-block; background:#F2C417; color:#14216B; font-weight:800; font-size:13px; padding:12px 24px; border-radius:10px; text-decoration:none; margin-top:16px;">
           Ingresar y Explorar
         </a>
       </div>
@@ -977,7 +973,7 @@ async function startServer() {
       html: `
     <div style="font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #f1f5f9;">
       <div style="background: #0A1A36; padding: 24px 32px; border-radius: 12px 12px 0 0;">
-        <span style="font-size: 20px; font-weight: 900; color: #ffffff;">COLOR<span style="color: #10B981;">LINK</span></span>
+        <img src="${APP_URL}/brand/logo-on-dark.png" alt="ColorLink" height="34" style="display:block;height:34px;width:auto;border:0;" />
       </div>
       <div style="background: #ffffff; padding: 32px; border-radius: 0 0 12px 12px;">
         <span style="display:inline-block; background:#fee2e2; color:#991b1b; font-size:11px; font-weight:800; padding:4px 10px; border-radius:999px; text-transform:uppercase;">
@@ -990,7 +986,7 @@ async function startServer() {
         <div style="background:#fef2f2; border-left:4px solid #ef4444; padding:12px 16px; border-radius:6px; margin:16px 0;">
           <p style="margin:0; color:#7f1d1d; font-size:13px;"><strong>Motivo:</strong> ${escapeHtml(motivo)}</p>
         </div>
-        <a href="${process.env.APP_URL || ''}" style="display:inline-block; background:#10B981; color:#031018; font-weight:800; font-size:13px; padding:12px 24px; border-radius:10px; text-decoration:none; margin-top:8px;">
+        <a href="${process.env.APP_URL || ''}" style="display:inline-block; background:#F2C417; color:#14216B; font-weight:800; font-size:13px; padding:12px 24px; border-radius:10px; text-decoration:none; margin-top:8px;">
           Ingresar y subir nueva foto
         </a>
       </div>
@@ -1007,7 +1003,7 @@ async function startServer() {
       html: `
     <div style="font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #f1f5f9;">
       <div style="background: #0A1A36; padding: 24px 32px; border-radius: 12px 12px 0 0;">
-        <span style="font-size: 20px; font-weight: 900; color: #ffffff;">COLOR<span style="color: #10B981;">LINK</span></span>
+        <img src="${APP_URL}/brand/logo-on-dark.png" alt="ColorLink" height="34" style="display:block;height:34px;width:auto;border:0;" />
       </div>
       <div style="background: #ffffff; padding: 32px; border-radius: 0 0 12px 12px;">
         <span style="display:inline-block; background:#fef3c7; color:#92400e; font-size:11px; font-weight:800; padding:4px 10px; border-radius:999px; text-transform:uppercase;">

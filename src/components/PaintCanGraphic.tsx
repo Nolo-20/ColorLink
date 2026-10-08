@@ -87,6 +87,42 @@ const shortSize = (sizeName: string) => {
   return sizeName.toUpperCase();
 };
 
+
+// ---------------------------------------------------------------------------
+// Fotos reales de producto (public/products/<linea>-<presentacion>.webp)
+// ---------------------------------------------------------------------------
+const PHOTO_LINES: Array<[RegExp, string]> = [
+  [/viniltex/i, 'viniltex'],
+  [/koraza/i, 'koraza'],
+  [/pintulux/i, 'pintulux'],
+  [/fill/i, 'pintucofill'],
+  [/ep[oó]xico/i, 'epoxico'],
+  [/poliuretano/i, 'poliuretano']
+];
+const PHOTO_SIZES: Record<string, string[]> = {
+  viniltex: ['cuarto', 'galon', 'medio', 'cunete'],
+  koraza: ['cuarto', 'galon', 'cunete'],
+  pintulux: ['cuarto', 'galon', 'cunete'],
+  pintucofill: ['cuarto', 'galon', 'cunete'],
+  epoxico: ['cuarto', 'galon', 'cunete'],
+  poliuretano: ['octavo', 'cuarto', 'galon', 'aerosol']
+};
+
+export function productPhoto(productLine: string, sizeName: string): string | null {
+  const line = PHOTO_LINES.find(([re]) => re.test(productLine))?.[1];
+  if (!line) return null;
+  const s = (sizeName || '').toLowerCase();
+  let size = 'galon';
+  if (/aerosol|spray/.test(s)) size = 'aerosol';
+  else if (s.includes('1/8')) size = 'octavo';
+  else if (s.includes('1/4') || s.includes('cuarto')) size = 'cuarto';
+  else if (s.includes('2.5')) size = 'medio';
+  else if (/5 gal|cuñete|cunete|caneca|industrial/.test(s)) size = 'cunete';
+  const available = PHOTO_SIZES[line];
+  if (!available.includes(size)) size = available.includes('galon') ? 'galon' : available[0];
+  return `/products/${line}-${size}`;
+}
+
 const FONT = "'Inter', 'Helvetica Neue', Arial, sans-serif";
 const NAVY = '#0B1E48';
 
@@ -105,6 +141,30 @@ export const PaintCanGraphic: React.FC<PaintCanGraphicProps> = ({
   category
 }) => {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, '');
+  const photo = productPhoto(productLine, sizeName);
+  if (photo) {
+    return (
+      <div className={`relative flex items-center justify-center select-none ${className}`}>
+        <div className="relative h-full max-w-full aspect-square bg-white rounded-2xl overflow-hidden">
+          <img
+            src={`${photo}.webp`}
+            srcSet={`${photo}-sm.webp 320w, ${photo}.webp 900w`}
+            sizes="(min-width: 1024px) 420px, 240px"
+            alt={`${productLine} ${sizeName}`}
+            loading="lazy"
+            draggable={false}
+            className="w-full h-full object-contain"
+          />
+          {/* Color elegido */}
+          <span
+            className="absolute bottom-[5%] right-[5%] w-[16%] min-w-2.5 max-w-8 aspect-square rounded-full ring-2 ring-white shadow-md"
+            style={{ backgroundColor: colorHex }}
+            title={colorName}
+          />
+        </div>
+      </div>
+    );
+  }
   const id = (name: string) => `${name}-${uid}`;
   const url = (name: string) => `url(#${id(name)})`;
 

@@ -16,6 +16,7 @@ import { INITIAL_USER, EMPTY_PROJECT_FORM, SAMPLE_CALCULATION, DEMO_PROFILES } f
 import { STORE_PRODUCTS } from './data/storeProducts';
 import { Navbar } from './components/Navbar';
 import { ModernLoginScreen } from './components/ModernLoginScreen';
+import { BrandLogo } from './components/BrandLogo';
 import { StorefrontHome } from './components/StorefrontHome';
 import { CategoryPageView } from './components/CategoryPageView';
 import { ProjectsTeaserView } from './components/ProjectsTeaserView';
@@ -823,17 +824,7 @@ export default function App() {
 
           <div className="space-y-3">
             <div className="flex items-center gap-2.5">
-              <div className="relative w-8 h-8 flex items-center justify-center shrink-0">
-                <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-8 h-8">
-                  <rect x="2" y="2" width="36" height="36" rx="9" fill="#060E1D" stroke="rgba(56, 189, 248, 0.25)" strokeWidth="1.2" />
-                  <path d="M12 25L20 10L28 25H12Z" fill="#2563EB" opacity="0.4" />
-                  <path d="M20 12C20 12 14.5 20.5 14.5 24.5C14.5 27.5 17 29.5 20 29.5C23 29.5 25.5 27.5 25.5 24.5C25.5 20.5 20 12 20 12Z" fill="#10B981" />
-                  <circle cx="18" cy="23" r="1.3" fill="#FFFFFF" opacity="0.9" />
-                </svg>
-              </div>
-              <span className="font-extrabold text-white text-base tracking-tight font-sans">
-                COLOR<span className="text-emerald-400">LINK</span>
-              </span>
+              <BrandLogo on="dark" className="h-8" />
             </div>
             <p className="text-slate-400 leading-relaxed text-[11px]">
               Soluciones integrales de recubrimientos arquitectónicos e industriales. Venta directa y acompañamiento técnico para obras en Colombia.

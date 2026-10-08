@@ -37,7 +37,7 @@ export const FloatingAssistantButton: React.FC<FloatingAssistantButtonProps> = (
           >
             {/* Antenna & Signal Beacon */}
             <line x1="18" y1="3" x2="18" y2="7.5" stroke="#38BDF8" strokeWidth="2" strokeLinecap="round" />
-            <circle cx="18" cy="2.5" r="1.8" fill="#10B981" />
+            <circle cx="18" cy="2.5" r="1.8" fill="#F2C417" />
             
             {/* Robot Head Shell */}
             <rect x="6.5" y="7.5" width="23" height="18.5" rx="5.5" fill="#0B162C" stroke="#38BDF8" strokeWidth="1.6" />
@@ -50,8 +50,8 @@ export const FloatingAssistantButton: React.FC<FloatingAssistantButtonProps> = (
             <rect x="9.5" y="11.5" width="17" height="7.5" rx="2.8" fill="#020617" />
             
             {/* Glowing Digital Eyes */}
-            <circle cx="13.5" cy="15.2" r="1.7" fill="#10B981" />
-            <circle cx="22.5" cy="15.2" r="1.7" fill="#10B981" />
+            <circle cx="13.5" cy="15.2" r="1.7" fill="#F2C417" />
+            <circle cx="22.5" cy="15.2" r="1.7" fill="#F2C417" />
             <circle cx="13.5" cy="15.2" r="0.7" fill="#FFFFFF" />
             <circle cx="22.5" cy="15.2" r="0.7" fill="#FFFFFF" />
             

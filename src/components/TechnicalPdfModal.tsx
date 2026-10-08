@@ -1,3 +1,4 @@
+import { BrandLogo } from './BrandLogo';
 import React from 'react';
 import { ProjectFormData, CalculationBreakdown, AiDiagnosisResult, UserProfile } from '../types';
 import { 
@@ -78,13 +79,8 @@ export const TechnicalPdfModal: React.FC<TechnicalPdfModalProps> = ({
           {/* Document Header */}
           <div className="flex items-start justify-between border-b-2 border-slate-900 pb-6">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-slate-950 flex items-center justify-center text-cyan-400 shadow-md">
-                <Droplet className="w-7 h-7 fill-cyan-400" />
-              </div>
               <div>
-                <h1 className="text-2xl font-black tracking-tight text-slate-950">
-                  COLOR<span className="text-cyan-600">LINK</span>
-                </h1>
+                <BrandLogo on="light" className="h-10" />
                 <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest">
                   Ecosistema de Recubrimientos & Pinturas de Alto Desempeño
                 </p>

@@ -1,3 +1,4 @@
+import { BrandLogo } from './BrandLogo';
 import React, { useState, useEffect } from 'react';
 import { UserProfile } from '../types';
 import { DEMO_PROFILES } from '../data/mockData';
@@ -390,9 +391,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
 
         {/* Header */}
         <div className="flex flex-col items-center text-center mb-6">
-          <div className="w-12 h-12 rounded-full border-2 border-[#002855] text-[#002855] flex items-center justify-center mb-3">
-            <User className="w-7 h-7 stroke-[2]" />
-          </div>
+          <BrandLogo on="light" className="h-10 mb-4" />
           <h2 className="text-xl sm:text-2xl font-black text-[#002855] tracking-tight uppercase">
             {authView === 'register_page' ? 'REGISTRO CORPORATIVO' : 'INICIA SESIÓN O REGÍSTRATE'}
           </h2>

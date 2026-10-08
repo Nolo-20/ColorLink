@@ -257,8 +257,8 @@ export const CustomerOrdersView: React.FC<CustomerOrdersViewProps> = ({
                     {/* Status announcement */}
                     <div className="flex items-center gap-2">
                       {isDelivered && (
-                        <div className="flex items-center gap-1.5 text-emerald-700 font-black text-base sm:text-lg">
-                          <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                        <div className="flex items-center gap-1.5 text-green-700 font-black text-base sm:text-lg">
+                          <CheckCircle2 className="w-5 h-5 text-green-600" />
                           <span>Entregado el {order.estimatedDelivery || 'recientemente'}</span>
                         </div>
                       )}

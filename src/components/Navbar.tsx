@@ -1,3 +1,4 @@
+import { BrandLogo } from './BrandLogo';
 import React, { useState } from 'react';
 import { ActiveTab, UserProfile, StoreCategory } from '../types';
 import {
@@ -155,36 +156,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             }}
             className="flex items-center gap-2.5 sm:gap-3 text-left shrink-0 cursor-pointer focus:outline-hidden group"
           >
-            <div className="relative w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center shrink-0">
-              <svg
-                viewBox="0 0 40 40"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-                className="w-9 h-9 sm:w-10 sm:h-10 group-hover:scale-105 transition-all duration-300"
-              >
-                <defs>
-                  <linearGradient id="clHexGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stopColor="#10B981" />
-                    <stop offset="100%" stopColor="#0284C7" />
-                  </linearGradient>
-                  <linearGradient id="clDropGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stopColor="#38BDF8" />
-                    <stop offset="100%" stopColor="#2563EB" />
-                  </linearGradient>
-                </defs>
-                <rect x="2" y="2" width="36" height="36" rx="9" fill="#060E1D" stroke="rgba(56, 189, 248, 0.25)" strokeWidth="1.2" />
-                <path d="M12 25L20 10L28 25H12Z" fill="url(#clDropGrad)" opacity="0.4" />
-                <path d="M20 12C20 12 14.5 20.5 14.5 24.5C14.5 27.5 17 29.5 20 29.5C23 29.5 25.5 27.5 25.5 24.5C25.5 20.5 20 12 20 12Z" fill="url(#clHexGrad)" />
-                <circle cx="18" cy="23" r="1.3" fill="#FFFFFF" opacity="0.9" />
-              </svg>
-            </div>
-
             <div>
-              <div className="flex items-center gap-1.5 leading-none">
-                <span className="text-lg sm:text-xl font-extrabold tracking-tight text-white font-sans">
-                  COLOR<span className="text-emerald-400">LINK</span>
-                </span>
-              </div>
+              <BrandLogo on="dark" className="h-8 sm:h-9" />
               <span className="text-[9px] font-semibold text-slate-400 block tracking-wider uppercase mt-0.5">
                 Recubrimientos & Pinturas
               </span>

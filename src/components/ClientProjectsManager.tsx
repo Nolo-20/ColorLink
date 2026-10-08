@@ -38,7 +38,7 @@ const ESTADO_CLIENTE: Record<string, { label: string; detalle: string; clase: st
   en_revision: { label: 'En revisión', detalle: 'Nuestro equipo está revisando tu solicitud.', clase: 'bg-blue-50 text-blue-700 border-blue-200' },
   imagen_por_corregir: { label: 'Imagen por corregir', detalle: 'Necesitamos otra foto para continuar.', clase: 'bg-rose-50 text-rose-700 border-rose-200' },
   en_peritaje: { label: 'En peritaje', detalle: 'Un perito técnico está evaluando la superficie.', clase: 'bg-violet-50 text-violet-700 border-violet-200' },
-  cotizado: { label: 'Cotizado', detalle: 'Tu cotización está lista.', clase: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  cotizado: { label: 'Cotizado', detalle: 'Tu cotización está lista.', clase: 'bg-green-50 text-green-700 border-green-200' },
   aprobado_calidad: { label: 'Aprobado por calidad', detalle: 'El sistema fue aprobado y pasa a despacho.', clase: 'bg-teal-50 text-teal-700 border-teal-200' },
   rechazado: { label: 'Requiere ajustes', detalle: 'El perito pidió ajustes técnicos; te contactaremos.', clase: 'bg-amber-50 text-amber-700 border-amber-200' },
   despachado: { label: 'Despachado', detalle: 'Tu pedido va en camino a la obra.', clase: 'bg-indigo-50 text-indigo-700 border-indigo-200' },

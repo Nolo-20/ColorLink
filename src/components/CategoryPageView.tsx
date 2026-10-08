@@ -934,7 +934,7 @@ export const CategoryPageView: React.FC<CategoryPageViewProps> = ({
                       <button
                         type="button"
                         onClick={(e) => handleBuyItem(item, e)}
-                        className="w-full py-2.5 px-4 bg-[#10B981] hover:bg-[#059669] active:scale-95 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-md hover:shadow-emerald-500/20 transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer mt-1"
+                        className="w-full py-2.5 px-4 bg-[#F2C417] hover:bg-[#C99A0A] active:scale-95 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-md hover:shadow-emerald-500/20 transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer mt-1"
                       >
                         <ShoppingCart className="w-4 h-4" />
                         <span>Comprar</span>

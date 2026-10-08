@@ -1,5 +1,39 @@
 @import "tailwindcss";
 
+/* Paleta de marca ColorLink (logo): el acento "emerald" de la interfaz pasa al amarillo de "Link" */
+@theme {
+  --color-emerald-50: #FFFBEA;
+  --color-emerald-100: #FFF3C4;
+  --color-emerald-200: #FDE68A;
+  --color-emerald-300: #FBD84E;
+  --color-emerald-400: #F7CB2A;
+  --color-emerald-500: #F2C417;
+  --color-emerald-600: #C99A0A;
+  --color-emerald-700: #9A7208;
+  --color-emerald-800: #77580B;
+  --color-emerald-900: #5F460F;
+  --color-emerald-950: #362707;
+  /* "cyan" pasa al azul del ícono */
+  --color-cyan-50: #EEF7FD;
+  --color-cyan-100: #D6ECFA;
+  --color-cyan-200: #ADD8F5;
+  --color-cyan-300: #7CC0EE;
+  --color-cyan-400: #52ABE7;
+  --color-cyan-500: #3A9BE0;
+  --color-cyan-600: #1D74C0;
+  --color-cyan-700: #185E9C;
+  --color-cyan-800: #164C7D;
+  --color-cyan-900: #133F66;
+  --color-cyan-950: #0C2742;
+  --color-brand-navy: #14216B;
+  --color-brand-yellow: #F2C417;
+  --color-brand-blue: #1D74C0;
+  --color-brand-orange: #F28B22;
+  --color-brand-green: #3E9A35;
+  --color-brand-red: #D2343A;
+}
+
+
 @layer utilities {
   @keyframes cartFly {
     0% {

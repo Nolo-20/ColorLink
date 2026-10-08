@@ -10,7 +10,7 @@ interface ProfileModalProps {
 }
 
 const AVATAR_PRESETS = [
-  { color: '#10b981', label: 'Verde' },
+  { color: '#F2C417', label: 'Verde' },
   { color: '#3b82f6', label: 'Azul' },
   { color: '#a855f7', label: 'Morado' },
   { color: '#f59e0b', label: 'Ámbar' },
@@ -90,7 +90,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, use
           {/* Avatar preview + presets */}
           <div className="flex items-center gap-4">
             <img
-              src={avatarUrl || iconAvatarDataUrl('#10b981')}
+              src={avatarUrl || iconAvatarDataUrl('#F2C417')}
               alt="avatar"
               className="w-16 h-16 rounded-full object-cover border-2 border-emerald-500"
             />
