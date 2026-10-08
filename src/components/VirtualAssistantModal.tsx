@@ -99,7 +99,13 @@ export const VirtualAssistantModal: React.FC<VirtualAssistantModalProps> = ({
     if (!textToSend) setInputText('');
     setIsTyping(true);
 
-    let reply = 'No pude conectarme con el asistente. Revisa tu conexión e intenta de nuevo.';
+    const botId = `b-${Date.now()}`;
+    const setBotText = (text: string) => setMessages(prev => {
+      const exists = prev.some(m => m.id === botId);
+      if (exists) return prev.map(m => m.id === botId ? { ...m, text } : m);
+      return [...prev, { id: botId, sender: 'assistant', text, timestamp: hora() }];
+    });
+
     try {
       const response = await fetch('/api/assistant/chat', {
         method: 'POST',
@@ -107,16 +113,32 @@ export const VirtualAssistantModal: React.FC<VirtualAssistantModalProps> = ({
         body: JSON.stringify({
           message: query,
           history: historial,
+          stream: true,
           project: formData?.proyecto ? { proyecto: formData.proyecto, areaM2: formData.areaM2, superficie: formData.superficie, ambiente: formData.ambiente, color: formData.color } : null
         })
       });
-      const data = await response.json();
-      reply = data.success ? data.reply : (data.error || reply);
+      const type = response.headers.get('content-type') || '';
+      if (type.includes('application/json')) {
+        const data = await response.json();
+        setBotText(data.success ? data.reply : (data.error || 'No pude responder en este momento.'));
+      } else if (response.body) {
+        // La respuesta llega por partes: se muestra mientras se escribe
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let text = '';
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          text += decoder.decode(value, { stream: true });
+          setIsTyping(false);
+          setBotText(text);
+        }
+        if (!text.trim()) setBotText('No pude responder en este momento.');
+      }
     } catch {
-      // se queda el mensaje de conexión
+      setBotText('No pude conectarme con el asistente. Revisa tu conexión e intenta de nuevo.');
     }
 
-    setMessages(prev => [...prev, { id: `b-${Date.now()}`, sender: 'assistant', text: reply, timestamp: hora() }]);
     setIsTyping(false);
   };
 

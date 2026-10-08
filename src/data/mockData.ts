@@ -99,6 +99,29 @@ export const COLOR_PALETTES: ColorTone[] = [
   { id: 'c8', name: 'Azul Índigo Costero', hex: '#1E3A5F', code: 'CLK-5011-AZUL', category: 'Acentos' },
 ];
 
+// Formulario vacío: así arranca la cotización para el cliente (sin datos de ejemplo)
+export const EMPTY_PROJECT_FORM: ProjectFormData = {
+  id: '',
+  cliente: '',
+  emailContacto: '',
+  telefonoContacto: '',
+  ciudad: 'Medellín',
+  proyecto: '',
+  areaM2: 0,
+  superficie: 'revoque',
+  ambiente: 'interior_muros',
+  condiciones: ['buen_estado'],
+  color: '',
+  colorHex: '',
+  acabado: 'mate',
+  fechaRequeridaDias: 15,
+  canalOrigen: 'web_portal',
+  descripcion: '',
+  fotos: [],
+  consentimientoDatos: false,
+  timestamp: new Date().toISOString()
+};
+
 export const INITIAL_SAMPLE_PROJECT: ProjectFormData = {
   id: 'CLK-PRJ-2026-MED-085',
   cliente: 'Constructora Horizonte S.A.S.',

@@ -12,7 +12,7 @@ import {
   StoreCategory,
   CustomerOrder
 } from './types';
-import { INITIAL_USER, INITIAL_SAMPLE_PROJECT, SAMPLE_CALCULATION, DEMO_PROFILES } from './data/mockData';
+import { INITIAL_USER, EMPTY_PROJECT_FORM, SAMPLE_CALCULATION, DEMO_PROFILES } from './data/mockData';
 import { STORE_PRODUCTS } from './data/storeProducts';
 import { Navbar } from './components/Navbar';
 import { ModernLoginScreen } from './components/ModernLoginScreen';
@@ -173,7 +173,7 @@ export default function App() {
   }, [activeTab, selectedProduct?.id]);
 
   // ---------- Proyectos / Cotizaciones con IA (backend real, ya construido) ----------
-  const [formData, setFormData] = useState<ProjectFormData>(INITIAL_SAMPLE_PROJECT);
+  const [formData, setFormData] = useState<ProjectFormData>(EMPTY_PROJECT_FORM);
   const [aiResult, setAiResult] = useState<AiDiagnosisResult | null>(null);
   const [calculation, setCalculation] = useState<CalculationBreakdown>(SAMPLE_CALCULATION);
   const [isSavingProject, setIsSavingProject] = useState(false);
@@ -443,7 +443,7 @@ export default function App() {
   };
 
   const handleLoadSampleCase = () => {
-    setFormData(INITIAL_SAMPLE_PROJECT);
+    setFormData(EMPTY_PROJECT_FORM);
     updateCalculationForArea(85.0);
     setActiveTab('captura');
   };
@@ -696,7 +696,7 @@ export default function App() {
             user={user}
             onSubmitToValidation={() => setActiveTab('validacion')}
             onLoadHorizontePreset={() => {
-              setFormData(INITIAL_SAMPLE_PROJECT);
+              setFormData(EMPTY_PROJECT_FORM);
               updateCalculationForArea(85.0);
             }}
           />

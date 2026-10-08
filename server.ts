@@ -11,6 +11,7 @@ import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import { createHash } from 'crypto';
 import QRCode from 'qrcode';
+import { registerVisualizerRoutes, startVisualizerAutogen } from './visualizerGen';
 
 dotenv.config();
 
@@ -2190,6 +2191,9 @@ async function startServer() {
   // ----------------------------------------------------------------
   // ASISTENTE VIRTUAL (Gemini): orientación técnica y de la tienda para el cliente
   // ----------------------------------------------------------------
+  let assistantModelCache: string | null = null; // último modelo que respondió bien
+  let catalogCache: { at: number; rows: Array<{ nombre: string; categoria: string | null; presentacion: string | null; rendimientoM2: number | null; precio: number | null }> } | null = null;
+
   const assistantLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 15,
@@ -2217,11 +2221,15 @@ async function startServer() {
       }
 
       // Catálogo real para no inventar productos ni precios
-      const productos = await prisma.producto.findMany({
-        select: { nombre: true, categoria: true, presentacion: true, rendimientoM2: true, precio: true },
-        orderBy: { nombre: 'asc' },
-        take: 60
-      });
+      if (!catalogCache || Date.now() - catalogCache.at > 5 * 60 * 1000) {
+        const rows = await prisma.producto.findMany({
+          select: { nombre: true, categoria: true, presentacion: true, rendimientoM2: true, precio: true },
+          orderBy: { nombre: 'asc' },
+          take: 60
+        });
+        catalogCache = { at: Date.now(), rows };
+      }
+      const productos = catalogCache.rows;
       const catalogo = productos.map(p =>
         `- ${p.nombre}${p.categoria ? ` (${p.categoria})` : ''}${p.presentacion ? `, ${p.presentacion}` : ''}${p.rendimientoM2 ? `, rinde ~${p.rendimientoM2} m²/gal` : ''}${p.precio ? `, $${Math.round(p.precio).toLocaleString('es-CO')} COP` : ''}`
       ).join('\n');
@@ -2288,26 +2296,51 @@ ${catalogo || '(catálogo no disponible)'}`;
       while (contents.length > 1 && contents[0].role !== 'user') contents.shift();
 
       const ai = new GoogleGenAI({ apiKey });
-      const modelsToTry = ['gemini-3.7-flash', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'];
-      for (const modelName of modelsToTry) {
-        try {
-          const response = await ai.models.generateContent({
-            model: modelName,
-            contents,
-            config: { systemInstruction: systemPrompt, temperature: 0.3, maxOutputTokens: 2048 }
-          });
-          const reply = (response.text || '').trim();
-          if (reply) return res.json({ success: true, source: modelName, reply });
-        } catch (geminiError: any) {
-          console.error(`[ASSISTANT] Modelo ${modelName} falló:`, geminiError?.message || geminiError);
+      const fallbackReply = 'No pude responder en este momento. Intenta de nuevo en unos segundos o escríbenos para que un asesor te ayude.';
+      // Primero el modelo que ya funcionó (o el configurado); los rápidos van antes
+      const candidates = [assistantModelCache, process.env.GEMINI_CHAT_MODEL, 'gemini-3.1-flash-lite', 'gemini-3.5-flash', 'gemini-3.7-flash']
+        .filter((m, i, arr): m is string => !!m && arr.indexOf(m) === i);
+      const wantsStream = req.body?.stream === true;
+
+      for (const modelName of candidates) {
+        // Intento rápido (sin razonamiento extendido); si el modelo no lo acepta, se reintenta normal
+        for (const thinking of [true, false]) {
+          const config: any = { systemInstruction: systemPrompt, temperature: 0.3, maxOutputTokens: 2048 };
+          if (thinking) config.thinkingConfig = { thinkingBudget: 0 };
+          let wrote = false;
+          try {
+            if (wantsStream) {
+              const stream = await ai.models.generateContentStream({ model: modelName, contents, config });
+              for await (const chunk of stream) {
+                const t = chunk.text || '';
+                if (!t) continue;
+                if (!wrote) {
+                  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+                  res.setHeader('Cache-Control', 'no-cache');
+                  res.setHeader('X-Accel-Buffering', 'no');
+                  wrote = true;
+                }
+                res.write(t);
+              }
+              if (wrote) { assistantModelCache = modelName; return res.end(); }
+            } else {
+              const response = await ai.models.generateContent({ model: modelName, contents, config });
+              const reply = (response.text || '').trim();
+              if (reply) { assistantModelCache = modelName; return res.json({ success: true, source: modelName, reply }); }
+            }
+          } catch (geminiError: any) {
+            if (wrote) return res.end(); // ya se envió parte de la respuesta: se cierra como está
+            console.error(`[ASSISTANT] Modelo ${modelName}${thinking ? ' (rápido)' : ''} falló:`, geminiError?.message || geminiError);
+            if (assistantModelCache === modelName && !thinking) assistantModelCache = null;
+          }
         }
       }
 
-      res.json({
-        success: true,
-        source: 'sin-ia',
-        reply: 'No pude responder en este momento. Intenta de nuevo en unos segundos o escríbenos para que un asesor te ayude.'
-      });
+      if (wantsStream) {
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        return res.end(fallbackReply);
+      }
+      res.json({ success: true, source: 'sin-ia', reply: fallbackReply });
     } catch (error: any) {
       console.error('[assistant-chat]', error);
       res.status(500).json({ success: false, error: 'No se pudo consultar al asistente.' });
@@ -2434,6 +2467,9 @@ Responde ÚNICAMENTE un objeto JSON válido con la siguiente estructura:
   // INVENTARIO
   // ================================================================
 
+  // Fotos reales del visualizador (generadas con Gemini y guardadas en data/visualizer)
+  registerVisualizerRoutes(app);
+
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: 'spa' });
     app.use(vite.middlewares);
@@ -2447,6 +2483,7 @@ Responde ÚNICAMENTE un objeto JSON válido con la siguiente estructura:
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`ColorLink Platform running on http://0.0.0.0:${PORT}`);
+    startVisualizerAutogen();
   });
 }
 

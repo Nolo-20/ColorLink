@@ -28,6 +28,9 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql://colorlink_user:${POSTGRES_PASSWORD}@db:5432/colorlink_db
+    volumes:
+      # Fotos reales del visualizador generadas con Gemini (se conservan entre reconstrucciones)
+      - visualizer_data:/app/data/visualizer
     restart: always
 
   # ERP interno: su propio nodo de Tailscale (https://colorlink-erp.<tailnet>.ts.net), independiente de la tienda.
@@ -81,3 +84,4 @@ volumes:
   ts_state:
   ts_state_erp:
   colorlink_pgdata:
+  visualizer_data:
