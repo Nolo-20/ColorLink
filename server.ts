@@ -165,7 +165,6 @@ async function sendOrderStatusEmail(email: string, orden: any, estado: string) {
       <div style="background: #0A1A36; padding: 24px 32px; border-radius: 12px 12px 0 0;">
         <span style="font-size: 20px; font-weight: 900; color: #ffffff; letter-spacing: -0.5px;">
           COLOR<span style="color: #10B981;">LINK</span>
-          <span style="font-size: 9px; font-weight: 800; color: #67e8f9; background: #0c3b4a; padding: 2px 6px; border-radius: 4px; margin-left: 6px; vertical-align: middle;">PRO</span>
         </span>
       </div>
       <div style="background: #ffffff; padding: 32px; border-radius: 0 0 12px 12px;">

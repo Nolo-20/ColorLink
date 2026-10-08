@@ -508,7 +508,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
 
               {paymentMethod === 'corporate_credit' && (
                 <div className="p-4 bg-amber-50 rounded-xl border border-amber-200 text-xs space-y-2">
-                  <span className="font-extrabold text-amber-900 block">Crédito Comercial ColorLink Pro (30 Días)</span>
+                  <span className="font-extrabold text-amber-900 block">Crédito Comercial ColorLink (30 Días)</span>
                   <p className="text-amber-800 leading-relaxed">
                     Esta orden se cargará al cupo rotativo de la constructora <strong>{companyName}</strong> con facturación electrónica a 30 días.
                   </p>

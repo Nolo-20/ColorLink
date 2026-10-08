@@ -3,7 +3,8 @@ import { StoreCategory, StoreProduct, StoreProductSize, StoreProductColor } from
 import { STORE_PRODUCTS } from '../data/storeProducts';
 import { PaintCanGraphic } from './PaintCanGraphic';
 import { ToolGraphic, ToolType } from './ToolGraphic';
-import { AmbientWallVisualizer } from './AmbientWallVisualizer';
+import { PaintedScene } from './PaintedScene';
+import { scenesForCategory } from '../data/visualizerScenes';
 import { 
   Heart, 
   Truck, 
@@ -955,43 +956,53 @@ export const CategoryPageView: React.FC<CategoryPageViewProps> = ({
           ))
         )}
 
-        {/* Interactive Category-Specific Visualizer */}
+        {/* Galería de resultados: cómo lucen los colores de esta categoría ya aplicados */}
         {category !== 'herramientas' && (() => {
-          const catProduct = STORE_PRODUCTS.find(p => p.category === category) || STORE_PRODUCTS[0];
-          const titles: Record<string, { title: string; subtitle: string }> = {
-            automotriz: {
-              title: 'Visualizador de Acabado Automotriz 2K en Tiempo Real',
-              subtitle: 'Simula el color y brillo de esmaltes poliuretano bicomponente sobre carrocerías vehiculares en estudio y luz diurna.'
-            },
-            industrial: {
-              title: 'Visualizador de Pisos Industriales Epóxicos en Tiempo Real',
-              subtitle: 'Aprecia el recubrimiento epóxico autonivelante de alto tráfico en bodegas, plantas y talleres.'
-            },
-            construccion: {
-              title: 'Visualizador de Fachadas y Exteriores en Tiempo Real',
-              subtitle: 'Aprecia el recubrimiento impermeable y antihongos sobre muros exteriores y obras.'
-            },
-            hogar: {
-              title: 'Visualizador de Ambientes y Espacios en Tiempo Real',
-              subtitle: 'Aprecia cómo luce el tono aplicado sobre muros de salas, dormitorios y comedores.'
-            }
+          const headings: Record<string, { title: string; subtitle: string }> = {
+            automotriz: { title: 'Así lucen nuestros acabados automotrices', subtitle: 'Colores de la línea automotriz aplicados sobre carrocería.' },
+            industrial: { title: 'Así lucen nuestros pisos industriales', subtitle: 'Colores epóxicos aplicados en bodegas, parqueaderos y plantas.' },
+            construccion: { title: 'Así lucen nuestras fachadas', subtitle: 'Colores de exterior aplicados sobre casas y edificios.' },
+            hogar: { title: 'Así lucen nuestros colores en casa', subtitle: 'Tonos de interior aplicados en salas, dormitorios y comedores.' }
           };
-          const currentVisual = titles[category] || titles.hogar;
+          const heading = headings[category] || headings.hogar;
+          const scenes = scenesForCategory(category);
+          // Colores reales de los productos de la categoría (sin repetir y evitando blancos puros)
+          const seen = new Set<string>();
+          const picks: { product: typeof STORE_PRODUCTS[number]; color: NonNullable<typeof STORE_PRODUCTS[number]['colors']>[number] }[] = [];
+          for (const product of STORE_PRODUCTS.filter(p => p.category === category)) {
+            for (const color of product.colors || []) {
+              const hex = color.hex.toUpperCase();
+              if (seen.has(hex) || hex === '#FFFFFF' || hex === '#F8FAFC') continue;
+              seen.add(hex);
+              picks.push({ product, color });
+            }
+          }
+          const items = picks.slice(0, 6);
+          if (!items.length) return null;
 
           return (
             <div className="mt-14 pt-10 border-t border-slate-200">
-              <div className="mb-4">
-                <h3 className="text-xl font-black text-slate-900">
-                  {currentVisual.title}
-                </h3>
-                <p className="text-xs text-slate-500 mt-1">
-                  {currentVisual.subtitle}
-                </p>
+              <div className="mb-5">
+                <h3 className="text-xl font-black text-slate-900">{heading.title}</h3>
+                <p className="text-xs text-slate-500 mt-1">{heading.subtitle}</p>
               </div>
-              <AmbientWallVisualizer
-                currentProduct={catProduct}
-                selectedColor={catProduct.colors?.[0]}
-              />
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {items.map(({ product, color }, i) => {
+                  const scene = scenes[i % scenes.length];
+                  return (
+                    <figure key={`${product.id}-${color.id}`} className="rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-sm">
+                      <PaintedScene sceneId={scene.id} colorHex={color.hex} className="w-full aspect-[16/10]" alt={`${scene.name} en ${color.name}`} />
+                      <figcaption className="flex items-center gap-2.5 px-3 py-2.5">
+                        <span className="w-6 h-6 rounded-full ring-1 ring-black/10 shrink-0" style={{ backgroundColor: color.hex }} />
+                        <span className="min-w-0">
+                          <span className="block text-xs font-black text-slate-900 truncate">{color.name}</span>
+                          <span className="block text-[11px] text-slate-500 truncate">{product.name} · {scene.name}</span>
+                        </span>
+                      </figcaption>
+                    </figure>
+                  );
+                })}
+              </div>
             </div>
           );
         })()}

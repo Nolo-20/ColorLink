@@ -184,9 +184,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span className="text-lg sm:text-xl font-extrabold tracking-tight text-white font-sans">
                   COLOR<span className="text-emerald-400">LINK</span>
                 </span>
-                <span className="text-[8px] font-black text-cyan-300 bg-cyan-950 px-1.5 py-0.5 rounded border border-cyan-800/60 uppercase tracking-widest">
-                  PRO
-                </span>
               </div>
               <span className="text-[9px] font-semibold text-slate-400 block tracking-wider uppercase mt-0.5">
                 Recubrimientos & Pinturas

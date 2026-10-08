@@ -833,9 +833,6 @@ export default function App() {
               </div>
               <span className="font-extrabold text-white text-base tracking-tight font-sans">
                 COLOR<span className="text-emerald-400">LINK</span>
-                <span className="text-[8px] font-black text-cyan-300 ml-1.5 px-1 py-0.2 rounded bg-cyan-950 border border-cyan-800/60 uppercase tracking-widest">
-                  PRO
-                </span>
               </span>
             </div>
             <p className="text-slate-400 leading-relaxed text-[11px]">

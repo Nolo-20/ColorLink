@@ -33,7 +33,7 @@ export const WelcomeLanding: React.FC<WelcomeLandingProps> = ({
       company: 'Constructora Horizonte S.A.S. (Medellín)',
       role: 'Director de Obra',
       avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
-      comment: 'Con ColorLink Pro cotizamos 85 m² de fachada en minutos. El diagnóstico de fisuras con IA y el cálculo exacto de cuñetes nos ahorró un 18% en desperdicio.',
+      comment: 'Con ColorLink cotizamos 85 m² de fachada en minutos. El diagnóstico de fisuras con IA y el cálculo exacto de cuñetes nos ahorró un 18% en desperdicio.',
       rating: 5,
       project: 'Fachada Residencial El Poblado'
     },
@@ -105,7 +105,7 @@ export const WelcomeLanding: React.FC<WelcomeLandingProps> = ({
           {/* Proprietary Slogan */}
           <div className="p-4 rounded-2xl bg-white/10 backdrop-blur-md border border-white/15">
             <p className="text-sm sm:text-base font-semibold text-cyan-200 italic">
-              "ColorLink Pro: La inteligencia técnica que cotiza, diagnostica y abastece la pintura perfecta para tu obra en el Valle de Aburrá."
+              "ColorLink: La inteligencia técnica que cotiza, diagnostica y abastece la pintura perfecta para tu obra en el Valle de Aburrá."
             </p>
           </div>
 
@@ -205,7 +205,7 @@ export const WelcomeLanding: React.FC<WelcomeLandingProps> = ({
               Lo que Dicen Nuestros Clientes
             </h2>
             <p className="text-xs sm:text-sm text-slate-600 mt-1">
-              Constructores, arquitectos y maestros que confían su especificación y suministro a ColorLink Pro.
+              Constructores, arquitectos y maestros que confían su especificación y suministro a ColorLink.
             </p>
           </div>
 

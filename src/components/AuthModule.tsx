@@ -185,7 +185,7 @@ export const AuthModule: React.FC<AuthModuleProps> = ({
             <div>
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-400/20 border border-cyan-400/40 text-cyan-300 text-xs font-bold mb-3">
                 <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Sesión Activa • Portal ColorLink Pro</span>
+                <span>Sesión Activa • Portal ColorLink</span>
               </div>
               <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
                 Bienvenido, {user.firstName || user.name.split(' ')[0]}
