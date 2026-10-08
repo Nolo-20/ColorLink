@@ -106,7 +106,7 @@ async function loadRealScene(entry: RealEntry): Promise<LoadedScene | null> {
   return alpha ? { base, alpha } : null;
 }
 
-async function load3DScene(id: string): Promise<LoadedScene> {
+async function load3DScene(id: string) /* foto + máscara estáticas */: Promise<LoadedScene> {
   const [img, mask] = await Promise.all([loadImage(sceneImage(id)), loadImage(sceneMask(id))]);
   const W = img.naturalWidth, H = img.naturalHeight;
   const c = document.createElement('canvas');
@@ -126,14 +126,17 @@ async function load3DScene(id: string): Promise<LoadedScene> {
 function loadScene(id: string): Promise<LoadedScene> {
   if (!cache.has(id)) {
     const p = (async () => {
-      const manifest = await loadManifest();
-      if (manifest[id]) {
-        try {
+      // Primero las fotos reales con recorte preparado; las generadas en el servidor quedan de respaldo
+      try {
+        return await load3DScene(id);
+      } catch {
+        const manifest = await loadManifest();
+        if (manifest[id]) {
           const real = await loadRealScene(manifest[id]);
           if (real) return real;
-        } catch { /* se usa la escena 3D */ }
+        }
+        throw new Error('Escena no disponible');
       }
-      return load3DScene(id);
     })();
     p.catch(() => cache.delete(id));
     cache.set(id, p);

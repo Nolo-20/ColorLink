@@ -1,4 +1,4 @@
-// Escenas 3D propias de ColorLink para el visualizador de color.
+// Fotos reales de ambientes para el visualizador de color.
 // Cada escena tiene la foto base y una máscara exacta (blanco = superficie que se pinta).
 export interface VisualizerScene {
   id: string;
@@ -22,12 +22,12 @@ export const VISUALIZER_SCENES: Record<VisualizerCategory, VisualizerScene[]> = 
   industrial: [
     { id: 'bodega', name: 'Bodega', surface: 'Piso epóxico' },
     { id: 'parqueadero', name: 'Parqueadero', surface: 'Piso de alto tráfico' },
-    { id: 'planta', name: 'Planta de Producción', surface: 'Piso industrial' }
+    { id: 'planta', name: 'Planta Industrial', surface: 'Piso industrial' }
   ],
   automotriz: [
-    { id: 'carro_lateral', name: 'Estudio', surface: 'Carrocería' },
-    { id: 'carro_exterior', name: 'Exterior', surface: 'Carrocería' },
-    { id: 'carro_garaje', name: 'Taller', surface: 'Carrocería' }
+    { id: 'carro_lateral', name: 'Vista Lateral', surface: 'Carrocería' },
+    { id: 'carro_exterior', name: 'Vista Frontal', surface: 'Carrocería' },
+    { id: 'carro_garaje', name: 'Vista Trasera', surface: 'Carrocería' }
   ]
 };
 

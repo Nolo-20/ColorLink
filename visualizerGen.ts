@@ -9,7 +9,7 @@
  *
  * Se generan solas al arrancar el servidor (una vez por escena) si hay GEMINI_API_KEY.
  * Variables opcionales:
- *  - VISUALIZER_AUTOGEN=false        desactiva la generación automática
+ *  - VISUALIZER_AUTOGEN=true         activa la generación automática (por defecto apagada)
  *  - VISUALIZER_REGENERATE=sala,bodega  vuelve a generar esas escenas en el próximo arranque
  *  - GEMINI_IMAGE_MODEL=<modelo>      fuerza un modelo de imagen
  */
@@ -165,7 +165,8 @@ export function registerVisualizerRoutes(app: Express) {
 }
 
 export function startVisualizerAutogen() {
-  if (process.env.VISUALIZER_AUTOGEN === 'false' || !process.env.GEMINI_API_KEY) return;
+  // Opcional: solo se activa con VISUALIZER_AUTOGEN=true (las escenas ya vienen con fotos reales)
+  if (process.env.VISUALIZER_AUTOGEN !== 'true' || !process.env.GEMINI_API_KEY) return;
   const force = (process.env.VISUALIZER_REGENERATE || '').split(',').map(s => s.trim()).filter(Boolean);
   // Arranca unos segundos después para no competir con el inicio del servidor
   setTimeout(() => { generateMissingScenes(force).catch(e => console.error('[VISUALIZER]', e)); }, 5000);
