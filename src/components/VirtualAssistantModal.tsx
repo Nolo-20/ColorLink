@@ -38,7 +38,7 @@ export const VirtualAssistantModal: React.FC<VirtualAssistantModalProps> = ({
     {
       id: 'm1',
       sender: 'assistant',
-      text: `¡Hola ${user.firstName || user.name}! Soy tu **Asistente Virtual** de ColorLink, especialista en pinturas, recubrimientos y cálculo de obra. ¿En qué puedo orientarte hoy sobre rendimientos, patologías de sustrato o disponibilidad en bodegas de Medellín?`,
+      text: `¡Hola ${user.firstName || user.name}! Soy tu **Asistente Virtual** de ColorLink, especialista en pinturas, recubrimientos y cálculo de obra. ¿En qué puedo orientarte hoy sobre productos, rendimientos, patologías de sustrato o tus pedidos y proyectos?`,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }
   ]);
@@ -48,54 +48,43 @@ export const VirtualAssistantModal: React.FC<VirtualAssistantModalProps> = ({
   if (!isOpen) return null;
 
   const quickPrompts = [
-    '¿Cómo se calcula el rendimiento para una fachada de 85 m²?',
+    '¿Cuántos galones necesito para pintar 85 m² a 2 manos?',
     '¿Qué sellador debo aplicar si el muro tiene humedad y microfisuras?',
-    '¿En qué bodega de Medellín hay stock disponible para despacho en 24h?',
-    '¿Qué diferencia hay entre el rol de Cliente y el de Asesor?'
+    '¿Cómo retiro mi pedido en tienda?',
+    '¿Cómo funciona la cotización de un proyecto?'
   ];
 
-  const handleSendMessage = (textToSend?: string) => {
-    const query = textToSend || inputText;
-    if (!query.trim()) return;
+  const handleSendMessage = async (textToSend?: string) => {
+    const query = (textToSend || inputText).trim();
+    if (!query || isTyping) return;
 
-    const userMsg: ChatMessage = {
-      id: `u-${Date.now()}`,
-      sender: 'user',
-      text: query,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
+    const hora = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const userMsg: ChatMessage = { id: `u-${Date.now()}`, sender: 'user', text: query, timestamp: hora() };
+    const historial = messages.slice(1).map(m => ({ sender: m.sender, text: m.text })); // sin el saludo inicial
 
     setMessages(prev => [...prev, userMsg]);
     if (!textToSend) setInputText('');
     setIsTyping(true);
 
-    setTimeout(() => {
-      let botReply = '';
-      const qLower = query.toLowerCase();
+    let reply = 'No pude conectarme con el asistente. Revisa tu conexión e intenta de nuevo.';
+    try {
+      const response = await fetch('/api/assistant/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: query,
+          history: historial,
+          project: formData?.proyecto ? { proyecto: formData.proyecto, areaM2: formData.areaM2, superficie: formData.superficie, ambiente: formData.ambiente, color: formData.color } : null
+        })
+      });
+      const data = await response.json();
+      reply = data.success ? data.reply : (data.error || reply);
+    } catch {
+      // se queda el mensaje de conexión
+    }
 
-      if (qLower.includes('85') || qLower.includes('rendimiento') || qLower.includes('cuñete')) {
-        botReply = `Para **${formData.proyecto || 'Fachada de 85 m²'}** aplicamos la fórmula oficial ColorLink:\n\n• **Área Efectiva a 2 Manos**: 170 m².\n• **Rendimiento Koraza Tech**: 28.5 m²/gal.\n• **Factor de Desperdicio**: 10%.\n• **Resultado Óptimo**: **6.56 Galones** = **1 Cuñete (5 Gal)** + **2 Galones individuales**. Así la obra no presenta sobrantes ni faltantes.`;
-      } else if (qLower.includes('humedad') || qLower.includes('sellador') || qLower.includes('fisura')) {
-        botReply = `Para la presencia de **humedad capilar y microfisuras** te recomendamos el sistema tricapa certificado:\n\n1. **Preparación**: Masilla Acrílica Elastómerica en grietas hasta 2mm.\n2. **Sellado**: 1 mano de *Imprimante Sellador Antialcalino e Hidrófugo* para neutralizar sales.\n3. **Acabado**: 2 manos de *ColorLink Koraza Tech 100% Acrílica* con protección antihongos y UV.`;
-      } else if (qLower.includes('bodega') || qLower.includes('despacho') || qLower.includes('medellin') || qLower.includes('itagui')) {
-        botReply = `Tenemos disponibilidad inmediata en el **Centro Logístico Regional Antioquia (Itagüí / Guayabal)** con el lote de tintometría **LOT-2026-MED-08A** activo (38 cuñetes y 124 galones). Los pedidos confirmados antes de las 3:00 p.m. se despachan a obra en menos de 24 horas.`;
-      } else if (qLower.includes('rol') || qLower.includes('cliente') || qLower.includes('asesor') || qLower.includes('calidad')) {
-        botReply = `Los roles en ColorLink se configuran automáticamente según la cuenta:\n\n• **Cliente**: Captura proyectos de pintura, calcula cuñetes, descarga fichas PDF y vincula obligatoriamente su *Empresa_Cliente* (NIT y dirección de despacho).\n• **Asesor**: Revisa todos los proyectos de clientes, ajusta metrajes y autoriza descuentos comerciales.\n• **Calidad**: Emite conceptos periciales sobre humedad y sustratos bajo norma NTC 5828.\n• **Administrador / Bodega**: Controla existencias, lotes y despachos en Itagüí y Guayabal.`;
-      } else {
-        botReply = `Excelente consulta sobre "${query}". En ColorLink contamos con tintometría computarizada, laboratorio de peritaje y despacho directo en el Valle de Aburrá. Si requieres visita técnica de campo, tu asesor asignado Juan David Osorio puede programarla hoy mismo.`;
-      }
-
-      setMessages(prev => [
-        ...prev,
-        {
-          id: `b-${Date.now()}`,
-          sender: 'assistant',
-          text: botReply,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        }
-      ]);
-      setIsTyping(false);
-    }, 550);
+    setMessages(prev => [...prev, { id: `b-${Date.now()}`, sender: 'assistant', text: reply, timestamp: hora() }]);
+    setIsTyping(false);
   };
 
   return (
@@ -157,7 +146,7 @@ export const VirtualAssistantModal: React.FC<VirtualAssistantModalProps> = ({
           {isTyping && (
             <div className="flex items-center gap-2 text-slate-300 text-xs italic bg-slate-900 p-2.5 rounded-xl w-max border border-slate-800">
               <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-400" />
-              <span>Redactando recomendación técnica...</span>
+              <span>Escribiendo...</span>
             </div>
           )}
         </div>
@@ -190,12 +179,12 @@ export const VirtualAssistantModal: React.FC<VirtualAssistantModalProps> = ({
             type="text"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
-            placeholder="Pregúntale al Asistente Virtual sobre pinturas, cuñetes o despachos..."
+            placeholder="Pregunta sobre pinturas, cuñetes, pedidos o proyectos..."
             className="flex-1 px-3.5 py-2 bg-slate-900 text-white placeholder-slate-500 text-xs rounded-xl border border-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
           />
           <button
             type="submit"
-            disabled={!inputText.trim()}
+            disabled={!inputText.trim() || isTyping}
             className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-black text-xs rounded-xl shadow cursor-pointer flex items-center gap-1 transition-all"
           >
             <Send className="w-3.5 h-3.5" />

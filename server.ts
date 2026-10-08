@@ -2188,6 +2188,94 @@ async function startServer() {
     res.json({ status: 'ok', service: 'ColorLink Smart API', timestamp: new Date().toISOString() });
   });
 
+  // ----------------------------------------------------------------
+  // ASISTENTE VIRTUAL (Gemini): orientación técnica y de la tienda para el cliente
+  // ----------------------------------------------------------------
+  const assistantLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 15,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { success: false, error: 'Estás enviando muchos mensajes. Espera un momento e intenta de nuevo.' }
+  });
+
+  // Abierto también a visitantes (solo orienta sobre el catálogo); el límite por IP protege el costo
+  app.post('/api/assistant/chat', assistantLimiter, async (req: any, res) => {
+    try {
+      const mensaje = String(req.body?.message || '').trim().slice(0, 1000);
+      if (!mensaje) return res.status(400).json({ success: false, error: 'Escribe tu pregunta.' });
+
+      const historial: Array<{ sender: string; text: string }> = Array.isArray(req.body?.history) ? req.body.history.slice(-8) : [];
+      const proyecto = req.body?.project && typeof req.body.project === 'object' ? req.body.project : null;
+
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        return res.json({
+          success: true,
+          source: 'sin-ia',
+          reply: 'Por ahora el asistente inteligente no está disponible. Puedes calcular tus cuñetes con la calculadora de pintura o escribirnos y un asesor te ayudará.'
+        });
+      }
+
+      // Catálogo real para no inventar productos ni precios
+      const productos = await prisma.producto.findMany({
+        select: { nombre: true, categoria: true, presentacion: true, rendimientoM2: true, precio: true },
+        orderBy: { nombre: 'asc' },
+        take: 60
+      });
+      const catalogo = productos.map(p =>
+        `- ${p.nombre}${p.categoria ? ` (${p.categoria})` : ''}${p.presentacion ? `, ${p.presentacion}` : ''}${p.rendimientoM2 ? `, rinde ~${p.rendimientoM2} m²/gal` : ''}${p.precio ? `, $${Math.round(p.precio).toLocaleString('es-CO')} COP` : ''}`
+      ).join('\n');
+
+      const contextoProyecto = proyecto
+        ? `\nProyecto que el cliente está cotizando ahora: ${[proyecto.proyecto, proyecto.areaM2 ? proyecto.areaM2 + ' m²' : '', proyecto.superficie, proyecto.ambiente, proyecto.color].filter(Boolean).join(' · ')}.`
+        : '';
+
+      const systemPrompt = `Eres el Asistente Virtual de COLORLINK, una plataforma colombiana de pinturas y recubrimientos con tienda en línea y cotización de proyectos de obra (Valle de Aburrá, Medellín).
+Hablas en español, cálido, claro y breve (máximo ~120 palabras salvo que pidan detalle). Puedes usar viñetas cortas.
+Ayudas con: elegir productos, rendimientos y cuñetes/galones (fórmula: área × manos ÷ rendimiento m²/gal, más ~10% de desperdicio), preparación de superficies (humedad, fisuras, selladores), cómo funciona la tienda (pedidos, retiro en tienda con QR, cancelación solo mientras el pedido está en "Comprado") y cómo funciona la cotización de proyectos (revisión, peritaje, cotización, despacho).
+Reglas: no inventes stock, precios, plazos, descuentos ni nombres de personas; usa solo el catálogo de abajo para productos y precios y, si no sabes algo, dilo y sugiere hablar con un asesor. No des información interna del equipo ni de otros clientes. No respondas sobre temas ajenos a pinturas, obra y la plataforma.
+${contextoProyecto}
+
+Catálogo disponible:
+${catalogo || '(catálogo no disponible)'}`;
+
+      const contents = [
+        ...historial
+          .filter(h => h && typeof h.text === 'string' && h.text.trim())
+          .map(h => ({ role: h.sender === 'user' ? 'user' : 'model', parts: [{ text: String(h.text).slice(0, 1000) }] })),
+        { role: 'user', parts: [{ text: mensaje }] }
+      ];
+      // Gemini exige que la conversación empiece con un mensaje del usuario
+      while (contents.length > 1 && contents[0].role !== 'user') contents.shift();
+
+      const ai = new GoogleGenAI({ apiKey });
+      const modelsToTry = ['gemini-3.7-flash', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'];
+      for (const modelName of modelsToTry) {
+        try {
+          const response = await ai.models.generateContent({
+            model: modelName,
+            contents,
+            config: { systemInstruction: systemPrompt, temperature: 0.4, maxOutputTokens: 600 }
+          });
+          const reply = (response.text || '').trim();
+          if (reply) return res.json({ success: true, source: modelName, reply });
+        } catch (geminiError: any) {
+          console.error(`[ASSISTANT] Modelo ${modelName} falló:`, geminiError?.message || geminiError);
+        }
+      }
+
+      res.json({
+        success: true,
+        source: 'sin-ia',
+        reply: 'No pude responder en este momento. Intenta de nuevo en unos segundos o escríbenos para que un asesor te ayude.'
+      });
+    } catch (error: any) {
+      console.error('[assistant-chat]', error);
+      res.status(500).json({ success: false, error: 'No se pudo consultar al asistente.' });
+    }
+  });
+
   app.post('/api/classify-project', requireAuth, async (req, res) => {
     try {
       const {
