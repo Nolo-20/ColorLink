@@ -224,7 +224,8 @@ export default function App() {
           manoRecomendada: aiResult?.manos_recomendadas,
           rendimientoEstimado: aiResult?.rendimiento_estimado_m2_gal,
           confianzaIaPct: aiResult?.nivel_confianza_ia_pct,
-          requiereVisitaHumana: aiResult?.requiere_visita_especialista_human_in_the_loop
+          requiereVisitaHumana: aiResult?.requiere_visita_especialista_human_in_the_loop,
+          imageBase64: formData.fotos[0]?.base64 || null
         })
       });
       const data = await response.json();

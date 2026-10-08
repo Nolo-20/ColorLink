@@ -33,6 +33,20 @@ interface ClientProjectsManagerProps {
   onOpenAssistant: () => void;
 }
 
+// Estados reales del proyecto (los mueve el equipo desde el ERP) con texto para el cliente
+const ESTADO_CLIENTE: Record<string, { label: string; detalle: string; clase: string }> = {
+  en_revision: { label: 'En revisión', detalle: 'Nuestro equipo está revisando tu solicitud.', clase: 'bg-blue-50 text-blue-700 border-blue-200' },
+  imagen_por_corregir: { label: 'Imagen por corregir', detalle: 'Necesitamos otra foto para continuar.', clase: 'bg-rose-50 text-rose-700 border-rose-200' },
+  en_peritaje: { label: 'En peritaje', detalle: 'Un perito técnico está evaluando la superficie.', clase: 'bg-violet-50 text-violet-700 border-violet-200' },
+  cotizado: { label: 'Cotizado', detalle: 'Tu cotización está lista.', clase: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  aprobado_calidad: { label: 'Aprobado por calidad', detalle: 'El sistema fue aprobado y pasa a despacho.', clase: 'bg-teal-50 text-teal-700 border-teal-200' },
+  rechazado: { label: 'Requiere ajustes', detalle: 'El perito pidió ajustes técnicos; te contactaremos.', clase: 'bg-amber-50 text-amber-700 border-amber-200' },
+  despachado: { label: 'Despachado', detalle: 'Tu pedido va en camino a la obra.', clase: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+  cancelado: { label: 'Cancelado', detalle: 'Este proyecto fue cerrado.', clase: 'bg-slate-100 text-slate-600 border-slate-200' }
+};
+const TIPOS_IMAGEN = ['image/png', 'image/jpeg', 'image/webp'];
+const MAX_IMAGEN_MB = 8;
+
 export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
   formData,
   setFormData,
@@ -47,6 +61,39 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
   // Sample client projects list (realistic for Colombian construction)
   const [clientProjects, setClientProjects] = useState<any[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
+  const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<Record<string, string>>({});
+
+  // El cliente sube la imagen que le pidió el equipo; el proyecto vuelve a "en revisión"
+  const handleReplaceImage = async (proyectoId: string, file: File | undefined) => {
+    if (!file) return;
+    const fallo = (msg: string) => setUploadError(prev => ({ ...prev, [proyectoId]: msg }));
+    if (!TIPOS_IMAGEN.includes(file.type)) return fallo('La imagen debe ser PNG, JPG o WEBP.');
+    if (file.size > MAX_IMAGEN_MB * 1024 * 1024) return fallo(`La imagen no puede pesar más de ${MAX_IMAGEN_MB} MB.`);
+
+    setUploadingId(proyectoId);
+    setUploadError(prev => ({ ...prev, [proyectoId]: '' }));
+    try {
+      const dataUri: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('No se pudo leer la imagen'));
+        reader.readAsDataURL(file);
+      });
+      const response = await fetch(`/api/projects/${proyectoId}/image`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: dataUri })
+      });
+      const data = await response.json();
+      if (!data.success) return fallo(data.error || 'No se pudo enviar la imagen.');
+      setClientProjects(prev => prev.map(p => p.proyectoId === proyectoId ? { ...p, ...data.project } : p));
+    } catch {
+      fallo('Error de conexión al enviar la imagen.');
+    } finally {
+      setUploadingId(null);
+    }
+  };
 
   useEffect(() => {
     fetch('/api/projects')
@@ -87,7 +134,8 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
           colorHex: formData.colorHex,
           cunetes5g: calculation.cunetesPintura5Gal,
           galones1g: calculation.galonesPintura1Gal,
-          total: calculation.costoEstimadoCOP.totalCOP
+          total: calculation.costoEstimadoCOP.totalCOP,
+          imageBase64: formData.fotos?.[0]?.base64 || null
         })
       });
       const data = await response.json();
@@ -183,15 +231,37 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
                       <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200">
                         {prj.proyectoId?.slice(0, 8)}
                       </span>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${prj.estadoPipeline?.includes('cotizado')
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                        : prj.estadoPipeline?.includes('produccion')
-                          ? 'bg-amber-50 text-amber-700 border-amber-200'
-                          : 'bg-blue-50 text-blue-700 border-blue-200'
-                        }`}>
-                        {prj.estadoPipeline || 'Nuevo'}
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${(ESTADO_CLIENTE[prj.estadoPipeline] || ESTADO_CLIENTE.en_revision).clase}`}>
+                        {(ESTADO_CLIENTE[prj.estadoPipeline] || { label: prj.estadoPipeline || 'Nuevo' }).label}
                       </span>
                     </div>
+
+                    {ESTADO_CLIENTE[prj.estadoPipeline] && (
+                      <p className="text-[11px] text-slate-500 leading-snug">{ESTADO_CLIENTE[prj.estadoPipeline].detalle}</p>
+                    )}
+
+                    {prj.estadoPipeline === 'imagen_por_corregir' && (
+                      <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 space-y-2">
+                        <p className="text-[11px] font-bold text-rose-800">Pedimos una nueva imagen</p>
+                        {prj.observacionImagen && (
+                          <p className="text-[11px] text-rose-700 leading-snug">{prj.observacionImagen}</p>
+                        )}
+                        <label className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-bold text-white cursor-pointer ${uploadingId === prj.proyectoId ? 'bg-slate-400' : 'bg-rose-600 hover:bg-rose-700'}`}>
+                          <UploadCloud className="w-3.5 h-3.5" />
+                          {uploadingId === prj.proyectoId ? 'Enviando…' : 'Subir otra imagen'}
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg,image/webp"
+                            className="hidden"
+                            disabled={uploadingId === prj.proyectoId}
+                            onChange={(e) => { handleReplaceImage(prj.proyectoId, e.target.files?.[0]); e.target.value = ''; }}
+                          />
+                        </label>
+                        {uploadError[prj.proyectoId] && (
+                          <p className="text-[11px] font-semibold text-red-700">{uploadError[prj.proyectoId]}</p>
+                        )}
+                      </div>
+                    )}
 
                     <h3 className="font-bold text-sm text-slate-900 leading-snug">
                       {prj.nombreProyecto}
@@ -260,7 +330,7 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
               </div>
               <div>
                 <h4 className="font-bold text-xs text-emerald-950">¿Requieres visita técnica o muestra de color en obra?</h4>
-                <p className="text-[11px] text-emerald-800">Tu asesor comercial Juan David Osorio está asignado a tu cuenta corporativa.</p>
+                <p className="text-[11px] text-emerald-800">Un asesor comercial de ColorLink acompaña cada uno de tus proyectos.</p>
               </div>
             </div>
             <button
