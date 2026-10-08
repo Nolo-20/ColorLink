@@ -1,0 +1,291 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Rol {
+  rolId    Int       @id @default(autoincrement()) @map("rol_id")
+  rol      String    @unique
+  usuarios Usuario[]
+
+  @@map("rol")
+}
+
+model Ciudad {
+  ciudadId    Int                   @id @default(autoincrement()) @map("ciudad_id")
+  ciudad      String
+  empresas    EmpresaCliente[]
+  inventarios InventarioProducto[]
+
+  @@map("ciudad")
+}
+
+model Usuario {
+  usuarioId    String              @id @default(uuid()) @map("usuario_id")
+  rolId        Int                 @map("rol_id")
+  rol          Rol                 @relation(fields: [rolId], references: [rolId])
+  nombre       String
+  apellido     String
+  telefono     String?
+  email        String              @unique
+  avatarUrl String?                @map("avatar_url")
+  passwordHash String?             @map("password_hash")
+  authProvider String              @default("credentials") @map("auth_provider")
+  providerId   String?             @map("provider_id")
+  createdAt    DateTime            @default(now()) @map("created_at")
+  proyectos    Proyecto[]
+  otpCodes     OtpVerificationCode[]
+  company      String?
+  documentId   String?             @map("document_id")
+  address      String?             
+  city         String?             @default("Medellin")
+  proyectosComoAsesor Proyecto[] @relation("ProyectoAsesor")
+  proyectosComoPerito Proyecto[] @relation("ProyectoPerito")
+  ordenes Orden[]
+  activo       Boolean             @default(true)
+
+  @@map("usuario")
+}
+
+// Tabla nueva: necesaria para guardar los códigos OTP reales
+// (reemplaza la lógica insegura en memoria que teníamos en server.ts)
+model OtpVerificationCode {
+  id         Int      @id @default(autoincrement())
+  email      String
+  usuarioId  String?  @map("usuario_id")
+  usuario    Usuario? @relation(fields: [usuarioId], references: [usuarioId])
+  code       String
+  expiresAt  DateTime @map("expires_at")
+  isUsed     Boolean  @default(false) @map("is_used")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([email])
+  @@map("otp_verification_codes")
+}
+
+model EmpresaCliente {
+  empresaId         String     @id @default(uuid()) @map("empresa_id")
+  ciudadId          Int        @map("ciudad_id")
+  ciudad            Ciudad     @relation(fields: [ciudadId], references: [ciudadId])
+  nitCedula         String     @map("nit_cedula")
+  razonSocial       String     @map("razon_social")
+  direccionDespacho String     @map("direccion_despacho")
+  proyectos         Proyecto[]
+
+  @@map("empresa_cliente")
+}
+
+model Proyecto {
+  proyectoId     String          @id @default(uuid()) @map("proyecto_id")
+  usuarioId      String          @map("usuario_id")
+  usuario        Usuario         @relation(fields: [usuarioId], references: [usuarioId])
+  empresaId      String          @map("empresa_id")
+  empresa        EmpresaCliente  @relation(fields: [empresaId], references: [empresaId])
+  nombreProyecto String          @map("nombre_proyecto")
+  area           Float?
+  tipoSuperficie String?         @map("tipo_superficie")
+  ambiente       String?
+  acabado        String?
+  color          String?
+  colorHex       String?         @map("color_hex")
+  canalOrigen    String?         @map("canal_origen")
+  estadoPipeline String?         @map("estado_pipeline")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @default(now()) @updatedAt @map("updated_at")
+  diagnostico    DiagnosticoIA?
+  evidencias     EvidenciaFoto[]
+  cotizaciones   Cotizacion[]
+  descuentoAsesorPct  Float?     @map("descuento_asesor_pct")
+  observacionesAsesor String?    @map("observaciones_asesor")
+  asesorAsignadoId String?       @map("asesor_asignado_id")
+  asesorAsignado   Usuario?      @relation("ProyectoAsesor", fields: [asesorAsignadoId], references: [usuarioId])
+  peritoAsignadoId String?       @map("perito_asignado_id")
+  peritoAsignado   Usuario?      @relation("ProyectoPerito", fields: [peritoAsignadoId], references: [usuarioId])
+  observacionImagen String?      @map("observacion_imagen")
+  historial        EstadoProyectoHistorial[]
+  despacho         DespachoProyecto?
+
+  @@map("proyecto")
+}
+
+// Trazabilidad de cada proyecto: quién cambió qué y cuándo (snapshot del nombre y rol del actor)
+model EstadoProyectoHistorial {
+  id             String   @id @default(uuid())
+  proyectoId     String   @map("proyecto_id")
+  proyecto       Proyecto @relation(fields: [proyectoId], references: [proyectoId], onDelete: Cascade)
+  estadoAnterior String?  @map("estado_anterior")
+  estadoNuevo    String   @map("estado_nuevo")
+  comentario     String?
+  usuarioId      String?  @map("usuario_id")
+  usuarioNombre  String?  @map("usuario_nombre")
+  rolNombre      String?  @map("rol_nombre")
+  fecha          DateTime @default(now())
+
+  @@index([proyectoId])
+  @@map("estado_proyecto_historial")
+}
+
+// Datos logísticos del despacho de un proyecto a obra (guía, vehículo, conductor, recibo)
+model DespachoProyecto {
+  despachoId          String    @id @default(uuid()) @map("despacho_id")
+  proyectoId          String    @unique @map("proyecto_id")
+  proyecto            Proyecto  @relation(fields: [proyectoId], references: [proyectoId], onDelete: Cascade)
+  numeroGuia          String    @map("numero_guia")
+  transportador       String?
+  placaVehiculo       String?   @map("placa_vehiculo")
+  conductorNombre     String?   @map("conductor_nombre")
+  conductorTelefono   String?   @map("conductor_telefono")
+  bodegaOrigen        String?   @map("bodega_origen")
+  direccionEntrega    String?   @map("direccion_entrega")
+  ciudadEntrega       String?   @map("ciudad_entrega")
+  tiempoEstimadoHoras Int?      @map("tiempo_estimado_horas")
+  horaSalida          DateTime  @default(now()) @map("hora_salida")
+  recibidoPor         String?   @map("recibido_por")
+  documentoRecibe     String?   @map("documento_recibe")
+  fechaEntrega        DateTime? @map("fecha_entrega")
+  despachadoPorId     String?   @map("despachado_por_id")
+
+  @@map("despacho_proyecto")
+}
+
+model Orden {
+  ordenId          String   @id @default(uuid()) @map("orden_id")
+  usuarioId        String   @map("usuario_id")
+  usuario          Usuario  @relation(fields: [usuarioId], references: [usuarioId])
+  total            Float
+  estado           String   @default("creado") // creado, confirmado, en_alistamiento, en_camino, listo_recoger, entregado, cancelado
+  metodoEntrega    String   @map("metodo_entrega") // domicilio | recoger_tienda
+  direccionEntrega String?  @map("direccion_entrega")
+  qrToken          String   @unique @default(uuid()) @map("qr_token")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at")
+  items            OrdenItem[]
+  historial        EstadoOrdenHistorial[]
+
+  @@map("orden")
+}
+
+model OrdenItem {
+  ordenItemId            String    @id @default(uuid()) @map("orden_item_id")
+  ordenId                String    @map("orden_id")
+  orden                  Orden     @relation(fields: [ordenId], references: [ordenId])
+  productoId             String?   @map("producto_id")
+  producto               Producto? @relation(fields: [productoId], references: [productoId])
+  codigoProductoExterno  String?   @map("codigo_producto_externo")
+  nombreProducto         String    @map("nombre_producto")
+  cantidad               Int
+  precioUnitario         Float     @map("precio_unitario")
+  subtotal               Float
+
+  @@map("orden_item")
+}
+
+model EstadoOrdenHistorial {
+  id          String   @id @default(uuid())
+  ordenId     String   @map("orden_id")
+  orden       Orden    @relation(fields: [ordenId], references: [ordenId])
+  estado      String
+  comentario  String?
+  usuarioId   String?  @map("usuario_id")
+  fecha       DateTime @default(now())
+
+  @@map("estado_orden_historial")
+}
+
+model DiagnosticoIA {
+  diagnosticoId        String    @id @default(uuid()) @map("diagnostico_id")
+  proyectoId           String    @unique @map("proyecto_id")
+  proyecto             Proyecto  @relation(fields: [proyectoId], references: [proyectoId])
+  patologiaDetectada   String?   @map("patologia_detectada")
+  severidad            String?
+  sistemaRecomendado   String?   @map("sistema_recomendado")
+  manoRecomendada      String?   @map("mano_recomendada")
+  rendimientoEstimado  Float?    @map("rendimiento_estimado")
+  confianzaIaPct       Float?    @map("confianza_ia_pct")
+  requiereVisitaHumana Boolean   @default(false) @map("requiere_visita_humana")
+  humedadRelativa      Float?    @map("humedad_relativa")
+  severidadFisuras     String?   @map("severidad_fisuras")
+  notasPerito          String?   @map("notas_perito")
+  aprobadoCalidad      Boolean?  @map("aprobado_calidad")
+  peritoNombre         String?   @map("perito_nombre")
+  fechaVeredicto       DateTime? @map("fecha_veredicto")
+
+  @@map("diagnostico_ia")
+}
+
+model EvidenciaFoto {
+  evidenciaId   String   @id @default(uuid()) @map("evidencia_id")
+  proyectoId    String   @map("proyecto_id")
+  proyecto      Proyecto @relation(fields: [proyectoId], references: [proyectoId])
+  urlAlmacenado String   @map("url_almacenado")
+  nombreArchivo String   @map("nombre_archivo")
+  tamanoMb      Float?   @map("tamano_mb")
+  fechaRegistro DateTime @default(now()) @map("fecha_registro")
+
+  @@map("evidencia_foto")
+}
+
+model Producto {
+  productoId      String                @id @default(uuid()) @map("producto_id")
+  nombre          String
+  categoria       String?
+  presentacion    String?
+  rendimientoM2   Float?                @map("rendimiento_m2")
+  acabado         String?
+  precio          Float?
+  inventarios     InventarioProducto[]
+  cotizacionItems CotizacionItem[]
+  ordenItems OrdenItem[]
+
+  @@map("producto")
+}
+
+model InventarioProducto {
+  inventarioId       String    @id @default(uuid()) @map("inventario_id")
+  productoId         String    @map("producto_id")
+  producto           Producto  @relation(fields: [productoId], references: [productoId])
+  ciudadId           Int       @map("ciudad_id")
+  ciudad             Ciudad    @relation(fields: [ciudadId], references: [ciudadId])
+  nombreBodega       String?   @map("nombre_bodega")
+  numeroLote         String?   @map("numero_lote")
+  cantidadDisponible Int?      @map("cantidad_disponible")
+  fechaTinturado     DateTime? @map("fecha_tinturado")
+  tiempoDespacho     Int?      @map("tiempo_despacho")
+
+  @@map("inventario_producto")
+}
+
+model Cotizacion {
+  cotizacionId   String           @id @default(uuid()) @map("cotizacion_id")
+  proyectoId     String           @map("proyecto_id")
+  proyecto       Proyecto         @relation(fields: [proyectoId], references: [proyectoId])
+  diagnosticoId  String?          @map("diagnostico_id")
+  galonesExactos Float?           @map("galones_exactos")
+  cunetes5g      Int?             @map("cunetes_5g")
+  galones1g      Int?             @map("galones_1g")
+  subtotal       Float?
+  iva            Float?
+  total          Float?
+  estado         String?
+  createdAt      DateTime         @default(now()) @map("created_at")
+  items          CotizacionItem[]
+
+  @@map("cotizacion")
+}
+
+model CotizacionItem {
+  citemId        String     @id @default(uuid()) @map("citem_id")
+  cotizacionId   String     @map("cotizacion_id")
+  cotizacion     Cotizacion @relation(fields: [cotizacionId], references: [cotizacionId])
+  productoId     String     @map("producto_id")
+  producto       Producto   @relation(fields: [productoId], references: [productoId])
+  cantidad       Float?
+  precioUnitario Float?     @map("precio_unitario")
+  total          Float?
+
+  @@map("cotizacion_item")
+}

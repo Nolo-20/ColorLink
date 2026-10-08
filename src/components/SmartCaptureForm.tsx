@@ -1,22 +1,22 @@
 import React, { useState, useRef } from 'react';
 import { ProjectFormData, SurfaceType, SpaceEnvironment, SurfaceCondition, ColorTone, UserProfile } from '../types';
 import { COLOR_PALETTES } from '../data/mockData';
-import { 
-  Building2, 
-  MapPin, 
-  Layers, 
-  Ruler, 
-  Sun, 
-  AlertTriangle, 
-  Palette, 
-  Calendar, 
-  UploadCloud, 
-  Image as ImageIcon, 
-  Trash2, 
-  Sparkles, 
-  ArrowRight, 
-  Check, 
-  FileText, 
+import {
+  Building2,
+  MapPin,
+  Layers,
+  Ruler,
+  Sun,
+  AlertTriangle,
+  Palette,
+  Calendar,
+  UploadCloud,
+  Image as ImageIcon,
+  Trash2,
+  Sparkles,
+  ArrowRight,
+  Check,
+  FileText,
   HelpCircle,
   Eye,
   CheckCircle2,
@@ -80,22 +80,48 @@ export const SmartCaptureForm: React.FC<SmartCaptureFormProps> = ({
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
+  const processFiles = (files: FileList | null) => {
     if (!files || files.length === 0) return;
 
-    const newPhotos = (Array.from(files) as File[]).map((file: File, idx: number) => ({
-      id: `photo-user-${Date.now()}-${idx}`,
-      url: URL.createObjectURL(file),
-      name: file.name,
-      size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`
-    }));
-
-    setFormData(prev => ({
-      ...prev,
-      fotos: [...prev.fotos, ...newPhotos]
-    }));
+    Array.from(files).forEach((file: File, idx: number) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = reader.result as string;
+        setFormData(prev => ({
+          ...prev,
+          fotos: [...prev.fotos, {
+            id: `photo-user-${Date.now()}-${idx}`,
+            url: base64,
+            base64: base64,
+            name: file.name,
+            size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+          }]
+        }));
+      };
+      reader.readAsDataURL(file);
+    });
   };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    processFiles(e.target.files);
+  };
+
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDraggingOver(false);
+    processFiles(e.dataTransfer.files);
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDraggingOver(true);
+  };
+
+  const handleDragLeave = () => setIsDraggingOver(false);
+
+
 
   const handleRemovePhoto = (id: string) => {
     setFormData(prev => ({
@@ -146,7 +172,7 @@ export const SmartCaptureForm: React.FC<SmartCaptureFormProps> = ({
       </div>
 
       <form onSubmit={(e) => { e.preventDefault(); onSubmitToValidation(); }} className="space-y-8">
-        
+
         {/* SECCIÓN 1: IDENTIFICACIÓN DEL CLIENTE Y PROYECTO */}
         <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-7 shadow-sm">
           <div className="flex items-center gap-3 mb-5 pb-3 border-b border-slate-100">
@@ -288,27 +314,24 @@ export const SmartCaptureForm: React.FC<SmartCaptureFormProps> = ({
                 <button
                   type="button"
                   onClick={() => setFormData({ ...formData, areaM2: 85.0 })}
-                  className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition-all ${
-                    formData.areaM2 === 85 ? 'bg-cyan-600 text-white border-cyan-600' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
-                  }`}
+                  className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition-all ${formData.areaM2 === 85 ? 'bg-cyan-600 text-white border-cyan-600' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                    }`}
                 >
                   Caso Inicial (85.00 m²)
                 </button>
                 <button
                   type="button"
                   onClick={() => setFormData({ ...formData, areaM2: 150.0 })}
-                  className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition-all ${
-                    formData.areaM2 === 150 ? 'bg-cyan-600 text-white border-cyan-600' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
-                  }`}
+                  className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition-all ${formData.areaM2 === 150 ? 'bg-cyan-600 text-white border-cyan-600' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                    }`}
                 >
                   150 m²
                 </button>
                 <button
                   type="button"
                   onClick={() => setFormData({ ...formData, areaM2: 300.0 })}
-                  className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition-all ${
-                    formData.areaM2 === 300 ? 'bg-cyan-600 text-white border-cyan-600' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
-                  }`}
+                  className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition-all ${formData.areaM2 === 300 ? 'bg-cyan-600 text-white border-cyan-600' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                    }`}
                 >
                   300 m²
                 </button>
@@ -352,11 +375,10 @@ export const SmartCaptureForm: React.FC<SmartCaptureFormProps> = ({
                   key={s.id}
                   id={`surface-option-${s.id}`}
                   onClick={() => setFormData({ ...formData, superficie: s.id })}
-                  className={`p-3 rounded-xl border cursor-pointer transition-all flex items-start gap-3 ${
-                    formData.superficie === s.id
-                      ? 'bg-cyan-50/80 border-cyan-500 ring-2 ring-cyan-500/20 shadow-sm'
-                      : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-                  }`}
+                  className={`p-3 rounded-xl border cursor-pointer transition-all flex items-start gap-3 ${formData.superficie === s.id
+                    ? 'bg-cyan-50/80 border-cyan-500 ring-2 ring-cyan-500/20 shadow-sm'
+                    : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                    }`}
                 >
                   <span className="text-xl">{s.icon}</span>
                   <div>
@@ -382,11 +404,10 @@ export const SmartCaptureForm: React.FC<SmartCaptureFormProps> = ({
                   key={env.id}
                   id={`env-option-${env.id}`}
                   onClick={() => setFormData({ ...formData, ambiente: env.id })}
-                  className={`p-3 rounded-xl border cursor-pointer transition-all ${
-                    formData.ambiente === env.id
-                      ? 'bg-teal-50/80 border-teal-500 ring-2 ring-teal-500/20 shadow-sm'
-                      : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-                  }`}
+                  className={`p-3 rounded-xl border cursor-pointer transition-all ${formData.ambiente === env.id
+                    ? 'bg-teal-50/80 border-teal-500 ring-2 ring-teal-500/20 shadow-sm'
+                    : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                    }`}
                 >
                   <p className="text-xs font-bold text-slate-900 flex items-center justify-between">
                     {env.label}
@@ -419,11 +440,10 @@ export const SmartCaptureForm: React.FC<SmartCaptureFormProps> = ({
                   key={cond.id}
                   id={`condition-chip-${cond.id}`}
                   onClick={() => handleToggleCondition(cond.id)}
-                  className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
-                    isSelected
-                      ? 'bg-amber-50/90 border-amber-500 ring-2 ring-amber-500/20 shadow-sm'
-                      : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-                  }`}
+                  className={`p-3.5 rounded-xl border cursor-pointer transition-all ${isSelected
+                    ? 'bg-amber-50/90 border-amber-500 ring-2 ring-amber-500/20 shadow-sm'
+                    : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                    }`}
                 >
                   <div className="flex items-center justify-between mb-1">
                     <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md border ${cond.badgeColor}`}>
@@ -472,11 +492,10 @@ export const SmartCaptureForm: React.FC<SmartCaptureFormProps> = ({
                   key={tone.id}
                   id={`color-swatch-${tone.id}`}
                   onClick={() => handleColorSelect(tone)}
-                  className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center gap-3 ${
-                    isSelected
-                      ? 'border-cyan-600 ring-2 ring-cyan-500/30 bg-cyan-50/40 shadow-sm'
-                      : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-                  }`}
+                  className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center gap-3 ${isSelected
+                    ? 'border-cyan-600 ring-2 ring-cyan-500/30 bg-cyan-50/40 shadow-sm'
+                    : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                    }`}
                 >
                   <div
                     className="w-8 h-8 rounded-lg shadow-inner border border-black/10 shrink-0"
@@ -501,11 +520,10 @@ export const SmartCaptureForm: React.FC<SmartCaptureFormProps> = ({
               <div
                 key={finish.id}
                 onClick={() => setFormData({ ...formData, acabado: finish.id as any })}
-                className={`p-3 rounded-xl border cursor-pointer transition-all ${
-                  formData.acabado === finish.id
-                    ? 'bg-slate-900 text-white border-slate-900 shadow-md'
-                    : 'bg-white text-slate-800 border-slate-200 hover:bg-slate-50'
-                }`}
+                className={`p-3 rounded-xl border cursor-pointer transition-all ${formData.acabado === finish.id
+                  ? 'bg-slate-900 text-white border-slate-900 shadow-md'
+                  : 'bg-white text-slate-800 border-slate-200 hover:bg-slate-50'
+                  }`}
               >
                 <p className="text-xs font-bold flex items-center justify-between">
                   {finish.label}
@@ -534,7 +552,11 @@ export const SmartCaptureForm: React.FC<SmartCaptureFormProps> = ({
           {/* Upload Dropzone */}
           <div
             onClick={() => fileInputRef.current?.click()}
-            className="border-2 border-dashed border-slate-300 hover:border-cyan-500 rounded-2xl p-6 text-center cursor-pointer bg-slate-50/60 hover:bg-cyan-50/20 transition-all"
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-colors ${isDraggingOver ? 'border-cyan-500 bg-cyan-50' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'
+              }`}
           >
             <input
               ref={fileInputRef}

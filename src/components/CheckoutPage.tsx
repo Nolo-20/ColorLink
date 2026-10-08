@@ -1,16 +1,16 @@
 import React, { useState } from 'react';
-import { 
-  CheckCircle2, 
-  Truck, 
-  Store, 
-  CreditCard, 
-  Building2, 
-  MapPin, 
-  Phone, 
-  Clock, 
-  ShieldCheck, 
-  ArrowLeft, 
-  Lock, 
+import {
+  CheckCircle2,
+  Truck,
+  Store,
+  CreditCard,
+  Building2,
+  MapPin,
+  Phone,
+  Clock,
+  ShieldCheck,
+  ArrowLeft,
+  Lock,
   Calendar,
   AlertCircle,
   FileText,
@@ -72,7 +72,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
   // Selected items to purchase
   const itemsToBuy = cartItems.filter(item => item.selectedForCheckout);
   const productsSubtotal = itemsToBuy.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  
+
   // Shipping calculation: Free if >= 150000 COP or if pickup in branch
   const isFreeShipping = deliveryMode === 'recogida' || productsSubtotal >= 150000;
   const shippingCost = isFreeShipping ? 0 : 15000;
@@ -119,7 +119,6 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
       setIsSubmitting(false);
       setSuccessOrderInfo({ orderNum, pickupCode });
 
-      // Countdown and automatic redirection to 'pedidos'
       let count = 3;
       setRedirectCountdown(count);
       const interval = setInterval(() => {
@@ -137,7 +136,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
     return (
       <div className="max-w-2xl mx-auto px-4 py-12 sm:py-16 animate-in fade-in zoom-in-95 duration-300">
         <div className="bg-white rounded-3xl p-6 sm:p-10 border-2 border-emerald-500 shadow-2xl text-center space-y-6 relative overflow-hidden">
-          
+
           {/* Top celebratory accent bar */}
           <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600" />
 
@@ -202,7 +201,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      
+
       {/* Top breadcrumb & security banner */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6 pb-4 border-b border-slate-200">
         <button
@@ -222,7 +221,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
 
       {/* Main 2-Column Layout (Matching Image 4 with custom adjustments) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        
+
         {/* Left Column (8 cols): Delivery, Payment, and Items Review */}
         <div className="lg:col-span-8 space-y-6">
 
@@ -243,11 +242,10 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
                 <button
                   type="button"
                   onClick={() => setDeliveryMode('envio')}
-                  className={`px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
-                    deliveryMode === 'envio' 
-                      ? 'bg-white text-slate-900 shadow-xs' 
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
+                  className={`px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${deliveryMode === 'envio'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                    }`}
                 >
                   <Truck className="w-3.5 h-3.5" />
                   <span>Envío a Domicilio</span>
@@ -255,11 +253,10 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
                 <button
                   type="button"
                   onClick={() => setDeliveryMode('recogida')}
-                  className={`px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
-                    deliveryMode === 'recogida' 
-                      ? 'bg-white text-slate-900 shadow-xs' 
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
+                  className={`px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${deliveryMode === 'recogida'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                    }`}
                 >
                   <Store className="w-3.5 h-3.5" />
                   <span>Recogida en Sucursal</span>
@@ -377,11 +374,10 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
                       return (
                         <label
                           key={branch.id}
-                          className={`p-3.5 rounded-xl border flex items-start gap-3 cursor-pointer transition-all ${
-                            isSelected 
-                              ? 'border-emerald-500 bg-emerald-50/60 ring-2 ring-emerald-500/20' 
-                              : 'border-slate-200 hover:border-slate-300 bg-white'
-                          }`}
+                          className={`p-3.5 rounded-xl border flex items-start gap-3 cursor-pointer transition-all ${isSelected
+                            ? 'border-emerald-500 bg-emerald-50/60 ring-2 ring-emerald-500/20'
+                            : 'border-slate-200 hover:border-slate-300 bg-white'
+                            }`}
                         >
                           <input
                             type="radio"
@@ -430,11 +426,10 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
                 ].map(method => (
                   <label
                     key={method.id}
-                    className={`p-3.5 rounded-xl border flex items-start gap-3 cursor-pointer transition-all ${
-                      paymentMethod === method.id 
-                        ? 'border-emerald-500 bg-emerald-50/50 ring-2 ring-emerald-500/20' 
-                        : 'border-slate-200 hover:border-slate-300 bg-white'
-                    }`}
+                    className={`p-3.5 rounded-xl border flex items-start gap-3 cursor-pointer transition-all ${paymentMethod === method.id
+                      ? 'border-emerald-500 bg-emerald-50/50 ring-2 ring-emerald-500/20'
+                      : 'border-slate-200 hover:border-slate-300 bg-white'
+                      }`}
                   >
                     <input
                       type="radio"
@@ -542,7 +537,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
                 <div key={item.id} className="pt-4 first:pt-0 flex items-center gap-4">
                   <div className="w-14 h-14 rounded-xl bg-slate-100 border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center p-1 relative">
                     {item.colorHex ? (
-                      <div 
+                      <div
                         className="w-full h-full rounded-lg shadow-inner flex items-center justify-center text-white"
                         style={{ backgroundColor: item.colorHex }}
                       >
@@ -578,7 +573,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
 
         {/* Right Column (4 cols): Sticky Order Summary (No Amazon Prime, No Currency Converter) */}
         <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-5 sticky top-24">
-          
+
           <h3 className="text-base font-extrabold text-slate-900 pb-3 border-b border-slate-100">
             Resumen del Pedido
           </h3>

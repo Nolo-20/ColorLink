@@ -6,9 +6,13 @@ export interface UserProfile {
   firstName?: string;
   lastName?: string;
   documentId?: string;
+  personType?: 'natural' | 'juridica';
+  taxRegime?: 'comun' | 'simplificado' | 'gran_contribuyente';
   address?: string;
   email: string;
   company?: string;
+  companyName?: string;
+  nit?: string;
   phone: string;
   city: string;
   role: AppRole;
@@ -18,7 +22,56 @@ export interface UserProfile {
   department?: string; // Para staff interno (ej. "Comercial Antioquia", "Laboratorio Central")
 }
 
-export type SurfaceType =
+export type OrderStatus = 'comprado' | 'despacho' | 'enviado' | 'entregado' | 'cancelado';
+
+export interface OrderTrackingStep {
+  status: OrderStatus;
+  label: string;
+  description: string;
+  date?: string;
+  isCompleted: boolean;
+  isCurrent: boolean;
+}
+
+export interface CustomerOrder {
+  id: string;
+  orderNumber: string;
+  date: string;
+  total: number;
+  subtotal: number;
+  shipping: number;
+  tax: number;
+  recipientName: string;
+  recipientEmail: string;
+  recipientPhone: string;
+  shippingAddress: string;
+  city: string;
+  deliveryMethod: 'domicilio' | 'sucursal';
+  branchName?: string;
+  pickupStore?: string;
+  pickupCode?: string;
+  transactionId?: string;
+  status: OrderStatus;
+  readyForPickup?: boolean; // pedido de retiro ya alistado, esperando al cliente en tienda
+  items: Array<{
+    id: string;
+    productId: string;
+    name: string;
+    sizeName: string;
+    colorName?: string;
+    colorHex?: string;
+    price: number;
+    quantity: number;
+    image: string;
+  }>;
+  trackingHistory: OrderTrackingStep[];
+  trackingNumber?: string;
+  carrier?: string;
+  estimatedDelivery?: string;
+  canCancel: boolean;
+}
+
+export type SurfaceType = 
   | 'concreto'
   | 'revoque'
   | 'ladrillo'
@@ -26,14 +79,14 @@ export type SurfaceType =
   | 'metal'
   | 'madera';
 
-export type SpaceEnvironment =
+export type SpaceEnvironment = 
   | 'exterior_fachada'
   | 'interior_muros'
   | 'zona_humeda'
   | 'trafico_pesado_piso'
   | 'cubierta_techo';
 
-export type SurfaceCondition =
+export type SurfaceCondition = 
   | 'humedad'
   | 'fisuras'
   | 'descascaramiento'
@@ -66,15 +119,12 @@ export interface ProjectFormData {
   fechaRequeridaDias: number;
   canalOrigen: 'web_portal' | 'whatsapp' | 'asesor_comercial' | 'correo' | 'linea_directa';
   descripcion: string;
-  imagen_coherente?: boolean;
-  imagen_observacion?: string;
   fotos: Array<{
     id: string;
     url: string;
     name: string;
     size: string;
     isPreloaded?: boolean;
-    base64?: string;
   }>;
   consentimientoDatos: boolean;
   timestamp: string;
@@ -186,23 +236,116 @@ export interface WarehouseStockItem {
   fechaLote: string;
 }
 
-export type ActiveTab =
+// =========================================================================
+// E-COMMERCE STORE & CART TYPES
+// =========================================================================
+
+export type StoreCategory = 
+  | 'todos'
+  | 'hogar'
+  | 'construccion'
+  | 'automotriz'
+  | 'industrial'
+  | 'herramientas';
+
+export interface StoreProductColor {
+  id: string;
+  name: string;
+  hex: string;
+  code: string;
+  inStock: boolean;
+  canImage?: string;
+}
+
+export interface StoreProductSize {
+  id: string;
+  name: string;
+  price: number;
+  originalPrice?: number;
+  inStock: boolean;
+  capacityLiters?: number;
+}
+
+export interface StoreProduct {
+  id: string;
+  sku: string;
+  name: string;
+  brand: string;
+  subtitle: string;
+  category: StoreCategory;
+  categoryLabel: string;
+  rating: number;
+  reviewsCount: number;
+  badge?: string;
+  description: string;
+  features: string[];
+  specs: {
+    rendimiento: string;
+    secado: string;
+    base: string;
+    acabado: string;
+    solvente?: string;
+  };
+  colors: StoreProductColor[];
+  sizes: StoreProductSize[];
+  defaultColorId?: string;
+  defaultSizeId: string;
+  image: string;
+  isTool?: boolean;
+}
+
+export interface CartItem {
+  id: string; // unique: `${productId}_${sizeId}_${colorId || 'none'}`
+  productId: string;
+  name: string;
+  brand?: string;
+  category?: StoreCategory;
+  sizeId: string;
+  sizeName: string;
+  colorId?: string;
+  colorName?: string;
+  colorHex?: string;
+  colorCode?: string;
+  price: number;
+  originalPrice?: number;
+  quantity: number;
+  image: string;
+  selectedForCheckout: boolean;
+  inStock?: boolean;
+}
+
+export interface StoreBranch {
+  id: string;
+  city: string;
+  department?: string;
+  name: string;
+  address: string;
+  phone: string;
+  email?: string;
+  schedule: string;
+  readyInHours: number;
+  lat?: number;
+  lng?: number;
+}
+
+export type ActiveTab = 
   | 'tienda'
-  | 'tiendas'
   | 'categoria'
-  | 'producto_detalle'
-  | 'carrito'
-  | 'checkout'
+  | 'tiendas'
   | 'pedidos'
   | 'mi_cuenta'
   | 'proyectos_teaser'
+  | 'producto_detalle'
+  | 'carrito'
+  | 'checkout'
+  | 'inicio'
   | 'dashboard'
   | 'captura'
-  | 'nueva_cotizacion_ia'
+  | 'proyectos_asesor'
+  | 'calidad_revision'
+  | 'inventario'
   | 'validacion'
   | 'ia_clasificacion'
   | 'motor_tecnico'
+  | 'trazabilidad_arquitectura'
   | 'registro';
-
-// Tipos del módulo de tienda (traídos desde AI Studio)
-export * from './storeTypes';

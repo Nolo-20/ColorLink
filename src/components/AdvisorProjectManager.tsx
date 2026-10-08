@@ -1,18 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ProjectFormData, UserProfile } from '../types';
 import { ALL_MOCK_PROJECTS } from '../data/mockData';
-import { 
-  Building2, 
-  Layers, 
-  Edit3, 
-  CheckCircle2, 
-  Percent, 
-  DollarSign, 
-  MapPin, 
-  Calendar, 
-  FileText, 
-  AlertCircle, 
-  Save, 
+import {
+  Building2,
+  Layers,
+  Edit3,
+  CheckCircle2,
+  Percent,
+  DollarSign,
+  MapPin,
+  Calendar,
+  FileText,
+  AlertCircle,
+  Save,
   ArrowRight,
   ShieldCheck,
   Search,
@@ -33,10 +33,45 @@ export const AdvisorProjectManager: React.FC<AdvisorProjectManagerProps> = ({
   onUpdateProject,
   onOpenPdfModal
 }) => {
-  const [projectsList, setProjectsList] = useState<ProjectFormData[]>(ALL_MOCK_PROJECTS);
-  const [selectedId, setSelectedId] = useState<string>(activeProject.id || ALL_MOCK_PROJECTS[0].id);
+  const [projectsList, setProjectsList] = useState<any[]>([]);
+  const [selectedId, setSelectedId] = useState<string>('');
+  const [loadingList, setLoadingList] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/projects/all')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          setProjectsList(data.projects);
+          if (data.projects.length > 0) handleSelectProject(data.projects[0]);
+        }
+      })
+      .finally(() => setLoadingList(false));
+  }, []);
+
+  const [equipoAsesores, setEquipoAsesores] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetch('/api/users?role=asesor')
+      .then(res => res.json())
+      .then(data => { if (data.success) setEquipoAsesores(data.users); });
+  }, []);
+
+  const handleEscalate = async (nuevoUsuarioId: string) => {
+    const res = await fetch(`/api/projects/${currentProject.proyectoId}/reassign`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: 'asesor', nuevoUsuarioId })
+    });
+    const data = await res.json();
+    if (data.success) {
+      setProjectsList(prev => prev.map(p => p.proyectoId === data.project.proyectoId ? data.project : p));
+    }
+  };
+
+
   const [searchFilter, setSearchFilter] = useState('');
-  
+
   // Selected project details for live editing
   const currentProject = projectsList.find(p => p.id === selectedId) || activeProject;
 
@@ -46,42 +81,46 @@ export const AdvisorProjectManager: React.FC<AdvisorProjectManagerProps> = ({
   const [editAcabado, setEditAcabado] = useState<'mate' | 'satinado' | 'semibrillante'>(currentProject.acabado);
   const [isSavedNotice, setIsSavedNotice] = useState(false);
 
-  const handleSelectProject = (proj: ProjectFormData) => {
-    setSelectedId(proj.id);
-    setEditArea(proj.areaM2);
-    setEditDiscount(proj.descuentoAsesorPct || 5);
+  const handleSelectProject = (proj: any) => {
+    setSelectedId(proj.proyectoId);
+    setEditArea(proj.area || 0);
+    setEditDiscount(proj.descuentoAsesorPct ?? 5);
     setEditNotes(proj.observacionesAsesor || '');
-    setEditAcabado(proj.acabado);
+    setEditAcabado(proj.acabado || 'mate');
     setIsSavedNotice(false);
   };
 
-  const handleSaveAdjustment = (e: React.FormEvent) => {
+  const handleSaveAdjustment = async (e: React.FormEvent) => {
     e.preventDefault();
-    const updated: ProjectFormData = {
-      ...currentProject,
-      areaM2: editArea,
-      acabado: editAcabado,
-      descuentoAsesorPct: editDiscount,
-      observacionesAsesor: editNotes,
-      estadoPipeline: 'aprobado_calidad'
-    };
-
-    setProjectsList(prev => prev.map(p => p.id === updated.id ? updated : p));
-    onUpdateProject(updated);
-    setIsSavedNotice(true);
-    setTimeout(() => setIsSavedNotice(false), 3000);
+    const response = await fetch(`/api/projects/${currentProject.proyectoId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        area: editArea,
+        acabado: editAcabado,
+        descuentoAsesorPct: editDiscount,
+        observacionesAsesor: editNotes,
+        estadoPipeline: 'aprobado_calidad'
+      })
+    });
+    const data = await response.json();
+    if (data.success) {
+      setProjectsList(prev => prev.map(p => p.proyectoId === data.project.proyectoId ? data.project : p));
+      setIsSavedNotice(true);
+      setTimeout(() => setIsSavedNotice(false), 3000);
+    }
   };
 
-  const filteredProjects = projectsList.filter(p => 
-    p.cliente.toLowerCase().includes(searchFilter.toLowerCase()) ||
-    p.proyecto.toLowerCase().includes(searchFilter.toLowerCase()) ||
-    p.ciudad.toLowerCase().includes(searchFilter.toLowerCase()) ||
-    p.id.toLowerCase().includes(searchFilter.toLowerCase())
+  const filteredProjects = projectsList.filter(p =>
+    (p.usuario?.nombre || '').toLowerCase().includes(searchFilter.toLowerCase()) ||
+    (p.nombreProyecto || '').toLowerCase().includes(searchFilter.toLowerCase()) ||
+    (p.empresa?.ciudad?.ciudad || '').toLowerCase().includes(searchFilter.toLowerCase()) ||
+    p.proyectoId.toLowerCase().includes(searchFilter.toLowerCase())
   );
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-      
+
       {/* Top Banner */}
       <div className="bg-gradient-to-r from-blue-900 via-slate-900 to-indigo-950 text-white rounded-3xl p-6 shadow-xl border border-blue-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -104,7 +143,7 @@ export const AdvisorProjectManager: React.FC<AdvisorProjectManagerProps> = ({
 
       {/* Main Two-Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
+
         {/* Left Column: Project List & Search Filter */}
         <div className="lg:col-span-5 space-y-3">
           <div className="relative">
@@ -120,16 +159,16 @@ export const AdvisorProjectManager: React.FC<AdvisorProjectManagerProps> = ({
 
           <div className="space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
             {filteredProjects.map((p) => {
-              const isSelected = p.id === selectedId;
+              const isSelected = p.proyectoId === selectedId;
               return (
                 <div
-                  key={p.id}
+                  key={p.proyectoId}
                   onClick={() => handleSelectProject(p)}
                   className={`p-4 rounded-2xl border transition-all cursor-pointer space-y-2 ${isSelected ? 'bg-blue-50/90 border-blue-500 shadow-md ring-2 ring-blue-400/20' : 'bg-white border-slate-200 hover:border-blue-300 hover:shadow-xs'}`}
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-mono font-bold text-blue-700 bg-white px-2 py-0.5 rounded border border-blue-200">
-                      {p.id}
+                      {p.proyectoId.slice(0, 8)}
                     </span>
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${p.estadoPipeline === 'aprobado_calidad' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
                       {p.estadoPipeline || 'En Revisión'}
@@ -137,15 +176,15 @@ export const AdvisorProjectManager: React.FC<AdvisorProjectManagerProps> = ({
                   </div>
 
                   <div>
-                    <h3 className="font-extrabold text-sm text-slate-900 truncate">{p.proyecto}</h3>
-                    <p className="text-xs text-slate-600 font-semibold truncate">{p.cliente}</p>
+                    <h3 className="font-extrabold text-sm text-slate-900 truncate">{p.nombreProyecto}</h3>
+                    <p className="text-xs text-slate-600 font-semibold truncate">{p.usuario?.nombre} {p.usuario?.apellido} — {p.empresa?.razonSocial}</p>
                   </div>
 
                   <div className="flex items-center justify-between text-xs text-slate-500 pt-1 border-t border-slate-100">
-                    <span>{p.areaM2} m² • {p.superficie}</span>
+                    <span>{p.area || 0} m² • {p.tipoSuperficie}</span>
                     <span className="flex items-center gap-1">
                       <MapPin className="w-3 h-3 text-slate-400" />
-                      <span>{p.ciudad}</span>
+                      <span>{p.empresa?.ciudad?.ciudad || 'N/A'}</span>
                     </span>
                   </div>
                 </div>
@@ -157,12 +196,12 @@ export const AdvisorProjectManager: React.FC<AdvisorProjectManagerProps> = ({
         {/* Right Column: Interactive Editor Form for the Selected Project */}
         <div className="lg:col-span-7">
           <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-6">
-            
+
             <div className="flex items-center justify-between pb-4 border-b border-slate-100">
               <div>
                 <span className="text-[10px] font-black text-slate-400 uppercase">Editando Proyecto</span>
-                <h2 className="text-lg font-black text-slate-900">{currentProject.proyecto}</h2>
-                <span className="text-xs font-semibold text-blue-700">{currentProject.cliente}</span>
+                <h2 className="text-lg font-black text-slate-900">{currentProject.nombreProyecto}</h2>
+                <span className="text-xs font-semibold text-blue-700">{currentProject.usuario?.nombre} {currentProject.usuario?.apellido}</span>
               </div>
 
               <button
@@ -175,6 +214,22 @@ export const AdvisorProjectManager: React.FC<AdvisorProjectManagerProps> = ({
               </button>
             </div>
 
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-500">
+                Asignado a: <strong>{currentProject.asesorAsignado ? `${currentProject.asesorAsignado.nombre} ${currentProject.asesorAsignado.apellido}` : 'Sin asignar (se te asignará al guardar)'}</strong>
+              </span>
+              <select
+                onChange={(e) => e.target.value && handleEscalate(e.target.value)}
+                className="text-xs border border-slate-300 rounded-lg px-2 py-1"
+                defaultValue=""
+              >
+                <option value="" disabled>Escalar a...</option>
+                {equipoAsesores.filter(a => a.usuarioId !== currentProject.asesorAsignado?.usuarioId).map(a => (
+                  <option key={a.usuarioId} value={a.usuarioId}>{a.nombre} {a.apellido}</option>
+                ))}
+              </select>
+            </div>
+
             {/* Saved Banner */}
             {isSavedNotice && (
               <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs rounded-xl font-bold flex items-center gap-2">
@@ -184,7 +239,7 @@ export const AdvisorProjectManager: React.FC<AdvisorProjectManagerProps> = ({
             )}
 
             <form onSubmit={handleSaveAdjustment} className="space-y-4">
-              
+
               {/* Metric modifications */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">

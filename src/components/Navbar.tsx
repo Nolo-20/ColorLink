@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { ActiveTab, UserProfile, StoreCategory } from '../types';
-import { 
+import {
   Droplet,
   Home,
-  Layers, 
-  Calculator, 
+  Layers,
+  Calculator,
   Search,
-  Menu, 
+  Menu,
   X,
   LogOut,
   ChevronDown,
@@ -41,6 +41,18 @@ interface NavbarProps {
   onLogout?: () => void;
   onOpenVirtualAssistant?: () => void;
 }
+
+// Avatar con ícono genérico por defecto (en vez de una foto de stock fija) cuando el usuario no tiene foto propia
+const UserAvatarImg: React.FC<{ avatar?: string | null; name: string; sizeClass?: string }> = ({ avatar, name, sizeClass = 'w-7 h-7' }) => {
+  if (avatar) {
+    return <img src={avatar} alt={name} className={`${sizeClass} rounded-full object-cover border border-emerald-400`} />;
+  }
+  return (
+    <div className={`${sizeClass} rounded-full bg-emerald-950 text-emerald-400 flex items-center justify-center border border-emerald-400`}>
+      <User className="w-1/2 h-1/2" />
+    </div>
+  );
+};
 
 export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
@@ -104,7 +116,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <header className="sticky top-0 z-40 bg-[#0A1A36] text-white shadow-xl font-sans border-b border-slate-800/80">
-      
+
       {/* 1. Top Enterprise Micro-Bar */}
       <div className="bg-[#050D1C] border-b border-slate-800/60 px-4 py-1.5 text-[11px] text-slate-300">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
@@ -134,8 +146,8 @@ export const Navbar: React.FC<NavbarProps> = ({
       {/* 2. Main Navigation Bar */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 gap-3 sm:gap-6">
-          
-          {/* Brand Logo - Sleek Minimalist Enterprise Identity */}
+
+          {/* Brand Logo */}
           <button
             onClick={() => {
               if (onSelectCategory) onSelectCategory('todos');
@@ -143,12 +155,11 @@ export const Navbar: React.FC<NavbarProps> = ({
             }}
             className="flex items-center gap-2.5 sm:gap-3 text-left shrink-0 cursor-pointer focus:outline-hidden group"
           >
-            {/* Minimalist Geometric Logo Mark */}
             <div className="relative w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center shrink-0">
-              <svg 
-                viewBox="0 0 40 40" 
-                fill="none" 
-                xmlns="http://www.w3.org/2000/svg" 
+              <svg
+                viewBox="0 0 40 40"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
                 className="w-9 h-9 sm:w-10 sm:h-10 group-hover:scale-105 transition-all duration-300"
               >
                 <defs>
@@ -161,13 +172,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <stop offset="100%" stopColor="#2563EB" />
                   </linearGradient>
                 </defs>
-                {/* Modern geometric frame */}
                 <rect x="2" y="2" width="36" height="36" rx="9" fill="#060E1D" stroke="rgba(56, 189, 248, 0.25)" strokeWidth="1.2" />
-                {/* Minimalist interlocking geometric facet */}
                 <path d="M12 25L20 10L28 25H12Z" fill="url(#clDropGrad)" opacity="0.4" />
-                {/* Fluid pigment drop silhouette */}
                 <path d="M20 12C20 12 14.5 20.5 14.5 24.5C14.5 27.5 17 29.5 20 29.5C23 29.5 25.5 27.5 25.5 24.5C25.5 20.5 20 12 20 12Z" fill="url(#clHexGrad)" />
-                {/* Precision core highlight */}
                 <circle cx="18" cy="23" r="1.3" fill="#FFFFFF" opacity="0.9" />
               </svg>
             </div>
@@ -187,12 +194,12 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </button>
 
-          {/* Dynamic Animated Expandable Search Input */}
-          <form 
-            onSubmit={handleSearchSubmit} 
+          {/* Search */}
+          <form
+            onSubmit={handleSearchSubmit}
             className={`relative transition-all duration-300 ease-in-out ${
-              isSearchFocused 
-                ? 'flex-1 max-w-xl shadow-lg ring-2 ring-emerald-400/80 rounded-full' 
+              isSearchFocused
+                ? 'flex-1 max-w-xl shadow-lg ring-2 ring-emerald-400/80 rounded-full'
                 : 'w-48 sm:w-64 md:w-80 max-w-md'
             }`}
           >
@@ -255,7 +262,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               onClick={handleProjectsClick}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
                 activeTab === 'captura' || activeTab === 'dashboard' || activeTab === 'proyectos_teaser'
-                  ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-black' 
+                  ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-black'
                   : 'bg-slate-900/80 hover:bg-slate-800 text-white border-slate-700/70'
               }`}
             >
@@ -266,8 +273,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Right Actions: Cart & Auth */}
           <div className="flex items-center gap-2 sm:gap-3">
-            
-            {/* Shopping Cart Button */}
+
             <button
               type="button"
               onClick={triggerCartOpen}
@@ -285,7 +291,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </button>
 
-            {/* Orders Button (Next to cart when logged in - User Request) */}
             {isLoggedIn && (
               <button
                 type="button"
@@ -302,7 +307,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            {/* Profile or Login Button */}
             {isLoggedIn ? (
               <div className="relative">
                 <button
@@ -310,11 +314,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
                   className="flex items-center gap-2 p-1 pl-2 pr-2.5 rounded-full bg-[#050D1C] border border-slate-700 hover:border-emerald-400 transition-all cursor-pointer group"
                 >
-                  <img 
-                    src={user.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'} 
-                    alt={user.name} 
-                    className="w-7 h-7 rounded-full object-cover border border-emerald-400" 
-                  />
+                  <UserAvatarImg avatar={user.avatar} name={user.name} sizeClass="w-7 h-7" />
                   <div className="hidden sm:block text-left">
                     <span className="text-xs font-bold text-white block leading-tight truncate max-w-[110px]">
                       {user.firstName || user.name.split(' ')[0]}
@@ -326,16 +326,11 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <ChevronDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-white transition-transform" />
                 </button>
 
-                {/* Profile Dropdown */}
                 {isUserDropdownOpen && (
                   <div className="absolute right-0 mt-2 w-64 bg-white text-slate-900 rounded-2xl shadow-2xl border border-slate-200 py-3 px-4 z-50 space-y-3 animate-in fade-in zoom-in-95 duration-150">
                     <div className="pb-3 border-b border-slate-100">
                       <div className="flex items-center gap-2">
-                        <img 
-                          src={user.avatar} 
-                          alt={user.name} 
-                          className="w-9 h-9 rounded-full object-cover border-2 border-emerald-500" 
-                        />
+                        <UserAvatarImg avatar={user.avatar} name={user.name} sizeClass="w-9 h-9" />
                         <div className="min-w-0">
                           <h4 className="font-extrabold text-xs text-slate-900 truncate">{user.name}</h4>
                           <p className="text-[10px] text-slate-500 truncate">{user.email}</p>
@@ -419,7 +414,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            {/* Mobile Menu Trigger */}
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
               className="lg:hidden p-2 rounded-xl bg-slate-900/80 text-white hover:bg-slate-800 border border-slate-700/70 cursor-pointer"
@@ -435,7 +429,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       {/* 3. Secondary Category Navigation Bar */}
       <div className="bg-[#060E1E] border-t border-slate-800/80 px-4 py-2 text-xs overflow-x-auto no-scrollbar hidden sm:block">
         <div className="max-w-7xl mx-auto flex items-center gap-2 min-w-max">
-          
+
           <div className="flex items-center gap-1.5">
             {[
               { id: 'todos', label: 'Todo el Catálogo', icon: '🎨' },
@@ -453,8 +447,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                   type="button"
                   onClick={() => handleCategoryClick(cat.id as StoreCategory)}
                   className={`px-3 py-1.5 rounded-lg font-bold transition-all duration-200 flex items-center gap-1.5 cursor-pointer text-xs active:scale-95 ${
-                    isActive 
-                      ? 'bg-emerald-500 text-slate-950 font-black shadow-xs ring-1 ring-emerald-300' 
+                    isActive
+                      ? 'bg-emerald-500 text-slate-950 font-black shadow-xs ring-1 ring-emerald-300'
                       : 'text-slate-300 hover:text-white hover:bg-slate-800/80 font-medium'
                   }`}
                 >
@@ -482,7 +476,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       {/* 4. Mobile Menu Drawer */}
       {isMobileMenuOpen && (
         <div className="lg:hidden py-4 px-4 bg-[#060E1E] border-t border-slate-800 space-y-3 text-xs">
-          
+
           <div className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">
             Navegación Principal
           </div>

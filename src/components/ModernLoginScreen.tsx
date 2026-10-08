@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile } from '../types';
 import { DEMO_PROFILES } from '../data/mockData';
-import { 
-  HelpCircle, 
+import {
+  HelpCircle,
   RefreshCw,
   Eye,
   EyeOff,
@@ -20,17 +20,6 @@ interface ModernLoginScreenProps {
   checkoutNotice?: boolean;
 }
 
-// Pre-registered database emails for instant testing
-const REGISTERED_DATABASE_EMAILS = [
-  'proyectos@constructorahorizonte.com.co',
-  'j.osorio@colorlink.com.co',
-  'e.restrepo@colorlink.com.co',
-  'm.quintero@colorlink.com.co',
-  'carlos.mendoza@constructorahorizonte.com.co',
-  'obras@constructorahorizonte.com.co',
-  'admin@colorlink.com.co'
-];
-
 type AuthView = 'main_menu' | 'email_code' | 'verify_otp' | 'register_page' | 'forgot_password';
 
 export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
@@ -39,7 +28,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
   checkoutNotice
 }) => {
   const [authView, setAuthView] = useState<AuthView>('main_menu');
-  
+
   // Credentials Form State
   const [userEmail, setUserEmail] = useState('');
   const [userPassword, setUserPassword] = useState('');
@@ -55,6 +44,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
   const [regAddress, setRegAddress] = useState('');
   const [regCity, setRegCity] = useState('Medellín');
   const [regPhone, setRegPhone] = useState('');
+  const [regPassword, setRegPassword] = useState(''); // NUEVO: contraseña real, ya no se inventa una por defecto
   const [personType, setPersonType] = useState<'natural' | 'juridica'>('natural');
   const [regDocType, setRegDocType] = useState('CC');
   const [regTaxRegime, setRegTaxRegime] = useState<'comun' | 'simplificado' | 'gran_contribuyente'>('comun');
@@ -65,33 +55,32 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
   const [infoNotice, setInfoNotice] = useState('');
   const [resendCooldown, setResendCooldown] = useState(0);
   const [showDemoAccounts, setShowDemoAccounts] = useState(false);
-  const [dbEmails, setDbEmails] = useState<string[]>(REGISTERED_DATABASE_EMAILS);
+  const [forgotSent, setForgotSent] = useState(false);
 
-  // Sync emails from backend on mount
-  useEffect(() => {
-    fetch('/api/auth/registered-emails')
-      .then(res => res.json())
-      .then(data => {
-        if (data.emails && Array.isArray(data.emails)) {
-          setDbEmails(data.emails);
-        }
-      })
-      .catch(() => {
-        // Safe fallback to mock list
-      });
-  }, []);
-
-  // Listen for SSO postMessage from popup (Google)
+  // Escucha el resultado real de Google (postMessage desde /auth/callback en tu backend)
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS' && event.data?.user) {
-        const { email, name, avatar } = event.data.user;
-        executeSocialAuth(email, name, avatar);
+        const { needsProfile, ...userData } = event.data.user;
+        if (needsProfile) {
+          // El backend ya creó la cuenta pero falta el perfil de empresa
+          setUserEmail(userData.email);
+          setRegEmail(userData.email);
+          setRegFirstName(userData.firstName || 'Cliente');
+          setRegLastName(userData.lastName || '');
+          setInfoNotice(`Cuenta de Google (${userData.email}) validada. Completa los datos de tu empresa.`);
+          setAuthView('register_page');
+        } else {
+          onLoginSuccess(userData);
+        }
+      }
+      if (event.data?.type === 'OAUTH_AUTH_ERROR') {
+        setErrorMessage(event.data.error || 'No se pudo completar la autenticación con Google.');
       }
     };
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [dbEmails]);
+  }, []);
 
   // Resend OTP cooldown timer
   useEffect(() => {
@@ -109,7 +98,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
     try {
       const res = await fetch(`/api/auth/oauth-url/google?origin=${encodeURIComponent(window.location.origin)}`);
       const data = await res.json();
-      if (data.url) {
+      if (data.success && data.url) {
         const popup = window.open(
           data.url,
           'sso_google_popup',
@@ -119,11 +108,10 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
           setErrorMessage('Tu navegador bloqueó la ventana emergente. Por favor permite popups para iniciar con Google.');
         }
       } else {
-        // Demo fallback: simulate Google login smoothly
-        executeSocialAuth('carlos.mendoza@constructorahorizonte.com.co', 'Carlos Mendoza', 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80');
+        setErrorMessage(data.error || 'Google OAuth no está disponible en este momento.');
       }
     } catch {
-      executeSocialAuth('carlos.mendoza@constructorahorizonte.com.co', 'Carlos Mendoza');
+      setErrorMessage('No se pudo conectar con el servidor de autenticación. Intenta de nuevo.');
     } finally {
       setIsLoading(false);
     }
@@ -143,7 +131,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
     setIsLoading(true);
 
     try {
-      const res = await fetch('/api/auth/request-otp', {
+      const res = await fetch('/api/auth/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: emailLower })
@@ -159,9 +147,34 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
         setErrorMessage(data.error || 'No se pudo enviar el código.');
       }
     } catch {
-      setInfoNotice(`Código de verificación enviado a ${emailLower}.`);
-      setResendCooldown(45);
-      setAuthView('verify_otp');
+      setErrorMessage('No se pudo conectar con el servidor. Verifica tu conexión e intenta de nuevo.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    setErrorMessage('');
+    if (!userEmail.trim()) {
+      setErrorMessage('Escribe el correo de tu cuenta.');
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: userEmail.trim().toLowerCase() })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setForgotSent(true);
+        setInfoNotice(data.message);
+      } else {
+        setErrorMessage(data.error || 'No se pudo procesar la solicitud.');
+      }
+    } catch {
+      setErrorMessage('No se pudo conectar con el servidor. Intenta de nuevo.');
     } finally {
       setIsLoading(false);
     }
@@ -193,18 +206,17 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
         return;
       }
 
-      const isRegisteredLocally = dbEmails.some(e => e.toLowerCase() === emailLower);
-      if (isRegisteredLocally) {
-        resolveLoginByEmail(emailLower);
+      if (data.success && !data.isRegistered) {
+        // Código correcto, pero aún no tiene cuenta: completa el registro
+        extractEmailDetails(emailLower);
+        setInfoNotice(`Correo ${emailLower} verificado con éxito. Completa los datos de tu empresa para terminar.`);
+        setAuthView('register_page');
         return;
       }
 
-      // If not registered, direct to company registration form with pre-filled email
-      extractEmailDetails(emailLower);
-      setInfoNotice(`Correo ${emailLower} verificado con éxito. Completa los datos de tu empresa para terminar.`);
-      setAuthView('register_page');
+      setErrorMessage(data.error || 'Código incorrecto o expirado.');
     } catch {
-      resolveLoginByEmail(emailLower);
+      setErrorMessage('No se pudo verificar el código. Revisa tu conexión e intenta de nuevo.');
     } finally {
       setIsLoading(false);
     }
@@ -238,18 +250,22 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
         return;
       }
 
-      // If not registered, prompt registration
-      extractEmailDetails(emailLower);
-      setInfoNotice(`El correo "${emailLower}" aún no tiene datos de empresa registrados. Completa el formulario para vincularla.`);
-      setAuthView('register_page');
+      if (data.notRegistered) {
+        extractEmailDetails(emailLower);
+        setInfoNotice(`El correo "${emailLower}" aún no tiene una cuenta. Completa el formulario para registrarte.`);
+        setAuthView('register_page');
+        return;
+      }
+
+      setErrorMessage(data.error || 'Correo o contraseña incorrectos.');
     } catch {
-      resolveLoginByEmail(emailLower);
+      setErrorMessage('No se pudo conectar con el servidor. Verifica tu conexión e intenta de nuevo.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Helper to extract company info from corporate email
+  // Helper to extract company info from corporate email (solo pre-llena el formulario, no crea cuentas)
   const extractEmailDetails = (email: string) => {
     setUserEmail(email);
     setRegEmail(email);
@@ -259,30 +275,49 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
     const domainPart = parts[1] || '';
 
     const nameParts = localPart.split(/[._-]/);
-    const fName = nameParts[0] ? nameParts[0].charAt(0).toUpperCase() + nameParts[0].slice(1) : 'Cliente';
-    const lName = nameParts[1] ? nameParts[1].charAt(0).toUpperCase() + nameParts[1].slice(1) : 'ColorLink';
+    const fName = nameParts[0] ? nameParts[0].charAt(0).toUpperCase() + nameParts[0].slice(1) : '';
+    const lName = nameParts[1] ? nameParts[1].charAt(0).toUpperCase() + nameParts[1].slice(1) : '';
 
     setRegFirstName(fName);
     setRegLastName(lName);
 
     if (domainPart && !['gmail.com', 'hotmail.com', 'outlook.com', 'yahoo.com', 'icloud.com'].includes(domainPart)) {
       const compName = domainPart.split('.')[0];
-      setRegCompany(`Constructora ${compName.charAt(0).toUpperCase() + compName.slice(1)} S.A.S.`);
-    } else {
-      setRegCompany(`${fName} ${lName} - Obras Civiles`);
+      setRegCompany(`${compName.charAt(0).toUpperCase() + compName.slice(1)} S.A.S.`);
     }
-    setRegNit('901.458.782-3');
-    setRegAddress('Calle 10 # 43E-28, Poblado');
-    setRegCity('Medellín');
-    setRegPhone('+57 (314) 789-2045');
+  };
+
+  const validarRegistro = (): string | null => {
+    const soloLetras = /^[A-Za-zÁÉÍÓÚáéíóúÑñ\s]{2,30}$/;
+    const soloNumeros = /^[0-9]{6,12}$/;
+    const telefono = /^\+?[0-9\s-]{7,15}$/;
+
+    if (!soloLetras.test(regFirstName.trim())) return 'El nombre solo debe contener letras (2-30 caracteres).';
+    if (!soloLetras.test(regLastName.trim())) return 'El apellido solo debe contener letras (2-30 caracteres).';
+    if (!soloNumeros.test(regNit.replace(/[.\-]/g, ''))) return 'El documento/NIT debe tener solo números (6-12 dígitos).';
+    if (!telefono.test(regPhone.trim())) return 'El teléfono no tiene un formato válido.';
+    if (personType === 'juridica' && regCompany.trim().length < 3) return 'La razón social debe tener al menos 3 caracteres.';
+    if (regPassword.length < 8) return 'La contraseña debe tener al menos 8 caracteres.';
+    return null;
   };
 
   // Action: Complete Corporate Registration
   const handleCompleteRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
     setErrorMessage('');
 
+    const errorValidacion = validarRegistro();
+    if (errorValidacion) {
+      setErrorMessage(errorValidacion);
+      return;
+    }
+
+    if (!regPassword || regPassword.length < 8) {
+      setErrorMessage('Define una contraseña de al menos 8 caracteres para tu cuenta.');
+      return;
+    }
+
+    setIsLoading(true);
     const emailLower = (regEmail || userEmail).trim().toLowerCase();
 
     try {
@@ -291,14 +326,14 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
         lastName: regLastName,
         email: emailLower,
         company: regCompany,
-        nit: regNit,
+        documentId: regNit,
         address: regAddress,
         city: regCity,
         phone: regPhone,
-        password: userPassword || 'ColorLink*2026'
+        password: regPassword
       };
 
-      const res = await fetch('/api/auth/register-company', {
+      const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -311,99 +346,26 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
         return;
       }
 
-      onLoginSuccess({
-        id: `user-${Date.now()}`,
-        name: `${regFirstName} ${regLastName}`,
-        firstName: regFirstName,
-        lastName: regLastName,
-        email: emailLower,
-        phone: regPhone || '+57 (314) 789-2045',
-        company: personType === 'juridica' ? regCompany : undefined,
-        companyName: personType === 'juridica' ? regCompany : undefined,
-        documentId: regNit,
-        nit: regNit,
-        address: regAddress,
-        city: regCity,
-        role: 'cliente',
-        authMethod: 'credentials',
-        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-        isRegistered: true,
-        personType: personType,
-        taxRegime: personType === 'juridica' ? regTaxRegime : undefined
-      });
+      setErrorMessage(data.error || 'No se pudo completar el registro.');
     } catch {
-      onLoginSuccess({
-        id: `user-${Date.now()}`,
-        name: `${regFirstName} ${regLastName}`,
-        firstName: regFirstName,
-        lastName: regLastName,
-        email: emailLower,
-        phone: regPhone,
-        company: personType === 'juridica' ? regCompany : undefined,
-        companyName: personType === 'juridica' ? regCompany : undefined,
-        documentId: regNit,
-        nit: regNit,
-        address: regAddress,
-        city: regCity,
-        role: 'cliente',
-        authMethod: 'credentials',
-        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-        isRegistered: true,
-        personType: personType,
-        taxRegime: personType === 'juridica' ? regTaxRegime : undefined
-      });
+      setErrorMessage('No se pudo conectar con el servidor. Verifica tu conexión e intenta de nuevo.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Action: Execute social / Google auth
-  const executeSocialAuth = (selectedEmail: string, selectedName?: string, photo?: string) => {
-    setIsLoading(true);
-    const emailLower = selectedEmail.trim().toLowerCase();
-    const isRegistered = dbEmails.some(e => e.toLowerCase() === emailLower);
-
-    setTimeout(() => {
-      setIsLoading(false);
-      if (isRegistered) {
-        resolveLoginByEmail(emailLower);
-      } else {
-        extractEmailDetails(emailLower);
-        setInfoNotice(`Cuenta de Google (${emailLower}) validada. Completa los datos de tu empresa.`);
-        setAuthView('register_page');
-      }
-    }, 400);
-  };
-
-  const resolveLoginByEmail = (email: string) => {
-    const emailLower = email.toLowerCase();
-    if (emailLower.includes('j.osorio') || emailLower.includes('asesor')) {
-      onLoginSuccess({ ...DEMO_PROFILES.asesor, email });
-    } else if (emailLower.includes('e.restrepo') || emailLower.includes('calidad')) {
-      onLoginSuccess({ ...DEMO_PROFILES.calidad, email });
-    } else if (emailLower.includes('m.quintero') || emailLower.includes('admin') || emailLower.includes('bodega')) {
-      onLoginSuccess({ ...DEMO_PROFILES.administrador, email });
-    } else {
-      onLoginSuccess({
-        ...DEMO_PROFILES.cliente,
-        email,
-        name: emailLower.includes('constructor') ? 'Carlos Mendoza' : email.split('@')[0].toUpperCase(),
-        firstName: emailLower.includes('constructor') ? 'Carlos' : email.split('@')[0]
-      });
-    }
-  };
-
+  // Perfiles demo: solo pre-llena el formulario de login con contraseña — sigue pasando por el backend real
   const handleSelectDemoAccount = (role: 'cliente' | 'asesor' | 'calidad' | 'administrador') => {
     const profile = DEMO_PROFILES[role];
     setUserEmail(profile.email);
     setUserPassword('ColorLink*2026');
     setShowDemoAccounts(false);
-    setInfoNotice(`Credenciales cargadas para rol: ${role.toUpperCase()}`);
+    setInfoNotice(`Credenciales de prueba cargadas para rol: ${role.toUpperCase()}. Estas cuentas deben existir realmente en tu base de datos.`);
   };
 
   return (
     <div className="flex flex-col items-center justify-center p-4 font-sans selection:bg-[#002855] selection:text-white">
-      
+
       {/* Checkout notice if launched from checkout */}
       {checkoutNotice && (
         <div className="max-w-md w-full mb-3 bg-amber-50 text-amber-900 border border-amber-300 text-xs px-4 py-2.5 rounded-xl font-bold flex items-center justify-between shadow-sm">
@@ -411,9 +373,9 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
         </div>
       )}
 
-      {/* Main Clean Card (Exact Screenshot 1 Layout) */}
+      {/* Main Clean Card */}
       <div className="w-full max-w-[420px] bg-white rounded-2xl shadow-2xl border border-slate-200 p-8 sm:p-10 relative">
-        
+
         {/* Close button if modal */}
         {onClose && (
           <button
@@ -426,7 +388,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
           </button>
         )}
 
-        {/* 1. Header with User Outline Icon (Screenshot 1) */}
+        {/* Header */}
         <div className="flex flex-col items-center text-center mb-6">
           <div className="w-12 h-12 rounded-full border-2 border-[#002855] text-[#002855] flex items-center justify-center mb-3">
             <User className="w-7 h-7 stroke-[2]" />
@@ -435,8 +397,8 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
             {authView === 'register_page' ? 'REGISTRO CORPORATIVO' : 'INICIA SESIÓN O REGÍSTRATE'}
           </h2>
           <p className="text-sm text-slate-600 font-semibold mt-1">
-            {authView === 'register_page' 
-              ? 'Completa los datos de tu empresa' 
+            {authView === 'register_page'
+              ? 'Completa los datos de tu empresa'
               : 'Escoge una opción para ingresar'}
           </p>
         </div>
@@ -457,12 +419,11 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
         )}
 
         {/* =================================================================== */}
-        {/* MAIN VIEW: MATCHING SCREENSHOT 1 PRECISELY                         */}
+        {/* MAIN VIEW */}
         {/* =================================================================== */}
         {authView === 'main_menu' && (
           <div className="space-y-4">
-            
-            {/* 1. RECIBIR CÓDIGO DE ACCESO POR E-MAIL (Bordered Button) */}
+
             <button
               type="button"
               onClick={() => {
@@ -477,7 +438,6 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
               RECIBIR CÓDIGO DE ACCESO POR E-MAIL
             </button>
 
-            {/* 2. ENTRAR CON GOOGLE (Bordered Button with Google Icon) */}
             <button
               type="button"
               onClick={handleOpenGooglePopup}
@@ -493,14 +453,12 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
               <span>ENTRAR CON <strong className="font-black">GOOGLE</strong></span>
             </button>
 
-            {/* Divider: Ingresar con e-mail y contraseña */}
             <div className="pt-2 text-center">
               <span className="text-xs font-bold text-slate-700">
                 Ingresar con e-mail y contraseña
               </span>
             </div>
 
-            {/* Form Inputs: e-mail y contraseña */}
             <form onSubmit={handleLoginWithPassword} className="space-y-3">
               <div>
                 <input
@@ -531,7 +489,6 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                 </button>
               </div>
 
-              {/* Link: Olvidé mi contraseña */}
               <div className="text-center pt-1">
                 <button
                   type="button"
@@ -542,7 +499,6 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                 </button>
               </div>
 
-              {/* Solid Button: INGRESAR */}
               <button
                 type="submit"
                 disabled={isLoading}
@@ -552,13 +508,12 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
               </button>
             </form>
 
-            {/* Footer: ¿No tiene una cuenta? Regístrese */}
             <div className="text-center pt-2">
               <span className="text-xs text-slate-600 font-medium">¿No tiene una cuenta? </span>
               <button
                 type="button"
                 onClick={() => {
-                  extractEmailDetails(userEmail || 'nuevo.cliente@empresa.com');
+                  extractEmailDetails(userEmail);
                   setAuthView('register_page');
                 }}
                 className="text-xs font-bold text-[#002855] hover:underline cursor-pointer"
@@ -567,7 +522,6 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
               </button>
             </div>
 
-            {/* Subtle Demo Profiles Access */}
             <div className="border-t border-slate-100 pt-3 text-center">
               <button
                 type="button"
@@ -615,7 +569,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
         )}
 
         {/* =================================================================== */}
-        {/* EMAIL FOR OTP CODE VIEW                                            */}
+        {/* EMAIL FOR OTP CODE VIEW */}
         {/* =================================================================== */}
         {authView === 'email_code' && (
           <form onSubmit={(e) => { e.preventDefault(); handleRequestEmailCode(); }} className="space-y-4">
@@ -660,7 +614,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
         )}
 
         {/* =================================================================== */}
-        {/* VERIFY 6-DIGIT OTP CODE VIEW                                       */}
+        {/* VERIFY 6-DIGIT OTP CODE VIEW */}
         {/* =================================================================== */}
         {authView === 'verify_otp' && (
           <form onSubmit={handleVerifyOtp} className="space-y-4 text-center">
@@ -725,73 +679,90 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
         )}
 
         {/* =================================================================== */}
-        {/* FORGOT PASSWORD VIEW                                                */}
+        {/* FORGOT PASSWORD VIEW (te loguea vía código OTP, no resetea contraseña todavía) */}
         {/* =================================================================== */}
         {authView === 'forgot_password' && (
           <div className="space-y-4 text-center">
-            <h3 className="text-sm font-bold text-slate-800">Recuperación de Contraseña</h3>
-            <p className="text-xs text-slate-600">
-              Ingresa tu correo para recibir un enlace seguro de restablecimiento o entra directamente con código de acceso único.
-            </p>
-            <input
-              type="email"
-              value={userEmail}
-              onChange={(e) => setUserEmail(e.target.value)}
-              placeholder="exemplo@e-mail.com"
-              className="w-full px-3.5 py-3 bg-white text-slate-800 rounded-lg text-sm border border-slate-300 focus:outline-none focus:border-[#002855]"
-            />
-            <div className="flex items-center justify-between pt-2">
-              <button
-                type="button"
-                onClick={() => setAuthView('main_menu')}
-                className="text-xs font-bold text-slate-600 hover:text-slate-800 cursor-pointer"
-              >
-                Volver
-              </button>
-              <button
-                type="button"
-                onClick={() => handleRequestEmailCode()}
-                className="py-2.5 px-4 bg-[#002855] text-white font-bold text-xs rounded-lg cursor-pointer"
-              >
-                Enviar Enlace
-              </button>
-            </div>
+            <h3 className="text-sm font-bold text-slate-800">Recuperar contraseña</h3>
+            {forgotSent ? (
+              <>
+                <div className="w-12 h-12 mx-auto rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                  <Mail className="w-6 h-6" />
+                </div>
+                <p className="text-xs text-slate-600">
+                  Revisa tu bandeja de entrada (y el spam). El enlace es válido por 30 minutos.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => { setForgotSent(false); setInfoNotice(''); setAuthView('main_menu'); }}
+                  className="text-xs font-bold text-[#002855] hover:underline cursor-pointer"
+                >
+                  Volver al inicio de sesión
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="text-xs text-slate-600">
+                  Escribe el correo de tu cuenta y te enviaremos un enlace para crear una contraseña nueva.
+                </p>
+                <input
+                  type="email"
+                  value={userEmail}
+                  onChange={(e) => setUserEmail(e.target.value)}
+                  placeholder="exemplo@e-mail.com"
+                  className="w-full px-3.5 py-3 bg-white text-slate-800 rounded-lg text-sm border border-slate-300 focus:outline-none focus:border-[#002855]"
+                />
+                <div className="flex items-center justify-between pt-2">
+                  <button
+                    type="button"
+                    onClick={() => { setInfoNotice(''); setAuthView('main_menu'); }}
+                    className="text-xs font-bold text-slate-600 hover:text-slate-800 cursor-pointer"
+                  >
+                    Volver
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleForgotPassword}
+                    disabled={isLoading}
+                    className="py-2.5 px-4 bg-[#002855] text-white font-bold text-xs rounded-lg cursor-pointer"
+                  >
+                    {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <span>Enviar enlace</span>}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         )}
 
         {/* =================================================================== */}
-        {/* CUSTOMER & CORPORATE REGISTRATION VIEW                              */}
+        {/* CUSTOMER & CORPORATE REGISTRATION VIEW */}
         {/* =================================================================== */}
         {authView === 'register_page' && (
           <form onSubmit={handleCompleteRegister} className="space-y-3 max-h-[460px] overflow-y-auto pr-1">
-            
-            {/* Person Type Selector: Persona Natural vs Persona Jurídica */}
+
             <div className="bg-slate-100 p-1 rounded-xl grid grid-cols-2 gap-1 text-xs font-bold mb-2">
               <button
                 type="button"
                 onClick={() => setPersonType('natural')}
-                className={`py-1.5 px-2 rounded-lg text-center transition-all cursor-pointer ${
-                  personType === 'natural'
-                    ? 'bg-[#002855] text-white shadow-xs font-black'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
+                className={`py-1.5 px-2 rounded-lg text-center transition-all cursor-pointer ${personType === 'natural'
+                  ? 'bg-[#002855] text-white shadow-xs font-black'
+                  : 'text-slate-600 hover:text-slate-900'
+                  }`}
               >
                 👤 Persona Natural
               </button>
               <button
                 type="button"
                 onClick={() => setPersonType('juridica')}
-                className={`py-1.5 px-2 rounded-lg text-center transition-all cursor-pointer ${
-                  personType === 'juridica'
-                    ? 'bg-[#002855] text-white shadow-xs font-black'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
+                className={`py-1.5 px-2 rounded-lg text-center transition-all cursor-pointer ${personType === 'juridica'
+                  ? 'bg-[#002855] text-white shadow-xs font-black'
+                  : 'text-slate-600 hover:text-slate-900'
+                  }`}
               >
                 🏢 Persona Jurídica
               </button>
             </div>
 
-            {/* PERSONA NATURAL FORM */}
             {personType === 'natural' ? (
               <>
                 <div className="grid grid-cols-2 gap-2">
@@ -801,6 +772,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                       type="text"
                       value={regFirstName}
                       onChange={(e) => setRegFirstName(e.target.value)}
+                      maxLength={15}
                       placeholder="Ej. Juan Carlos"
                       className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                       required
@@ -812,6 +784,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                       type="text"
                       value={regLastName}
                       onChange={(e) => setRegLastName(e.target.value)}
+                      maxLength={15}
                       placeholder="Ej. Gómez Pérez"
                       className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                       required
@@ -838,6 +811,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                       type="text"
                       value={regNit}
                       onChange={(e) => setRegNit(e.target.value)}
+                      maxLength={12}
                       placeholder="Ej. 1.020.345.678"
                       className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                       required
@@ -881,6 +855,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                       type="tel"
                       value={regPhone}
                       onChange={(e) => setRegPhone(e.target.value)}
+                      maxLength={10}
                       placeholder="+57 310 000-0000"
                       className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                       required
@@ -900,7 +875,6 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                 </div>
               </>
             ) : (
-              /* PERSONA JURÍDICA FORM (Conservando formulario de empresa) */
               <>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
@@ -934,6 +908,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                       type="text"
                       value={regFirstName}
                       onChange={(e) => setRegFirstName(e.target.value)}
+                      maxLength={10}
                       placeholder="Ingeniero / Arquitecto"
                       className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                       required
@@ -945,6 +920,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                       type="text"
                       value={regLastName}
                       onChange={(e) => setRegLastName(e.target.value)}
+                      maxLength={10}
                       placeholder="Residente de Obra"
                       className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                       required
@@ -1012,6 +988,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                       type="tel"
                       value={regPhone}
                       onChange={(e) => setRegPhone(e.target.value)}
+                      maxLength={10}
                       placeholder="+57 314 000-0000"
                       className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                       required
@@ -1020,6 +997,29 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                 </div>
               </>
             )}
+
+            {/* NUEVO: contraseña real y obligatoria, sin valor por defecto oculto */}
+            <div>
+              <label className="text-[10px] font-bold text-slate-700 block mb-0.5">Crea tu Contraseña *</label>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={regPassword}
+                  onChange={(e) => setRegPassword(e.target.value)}
+                  placeholder="Mínimo 8 caracteres"
+                  minLength={8}
+                  className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855] pr-9"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
 
             <div className="flex items-center justify-between pt-3 border-t border-slate-100">
               <button

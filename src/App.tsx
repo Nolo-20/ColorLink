@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  ActiveTab, 
-  ProjectFormData, 
-  UserProfile, 
-  AiDiagnosisResult, 
+import {
+  ActiveTab,
+  ProjectFormData,
+  UserProfile,
+  AiDiagnosisResult,
   CalculationBreakdown,
   CartItem,
   StoreProduct,
@@ -14,7 +14,6 @@ import {
 } from './types';
 import { INITIAL_USER, INITIAL_SAMPLE_PROJECT, SAMPLE_CALCULATION, DEMO_PROFILES } from './data/mockData';
 import { STORE_PRODUCTS } from './data/storeProducts';
-import { INITIAL_CUSTOMER_ORDERS } from './data/mockOrders';
 import { Navbar } from './components/Navbar';
 import { ModernLoginScreen } from './components/ModernLoginScreen';
 import { StorefrontHome } from './components/StorefrontHome';
@@ -31,65 +30,41 @@ import { PaintCalculatorModal } from './components/PaintCalculatorModal';
 import { GeneralStoreCalculatorModal } from './components/GeneralStoreCalculatorModal';
 import { BranchLocatorModal } from './components/BranchLocatorModal';
 import { RoleDashboard } from './components/RoleDashboard';
-import { AdvisorProjectManager } from './components/AdvisorProjectManager';
-import { QualityReviewModule } from './components/QualityReviewModule';
-import { InventoryModule } from './components/InventoryModule';
 import { SmartCaptureForm } from './components/SmartCaptureForm';
 import { ClientProjectsManager } from './components/ClientProjectsManager';
 import { AutoValidationStep } from './components/AutoValidationStep';
 import { AiClassificationStep } from './components/AiClassificationStep';
 import { TechnicalEngineStep } from './components/TechnicalEngineStep';
-import { PipelineTraceability } from './components/PipelineTraceability';
 import { TechnicalPdfModal } from './components/TechnicalPdfModal';
 import { VirtualAssistantModal } from './components/VirtualAssistantModal';
 import { FloatingAssistantButton } from './components/FloatingAssistantButton';
-import { WelcomeLanding } from './components/WelcomeLanding';
+import { ResetPasswordScreen } from './components/ResetPasswordScreen';
 
 export default function App() {
-  // Authentication & Navigation State
+  // ---------- Sesión real ----------
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
   const [activeTab, setActiveTab] = useState<ActiveTab>('tienda');
   const [user, setUser] = useState<UserProfile>(DEMO_PROFILES.cliente);
 
-  // E-commerce Cart State
-  const [cartItems, setCartItems] = useState<CartItem[]>([
-    {
-      id: 'cart-1',
-      productId: 'viniltex-ultralavable',
-      name: 'Viniltex Ultralavable',
-      sizeId: 'galon-1',
-      sizeName: '1 Galón (3.785 L)',
-      price: 128000,
-      originalPrice: 145000,
-      quantity: 2,
-      colorId: 'col-blanco',
-      colorName: 'Blanco Almendra',
-      colorCode: '1001',
-      colorHex: '#FAF9F6',
-      image: 'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?w=600&auto=format&fit=crop&q=80',
-      selectedForCheckout: true
-    },
-    {
-      id: 'cart-2',
-      productId: 'rodillo-microfibra-9',
-      name: 'Rodillo Antigoteo Microfibra 9"',
-      sizeId: 'unidad-1',
-      sizeName: '1 Unidad (9 pulgadas)',
-      price: 28500,
-      originalPrice: 35000,
-      quantity: 1,
-      image: 'https://images.unsplash.com/photo-1562259949-e8e7689d7828?w=600&auto=format&fit=crop&q=80',
-      selectedForCheckout: true
-    }
-  ]);
+  useEffect(() => {
+    fetch('/api/auth/profile')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data?.success) {
+          setUser(data.user);
+          setIsLoggedIn(true);
+        }
+      })
+      .finally(() => setIsCheckingSession(false));
+  }, []);
 
-  // Store Exploration State
-  const [selectedProduct, setSelectedProduct] = useState<StoreProduct>(STORE_PRODUCTS[0]);
+  // ---------- Carrito (100% cliente, como lo diseñó AI Studio) ----------
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [selectedProduct, setSelectedProduct] = useState<StoreProduct | undefined>(undefined);
   const [selectedColorForDetail, setSelectedColorForDetail] = useState<string | undefined>(undefined);
   const [selectedCategory, setSelectedCategory] = useState<StoreCategory>('todos');
-  const [searchFilter, setSearchFilter] = useState<string>('');
-
-  // Modals State
+  const [searchFilter, setSearchFilter] = useState('');
   const [isMiniCartOpen, setIsMiniCartOpen] = useState<boolean>(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
   const [isCheckoutLoginPrompt, setIsCheckoutLoginPrompt] = useState<boolean>(false);
@@ -99,20 +74,114 @@ export default function App() {
   const [isPdfModalOpen, setIsPdfModalOpen] = useState<boolean>(false);
   const [isAssistantModalOpen, setIsAssistantModalOpen] = useState<boolean>(false);
 
-  // Customer Orders State
-  const [orders, setOrders] = useState<CustomerOrder[]>(INITIAL_CUSTOMER_ORDERS);
+  // ---------- Órdenes reales (ya no es data inventada) ----------
+  const [orders, setOrders] = useState<CustomerOrder[]>([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
 
-  // Auto-scroll to top on view changes (Product detail, Checkout, Cart, Orders)
+  const loadRealOrders = () => {
+    if (!isLoggedIn) return;
+    setLoadingOrders(true);
+    fetch('/api/orders')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          const mapped: CustomerOrder[] = data.orders.map((o: any) => {
+            const estadoLabels: Record<string, string> = {
+              confirmado: 'Comprado', en_alistamiento: 'Preparación', en_camino: 'Enviado',
+              listo_recoger: 'Listo para Retiro', entregado: 'Entregado', cancelado: 'Cancelado'
+            };
+            // Texto para el cliente: nunca mostramos quién del equipo movió el pedido ni notas internas
+            const descripcionCliente = (estado: string, comentario: string | null, isPickup: boolean): string => {
+              switch (estado) {
+                case 'confirmado': return 'Recibimos tu pedido y tu pago.';
+                case 'en_alistamiento': return 'Estamos preparando tu pedido en bodega.';
+                case 'en_camino': return 'Tu pedido salió hacia la dirección de entrega.';
+                case 'listo_recoger': return 'Tu pedido está listo. Presenta tu código de retiro en la tienda.';
+                case 'entregado': return isPickup ? 'Retiraste tu pedido en tienda.' : 'Tu pedido fue entregado.';
+                case 'cancelado': return comentario === 'Cancelado por el cliente.' ? 'Cancelaste este pedido.' : 'El pedido fue cancelado.';
+                default: return '';
+              }
+            };
+            const estadoCliente = (estado: string): 'comprado' | 'despacho' | 'enviado' | 'entregado' | 'cancelado' => {
+              switch (estado) {
+                case 'en_alistamiento':
+                case 'listo_recoger': return 'despacho';
+                case 'en_camino': return 'enviado';
+                case 'entregado': return 'entregado';
+                case 'cancelado': return 'cancelado';
+                default: return 'comprado';
+              }
+            };
+            const isPickup = o.metodoEntrega === 'recoger_tienda';
+            return {
+              id: o.ordenId,
+              orderNumber: `CL-${o.ordenId.slice(0, 8).toUpperCase()}`,
+              date: new Date(o.createdAt).toLocaleDateString('es-CO'),
+              total: o.total,
+              subtotal: Math.round(o.total / 1.19),
+              shipping: 0,
+              tax: o.total - Math.round(o.total / 1.19),
+              recipientName: user.name,
+              recipientEmail: user.email,
+              recipientPhone: user.phone,
+              shippingAddress: o.direccionEntrega || (user.address || 'Medellín, Antioquia'),
+              city: user.city || 'Medellín',
+              deliveryMethod: isPickup ? 'sucursal' : 'domicilio',
+              pickupCode: isPickup ? o.qrToken.slice(0, 8).toUpperCase() : undefined,
+              transactionId: o.ordenId,
+              status: estadoCliente(o.estado),
+              readyForPickup: o.estado === 'listo_recoger',
+              canCancel: o.estado === 'confirmado',
+              carrier: isPickup ? 'Retiro en Sucursal Asignada' : 'Flota ColorLink',
+              estimatedDelivery: isPickup ? 'Disponible en tienda' : 'Próximas 24-48 horas',
+              items: (o.items || []).map((it: any) => {
+                const catalogProduct = STORE_PRODUCTS.find(p => p.id === it.codigoProductoExterno);
+                return {
+                  id: it.ordenItemId,
+                  productId: it.codigoProductoExterno || '',
+                  name: it.nombreProducto,
+                  sizeName: catalogProduct?.sizes?.[0]?.name || '',
+                  colorName: '',
+                  colorHex: '',
+                  price: it.precioUnitario,
+                  quantity: it.cantidad,
+                  image: catalogProduct?.image || ''
+                };
+              }),
+              trackingHistory: (o.historial || []).map((h: any) => ({
+                status: h.estado,
+                label: estadoLabels[h.estado] || h.estado,
+                description: descripcionCliente(h.estado, h.comentario, isPickup),
+                date: new Date(h.fecha).toLocaleDateString('es-CO'),
+                isCompleted: true,
+                isCurrent: h.estado === o.estado
+              }))
+            } as CustomerOrder;
+          });
+          setOrders(mapped);
+        }
+      })
+      .finally(() => setLoadingOrders(false));
+  };
+
+  useEffect(() => {
+    if (isLoggedIn) loadRealOrders();
+  }, [isLoggedIn]);
+
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
   }, [activeTab, selectedProduct?.id]);
 
-  // Technical Project Data (Existing Architecture Preserved)
+  // ---------- Proyectos / Cotizaciones con IA (backend real, ya construido) ----------
   const [formData, setFormData] = useState<ProjectFormData>(INITIAL_SAMPLE_PROJECT);
   const [aiResult, setAiResult] = useState<AiDiagnosisResult | null>(null);
   const [calculation, setCalculation] = useState<CalculationBreakdown>(SAMPLE_CALCULATION);
+  const [isSavingProject, setIsSavingProject] = useState(false);
+  const [saveProjectError, setSaveProjectError] = useState('');
+  const [resetToken, setResetToken] = useState<string | null>(
+    () => new URLSearchParams(window.location.search).get('reset_token')
+  );
 
-  // Recalculate technical engine materials dynamically
   const updateCalculationForArea = (area: number, discountPct: number = 0) => {
     const areaEfectiva = area * 2;
     const rendimiento = 28.5;
@@ -120,14 +189,10 @@ export default function App() {
     const exactGal = (areaEfectiva / rendimiento) * (1 + desperdicio);
     const cunetes5G = Math.floor(exactGal / 5);
     const galones1G = Math.ceil(exactGal % 5);
-
     const cunetesImprimante = Math.ceil((area / 35) / 5) || 1;
     const galonesMasilla = Math.max(1, Math.ceil(area * 0.025));
-
     let costoPintura = (cunetes5G * 485000) + (galones1G * 115000);
-    if (discountPct > 0) {
-      costoPintura = costoPintura * (1 - discountPct / 100);
-    }
+    if (discountPct > 0) costoPintura = costoPintura * (1 - discountPct / 100);
     const costoImprimante = cunetesImprimante * 320000;
     const costoMasilla = galonesMasilla * 88000;
     const costoAccesorios = 180300;
@@ -156,7 +221,56 @@ export default function App() {
     });
   };
 
-  // Cart Operations
+  const handleSaveProjectAndProceed = async () => {
+    setIsSavingProject(true);
+    setSaveProjectError('');
+    try {
+      const response = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nombreProyecto: formData.proyecto,
+          ciudad: formData.ciudad,
+          area: formData.areaM2,
+          tipoSuperficie: formData.superficie,
+          ambiente: formData.ambiente,
+          color: formData.color,
+          colorHex: formData.colorHex,
+          cunetes5g: calculation.cunetesPintura5Gal,
+          galones1g: calculation.galonesPintura1Gal,
+          subtotal: calculation.costoEstimadoCOP.subtotal,
+          iva: calculation.costoEstimadoCOP.iva19,
+          total: calculation.costoEstimadoCOP.totalCOP,
+          diagnosticoPatologia: aiResult?.diagnostico_patologia,
+          severidad: aiResult?.severidad,
+          sistemaRecomendado: aiResult?.sistema_recomendado,
+          manoRecomendada: aiResult?.manos_recomendadas,
+          rendimientoEstimado: aiResult?.rendimiento_estimado_m2_gal,
+          confianzaIaPct: aiResult?.nivel_confianza_ia_pct,
+          requiereVisitaHumana: aiResult?.requiere_visita_especialista_human_in_the_loop,
+          imageBase64: formData.fotos[0]?.base64 || null
+        })
+      });
+      const data = await response.json();
+      if (!data.success) {
+        setSaveProjectError(data.error || 'No se pudo guardar el proyecto');
+        return;
+      }
+      setFormData(prev => ({ ...prev, id: data.project.proyectoId }));
+      setActiveTab('captura');
+    } catch {
+      setSaveProjectError('Error de conexión al guardar el proyecto');
+    } finally {
+      setIsSavingProject(false);
+    }
+  };
+
+  const handleAdvisorUpdateProject = (updated: ProjectFormData) => {
+    setFormData(updated);
+    updateCalculationForArea(updated.areaM2, updated.descuentoAsesorPct || 0);
+  };
+
+  // ---------- Carrito: operaciones (idénticas a AI Studio) ----------
   const handleAddToCart = (
     product: StoreProduct,
     size: StoreProductSize,
@@ -164,42 +278,44 @@ export default function App() {
     quantity: number = 1
   ) => {
     setCartItems(prev => {
-      const existingIdx = prev.findIndex(item => 
-        item.productId === product.id && 
-        item.sizeId === size.id && 
+      const existingIdx = prev.findIndex(item =>
+        item.productId === product.id &&
+        item.sizeId === size.id &&
         item.colorId === color?.id
       );
-
       if (existingIdx >= 0) {
         const updated = [...prev];
-        updated[existingIdx] = {
-          ...updated[existingIdx],
-          quantity: updated[existingIdx].quantity + quantity
-        };
+        updated[existingIdx] = { ...updated[existingIdx], quantity: updated[existingIdx].quantity + quantity };
         return updated;
-      } else {
-        const newItem: CartItem = {
-          id: `cart-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-          productId: product.id,
-          name: product.name,
-          sizeId: size.id,
-          sizeName: size.name,
-          price: size.price,
-          originalPrice: size.originalPrice,
-          quantity: quantity,
-          colorId: color?.id,
-          colorName: color?.name,
-          colorCode: color?.code,
-          colorHex: color?.hex,
-          image: product.image,
-          selectedForCheckout: true
-        };
-        return [...prev, newItem];
       }
+      const newItem: CartItem = {
+        id: `cart-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        productId: product.id,
+        name: product.name,
+        sizeId: size.id,
+        sizeName: size.name,
+        price: size.price,
+        originalPrice: size.originalPrice,
+        quantity,
+        colorId: color?.id,
+        colorName: color?.name,
+        colorCode: color?.code,
+        colorHex: color?.hex,
+        image: product.image,
+        selectedForCheckout: true
+      };
+      return [...prev, newItem];
     });
-
-    // Open slide-over mini-cart drawer for immediate visual confirmation
     setIsMiniCartOpen(true);
+  };
+
+  const handleProceedToCheckout = () => {
+    if (!isLoggedIn) {
+      setIsCheckoutLoginPrompt(true);
+      setIsLoginModalOpen(true);
+    } else {
+      setActiveTab('checkout');
+    }
   };
 
   const handleBuyNow = (
@@ -226,38 +342,11 @@ export default function App() {
   };
 
   const handleToggleSelectCartItem = (id: string) => {
-    setCartItems(prev => prev.map(item => 
-      item.id === id ? { ...item, selectedForCheckout: !item.selectedForCheckout } : item
-    ));
+    setCartItems(prev => prev.map(item => item.id === id ? { ...item, selectedForCheckout: !item.selectedForCheckout } : item));
   };
 
   const handleSelectAllCartItems = (selected: boolean) => {
     setCartItems(prev => prev.map(item => ({ ...item, selectedForCheckout: selected })));
-  };
-
-  // Order Management Handlers (Tracking & Cancellation)
-  const handleCancelOrder = (orderId: string) => {
-    setOrders(prev => prev.map(o => {
-      if (o.id === orderId && o.status === 'comprado') {
-        return {
-          ...o,
-          status: 'cancelado' as const,
-          canCancel: false,
-          trackingHistory: [
-            ...o.trackingHistory,
-            {
-              status: 'cancelado' as const,
-              label: 'Pedido Cancelado',
-              description: 'Cancelación procesada antes de despacho en bodega.',
-              date: 'Hoy',
-              isCompleted: true,
-              isCurrent: true
-            }
-          ]
-        };
-      }
-      return o;
-    }));
   };
 
   const handleBuyAgain = (item: CustomerOrder['items'][0]) => {
@@ -270,105 +359,61 @@ export default function App() {
     }
   };
 
-  const handleUpdateUserProfile = (updated: Partial<UserProfile>) => {
-    setUser(prev => ({ ...prev, ...updated }));
+  const handleUpdateUserProfile = async (updated: Partial<UserProfile>) => {
+    setUser(prev => ({ ...prev, ...updated })); // actualiza la UI de inmediato
+    try {
+      const res = await fetch('/api/auth/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+      const data = await res.json();
+      if (data.success) {
+        setUser(data.user); // confirma con lo que realmente quedó guardado
+      }
+    } catch (err) {
+      console.error('Error guardando el perfil:', err);
+    }
   };
 
-  const handleOrderCompleted = (orderNumber: string, orderDetails?: any) => {
+  // ---------- Checkout REAL: crea la orden de verdad en Postgres ----------
+  const handleOrderCompleted = async (orderNumber: string, orderDetails?: any) => {
     const purchasedItems = cartItems.filter(item => item.selectedForCheckout);
-    setCartItems(prev => prev.filter(item => !item.selectedForCheckout));
 
-    const total = purchasedItems.reduce((acc, it) => acc + it.price * it.quantity, 0);
-    const subtotal = Math.round(total / 1.19);
-    const tax = total - subtotal;
-    const isPickup = orderDetails?.deliveryMethod === 'sucursal' || orderDetails?.deliveryMethod === 'pickup';
-    const pickupCode = orderDetails?.pickupCode || `PK-${Math.floor(100000 + Math.random() * 900000)}`;
+    try {
+      const response = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: purchasedItems.map(it => ({ productId: it.productId, name: it.name, price: it.price, cantidad: it.quantity })),
+          metodoEntrega: (orderDetails?.deliveryMethod === 'sucursal' || orderDetails?.deliveryMethod === 'pickup') ? 'recoger_tienda' : 'domicilio',
+          direccionEntrega: orderDetails?.shippingAddress || undefined
+        })
+      });
+      const data = await response.json();
 
-    const newOrder: CustomerOrder = {
-      id: `ord-${Date.now()}`,
-      orderNumber: orderNumber || `CL-${Date.now().toString().slice(-7)}`,
-      date: 'Hoy',
-      total,
-      subtotal,
-      shipping: 0,
-      tax,
-      recipientName: user.name,
-      recipientEmail: user.email,
-      recipientPhone: user.phone,
-      shippingAddress: orderDetails?.shippingAddress || (user.address || 'Medellín, Antioquia'),
-      city: orderDetails?.city || (user.city || 'Medellín'),
-      deliveryMethod: isPickup ? 'sucursal' : 'domicilio',
-      pickupStore: isPickup ? (orderDetails?.pickupStore || 'Tienda ColorLink Guayabal - Cra. 52 # 14-80, Medellín') : undefined,
-      branchName: isPickup ? (orderDetails?.branchName || 'Tienda ColorLink Guayabal') : undefined,
-      pickupCode: isPickup ? pickupCode : undefined,
-      transactionId: `${Math.floor(1000000 + Math.random() * 9000000)}`,
-      status: 'comprado',
-      canCancel: true,
-      carrier: isPickup ? 'Retiro en Sucursal Asignada' : 'Flota ColorLink',
-      trackingNumber: isPickup ? pickupCode : undefined,
-      estimatedDelivery: isPickup ? 'Disponible hoy mismo en tienda' : 'Próximas 24-48 horas',
-      items: purchasedItems.map(it => ({
-        id: it.id,
-        productId: it.productId,
-        name: it.name,
-        sizeName: it.sizeName,
-        colorName: it.colorName,
-        colorHex: it.colorHex,
-        price: it.price,
-        quantity: it.quantity,
-        image: it.image
-      })),
-      trackingHistory: [
-        {
-          status: 'comprado',
-          label: isPickup ? 'Comprado — Listo para Retiro' : 'Comprado',
-          description: isPickup 
-            ? `Pedido confirmado. Reclama tu pedido presentando el código QR o código ${pickupCode} en la sucursal.` 
-            : 'Orden confirmada y validada en sistema ColorLink.',
-          date: 'Hoy',
-          isCompleted: true,
-          isCurrent: true
-        },
-        {
-          status: 'despacho',
-          label: isPickup ? 'Preparación en Sucursal' : 'Despacho',
-          description: isPickup 
-            ? 'Alistamiento de latas y tintometría en punto de venta.' 
-            : 'Preparación de cubetas y tintometría computarizada.',
-          isCompleted: isPickup,
-          isCurrent: isPickup
-        },
-        {
-          status: 'enviado',
-          label: isPickup ? 'Listo para Entregar' : 'Enviado',
-          description: isPickup 
-            ? 'Disponible en mostrador con tu documento y código QR.' 
-            : 'En camión especializado de reparto ColorLink.',
-          isCompleted: false,
-          isCurrent: false
-        },
-        {
-          status: 'entregado',
-          label: 'Entregado',
-          description: isPickup ? 'Retirado en sucursal con comprobante validado.' : 'Entrega en destino o recepción de obra.',
-          isCompleted: false,
-          isCurrent: false
-        }
-      ]
-    };
+      if (data.success) {
+        setCartItems(prev => prev.filter(item => !item.selectedForCheckout));
+        loadRealOrders();
+      }
+    } catch (err) {
+      console.error('Error creando la orden real:', err);
+    }
 
-    setOrders(prev => [newOrder, ...prev]);
     setActiveTab('pedidos');
   };
 
-  // Checkout Flow Logic: Verify login at point of payment!
-  const handleProceedToCheckout = () => {
-    if (!isLoggedIn) {
-      // User is not logged in: request login before proceeding to checkout
-      setIsCheckoutLoginPrompt(true);
-      setIsLoginModalOpen(true);
-    } else {
-      setActiveTab('checkout');
+  const handleCancelOrder = async (orderId: string) => {
+    try {
+      const res = await fetch(`/api/orders/${orderId}/cancel`, { method: 'PATCH' });
+      const data = await res.json();
+      if (!data.success) {
+        alert(data.error || 'No se pudo cancelar el pedido');
+        return;
+      }
+      loadRealOrders();
+    } catch (err) {
+      console.error('Error cancelando la orden:', err);
     }
   };
 
@@ -381,58 +426,61 @@ export default function App() {
       setIsCheckoutLoginPrompt(false);
       setActiveTab('checkout');
     } else {
-      // Direct to main page ('tienda') on normal login
       setActiveTab('tienda');
-    }
-
-    if (authenticatedUser.company) {
-      setFormData(prev => ({
-        ...prev,
-        cliente: authenticatedUser.company || prev.cliente,
-        emailContacto: authenticatedUser.email || prev.emailContacto,
-        telefonoContacto: authenticatedUser.phone || prev.telefonoContacto,
-        ciudad: authenticatedUser.city || prev.ciudad
-      }));
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch (err) {
+      console.error('Error al cerrar sesión:', err);
+    }
     setIsLoggedIn(false);
     setUser(DEMO_PROFILES.cliente);
+    setOrders([]);
     setActiveTab('tienda');
   };
 
   const handleLoadSampleCase = () => {
     setFormData(INITIAL_SAMPLE_PROJECT);
     updateCalculationForArea(85.0);
-    setIsLoggedIn(true);
     setActiveTab('captura');
-  };
-
-  const handleAdvisorUpdateProject = (updated: ProjectFormData) => {
-    setFormData(updated);
-    updateCalculationForArea(updated.areaM2, updated.descuentoAsesorPct || 0);
-  };
-
-  const handleQualityVerdict = (verdict: { aprobado: boolean; perito: string; fecha: string; notas: string }) => {
-    setFormData(prev => ({
-      ...prev,
-      dictamenCalidad: {
-        aprobado: verdict.aprobado,
-        perito: verdict.perito,
-        fechaRevision: verdict.fecha,
-        observacionSustrato: verdict.notas
-      },
-      estadoPipeline: verdict.aprobado ? 'aprobado_calidad' : 'revision_asesor'
-    }));
   };
 
   const totalCartCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
 
+  if (resetToken) {
+    const leaveResetScreen = () => {
+      window.history.replaceState({}, '', window.location.pathname);
+      setResetToken(null);
+      setActiveTab('tienda');
+    };
+
+    return (
+      <ResetPasswordScreen
+        token={resetToken}
+        onBackToStore={leaveResetScreen}
+        onGoToLogin={() => {
+          leaveResetScreen();
+          setIsCheckoutLoginPrompt(false);
+          setIsLoginModalOpen(true);
+        }}
+      />
+    );
+  }
+
+  if (isCheckingSession) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center">
+        <span className="text-slate-400 text-sm">Cargando...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans selection:bg-emerald-500 selection:text-white">
-      
-      {/* 1. Universal Top Navigation Bar */}
+
       <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -454,11 +502,7 @@ export default function App() {
         onSearchChange={(query) => setSearchFilter(query)}
         onSelectCategory={(cat) => {
           setSelectedCategory(cat);
-          if (cat === 'todos') {
-            setActiveTab('tienda');
-          } else {
-            setActiveTab('categoria');
-          }
+          setActiveTab(cat === 'todos' ? 'tienda' : 'categoria');
         }}
         onLoadSampleCase={handleLoadSampleCase}
         hasValidatedData={Boolean(formData.id)}
@@ -466,10 +510,8 @@ export default function App() {
         onOpenVirtualAssistant={() => setIsAssistantModalOpen(true)}
       />
 
-      {/* 2. Main Routing Section */}
       <main className="flex-1">
-        
-        {/* PUBLIC STOREFRONT (Pintuco Style - Image 1) */}
+
         {activeTab === 'tienda' && (
           <StorefrontHome
             onSelectProduct={(prod) => {
@@ -482,13 +524,7 @@ export default function App() {
               const defaultColor = prod.colors?.find(c => c.id === prod.defaultColorId) || prod.colors?.[0];
               handleAddToCart(prod, defaultSize, defaultColor, 1);
             }}
-            onNavigateToProjects={() => {
-              if (!isLoggedIn) {
-                setActiveTab('proyectos_teaser');
-              } else {
-                setActiveTab('dashboard');
-              }
-            }}
+            onNavigateToProjects={() => setActiveTab(isLoggedIn ? 'dashboard' : 'proyectos_teaser')}
             onOpenCalculator={(prod) => {
               setCalcProduct(prod);
               setIsPaintCalcOpen(true);
@@ -496,17 +532,12 @@ export default function App() {
             selectedCategory={selectedCategory}
             onSelectCategory={(cat) => {
               setSelectedCategory(cat);
-              if (cat === 'todos') {
-                setActiveTab('tienda');
-              } else {
-                setActiveTab('categoria');
-              }
+              setActiveTab(cat === 'todos' ? 'tienda' : 'categoria');
             }}
             searchFilter={searchFilter}
           />
         )}
 
-        {/* CATEGORY SPECIFIC VIEW (With Purpose, Lines, Color Cards - Image 2) */}
         {activeTab === 'categoria' && (
           <CategoryPageView
             category={selectedCategory}
@@ -530,7 +561,6 @@ export default function App() {
           />
         )}
 
-        {/* PROJECTS TEASER VIEW (Motivation & Preview for Unauthenticated Users) */}
         {activeTab === 'proyectos_teaser' && (
           <ProjectsTeaserView
             onOpenLogin={() => {
@@ -549,8 +579,7 @@ export default function App() {
           />
         )}
 
-        {/* PRODUCT DETAIL VIEW (Interactive Swatches, Can preview, Calculator - Image 5) */}
-        {activeTab === 'producto_detalle' && (
+        {activeTab === 'producto_detalle' && selectedProduct && (
           <ProductDetailView
             product={selectedProduct}
             initialColorId={selectedColorForDetail}
@@ -561,16 +590,10 @@ export default function App() {
           />
         )}
 
-        {/* STORE & BRANCH LOCATOR VIEW (Matching user's Image 1 design: departments filter, list & map interactive) */}
         {activeTab === 'tiendas' && (
-          <TiendasView
-            onSelectBranch={(branch) => {
-              setActiveTab('tienda');
-            }}
-          />
+          <TiendasView onNavigateToCatalog={() => setActiveTab('tienda')} />
         )}
 
-        {/* FULL CART VIEW (With item unchecking & subtotal recalculation - Image 3) */}
         {activeTab === 'carrito' && (
           <FullCartPage
             cartItems={cartItems}
@@ -583,7 +606,6 @@ export default function App() {
           />
         )}
 
-        {/* CHECKOUT PAYMENT VIEW (Delivery vs Branch Pickup, COP pricing, DIAN NIT - Image 4) */}
         {activeTab === 'checkout' && (
           <CheckoutPage
             cartItems={cartItems}
@@ -593,7 +615,6 @@ export default function App() {
           />
         )}
 
-        {/* CUSTOMER ORDERS & TRACKING VIEW (Tracking timeline, order status, cancelable if 'comprado') */}
         {activeTab === 'pedidos' && (
           <CustomerOrdersView
             orders={orders}
@@ -607,7 +628,6 @@ export default function App() {
           />
         )}
 
-        {/* CUSTOMER ACCOUNT & PROFILE HUB (Modal details: Profile, Security, Branches, Payments) */}
         {activeTab === 'mi_cuenta' && (
           <CustomerAccountHub
             user={user}
@@ -621,7 +641,6 @@ export default function App() {
           />
         )}
 
-        {/* TECHNICAL & PROJECT PLATFORM (Preserved rich engineering features) */}
         {activeTab === 'dashboard' && (
           isLoggedIn ? (
             <RoleDashboard
@@ -631,47 +650,15 @@ export default function App() {
               setActiveTab={setActiveTab}
               onOpenPdfModal={() => setIsPdfModalOpen(true)}
               onOpenAssistant={() => setIsAssistantModalOpen(true)}
+              onStartNewAiQuote={() => setActiveTab('nueva_cotizacion_ia')}
             />
           ) : (
             <ProjectsTeaserView
-              onOpenLogin={() => {
-                setIsCheckoutLoginPrompt(false);
-                setIsLoginModalOpen(true);
-              }}
-              onExploreStore={() => {
-                setSelectedCategory('todos');
-                setActiveTab('tienda');
-              }}
-              onOpenDemoProject={handleLoadSampleCase}
-              onOpenCalculator={() => {
-                setCalcProduct(undefined);
-                setIsPaintCalcOpen(true);
-              }}
+              onOpenLogin={() => { setIsCheckoutLoginPrompt(false); setIsLoginModalOpen(true); }}
+              onNavigateToStore={() => { setSelectedCategory('todos'); setActiveTab('tienda'); }}
+              onLoadDemo={handleLoadSampleCase}
             />
           )
-        )}
-
-        {activeTab === 'proyectos_asesor' && (
-          <AdvisorProjectManager
-            user={user}
-            activeProject={formData}
-            onUpdateProject={handleAdvisorUpdateProject}
-            onOpenPdfModal={() => setIsPdfModalOpen(true)}
-          />
-        )}
-
-        {activeTab === 'calidad_revision' && (
-          <QualityReviewModule
-            user={user}
-            formData={formData}
-            onUpdateQualityVerdict={handleQualityVerdict}
-          />
-        )}
-
-        {activeTab === 'inventario' && (
-          <InventoryModule
-            user={user}
-          />
         )}
 
         {activeTab === 'captura' && (
@@ -694,28 +681,32 @@ export default function App() {
             />
           ) : (
             <ProjectsTeaserView
-              onOpenLogin={() => {
-                setIsCheckoutLoginPrompt(false);
-                setIsLoginModalOpen(true);
-              }}
-              onExploreStore={() => {
-                setSelectedCategory('todos');
-                setActiveTab('tienda');
-              }}
+              onOpenLogin={() => { setIsCheckoutLoginPrompt(false); setIsLoginModalOpen(true); }}
+              onExploreStore={() => { setSelectedCategory('todos'); setActiveTab('tienda'); }}
               onOpenDemoProject={handleLoadSampleCase}
-              onOpenCalculator={() => {
-                setCalcProduct(undefined);
-                setIsPaintCalcOpen(true);
-              }}
+              onOpenCalculator={() => { setCalcProduct(undefined); setIsPaintCalcOpen(true); }}
             />
           )
+        )}
+
+        {activeTab === 'nueva_cotizacion_ia' && (
+          <SmartCaptureForm
+            formData={formData}
+            setFormData={setFormData}
+            user={user}
+            onSubmitToValidation={() => setActiveTab('validacion')}
+            onLoadHorizontePreset={() => {
+              setFormData(INITIAL_SAMPLE_PROJECT);
+              updateCalculationForArea(85.0);
+            }}
+          />
         )}
 
         {activeTab === 'validacion' && (
           <AutoValidationStep
             formData={formData}
             onProceedToAi={() => setActiveTab('ia_clasificacion')}
-            onBackToCapture={() => setActiveTab('captura')}
+            onBackToCapture={() => setActiveTab('nueva_cotizacion_ia')}
           />
         )}
 
@@ -724,32 +715,27 @@ export default function App() {
             formData={formData}
             aiResult={aiResult}
             setAiResult={setAiResult}
-            onProceedToEngine={() => setActiveTab('motor_tecnico')}
+            onProceedToTechnicalEngine={() => setActiveTab('motor_tecnico')}
             onBackToValidation={() => setActiveTab('validacion')}
+            onGoFixPhoto={() => setActiveTab('nueva_cotizacion_ia')}
           />
         )}
 
         {activeTab === 'motor_tecnico' && (
           <TechnicalEngineStep
             formData={formData}
+            aiResult={aiResult}
             calculation={calculation}
-            onProceedToPipeline={() => setActiveTab('trazabilidad_arquitectura')}
-            onOpenPdf={() => setIsPdfModalOpen(true)}
-          />
-        )}
-
-        {activeTab === 'trazabilidad_arquitectura' && (
-          <PipelineTraceability
-            formData={formData}
-            calculation={calculation}
-            onOpenPdf={() => setIsPdfModalOpen(true)}
-            onOpenAssistant={() => setIsAssistantModalOpen(true)}
+            onOpenPdfModal={() => setIsPdfModalOpen(true)}
+            onProceedToPipeline={handleSaveProjectAndProceed}
+            onBackToAi={() => setActiveTab('ia_clasificacion')}
+            isSaving={isSavingProject}
+            saveError={saveProjectError}
           />
         )}
 
       </main>
 
-      {/* 3. Slide-over Mini-Cart Drawer (Visual confirmation on quick add - Image 2) */}
       <MiniCartDrawer
         isOpen={isMiniCartOpen}
         onClose={() => setIsMiniCartOpen(false)}
@@ -760,7 +746,6 @@ export default function App() {
         onNavigateToCheckout={handleProceedToCheckout}
       />
 
-      {/* 4. Login Modal for Authentication */}
       {isLoginModalOpen && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4">
           <div className="w-full max-w-5xl my-auto">
@@ -776,7 +761,6 @@ export default function App() {
         </div>
       )}
 
-      {/* 5. Paint Calculator Modal (Product-Specific vs General Store-Wide) */}
       {calcProduct ? (
         <PaintCalculatorModal
           isOpen={isPaintCalcOpen}
@@ -799,18 +783,20 @@ export default function App() {
           onClose={() => setIsPaintCalcOpen(false)}
           onSelectProduct={(p) => {
             setSelectedProduct(p);
-            setActiveTab('producto');
+            setActiveTab('producto_detalle');
+          }}
+          onAddToCart={(product, size, color, quantity) => {
+            handleAddToCart(product, size, color, quantity);
+            setIsPaintCalcOpen(false);
           }}
         />
       )}
 
-      {/* 6. Branch Locator Modal */}
       <BranchLocatorModal
         isOpen={isBranchLocatorOpen}
         onClose={() => setIsBranchLocatorOpen(false)}
       />
 
-      {/* 7. PDF Technical Sheet Modal */}
       <TechnicalPdfModal
         isOpen={isPdfModalOpen}
         onClose={() => setIsPdfModalOpen(false)}
@@ -820,38 +806,21 @@ export default function App() {
         user={user}
       />
 
-      {/* 8. Virtual Assistant Modal */}
       <VirtualAssistantModal
         isOpen={isAssistantModalOpen}
         onClose={() => setIsAssistantModalOpen(false)}
         user={user}
         formData={formData}
-        onOpenCalculator={() => {
-          setIsAssistantModalOpen(false);
-          setCalcProduct(undefined);
-          setIsPaintCalcOpen(true);
-        }}
-        onOpenBranchLocator={() => {
-          setIsAssistantModalOpen(false);
-          setIsBranchLocatorOpen(true);
-        }}
-        onNavigateCategory={(cat) => {
-          setIsAssistantModalOpen(false);
-          setSelectedCategory(cat);
-          setActiveTab('categoria');
-        }}
       />
 
-      {/* Floating Robot Virtual Assistant Button (Bottom-Right) */}
       <FloatingAssistantButton
         isOpen={isAssistantModalOpen}
         onClick={() => setIsAssistantModalOpen(true)}
       />
 
-      {/* 9. Commercial Footer */}
       <footer className="bg-[#081224] border-t border-slate-800/90 text-slate-400 text-xs font-sans">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 grid grid-cols-1 md:grid-cols-4 gap-8">
-          
+
           <div className="space-y-3">
             <div className="flex items-center gap-2.5">
               <div className="relative w-8 h-8 flex items-center justify-center shrink-0">
@@ -888,8 +857,8 @@ export default function App() {
           <div>
             <h4 className="font-extrabold text-white uppercase text-[11px] tracking-wider mb-3">Servicios para Obras</h4>
             <ul className="space-y-1.5 text-[11px]">
-              <li><button type="button" onClick={() => { if (!isLoggedIn) setActiveTab('proyectos_teaser'); else setActiveTab('captura'); }} className="hover:text-white cursor-pointer">Cubicaje & Cotizador de Cuñetes</button></li>
-              <li><button type="button" onClick={() => { if (!isLoggedIn) setActiveTab('proyectos_teaser'); else setActiveTab('ia_clasificacion'); }} className="hover:text-white cursor-pointer">Diagnóstico de Patologías con IA</button></li>
+              <li><button type="button" onClick={() => setActiveTab(isLoggedIn ? 'captura' : 'proyectos_teaser')} className="hover:text-white cursor-pointer">Cubicaje & Cotizador de Cuñetes</button></li>
+              <li><button type="button" onClick={() => setActiveTab(isLoggedIn ? 'nueva_cotizacion_ia' : 'proyectos_teaser')} className="hover:text-white cursor-pointer">Diagnóstico de Patologías con IA</button></li>
               <li><button type="button" onClick={() => { setCalcProduct(undefined); setIsPaintCalcOpen(true); }} className="hover:text-white cursor-pointer">Calculadora de Pintura por m²</button></li>
               <li><button type="button" onClick={() => setIsBranchLocatorOpen(true)} className="hover:text-white cursor-pointer">Puntos de Venta & Retiro Express</button></li>
             </ul>
