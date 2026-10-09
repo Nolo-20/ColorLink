@@ -18,15 +18,52 @@ export const ToolGraphic: React.FC<ToolGraphicProps> = ({
   subType
 }) => {
   // Infer tool type from productName if not strictly provided
-  const normalized = (String(toolType) + ' ' + productName).toLowerCase();
+  // El nombre del producto manda; el tipo recibido solo se usa si el nombre no lo dice
+  const normalized = (productName + ' ' + String(toolType)).toLowerCase();
   
   let resolvedType: ToolType = 'brocha';
-  if (normalized.includes('rodillo')) resolvedType = 'rodillo';
+  const nameOnly = productName.toLowerCase();
+  if (/esp[aá]tula|rasqueta/.test(nameOnly)) resolvedType = 'espatula';
+  else if (/cinta|enmascarar|masking/.test(nameOnly)) resolvedType = 'cinta';
+  else if (/bandeja|cubeta/.test(nameOnly)) resolvedType = 'bandeja';
+  else if (/extensi[oó]n|telesc[oó]pica/.test(nameOnly)) resolvedType = 'extension';
+  else if (normalized.includes('rodillo')) resolvedType = 'rodillo';
   else if (normalized.includes('brocha') || normalized.includes('pincel')) resolvedType = 'brocha';
   else if (normalized.includes('cinta') || normalized.includes('enmascarar') || normalized.includes('masking')) resolvedType = 'cinta';
   else if (normalized.includes('espatula') || normalized.includes('espátula') || normalized.includes('rasqueta')) resolvedType = 'espatula';
   else if (normalized.includes('bandeja') || normalized.includes('cubeta')) resolvedType = 'bandeja';
   else if (normalized.includes('extension') || normalized.includes('extensión') || normalized.includes('telescopica') || normalized.includes('telescópica') || normalized.includes('varilla')) resolvedType = 'extension';
+
+  // Foto real de la herramienta (public/products/tool-*.webp)
+  const photo = (() => {
+    if (normalized.includes('angular')) return 'brocha-angular';
+    switch (resolvedType) {
+      case 'brocha': return /\b4\b|4"|4 pulg|maestra|ancha/.test(normalized) ? 'brocha-4' : 'brocha-3';
+      case 'rodillo': return /mini|espuma|4"|4 pulg/.test(normalized) ? 'mini-rodillo' : 'rodillo-9';
+      case 'cinta': return 'cinta';
+      case 'espatula': return 'espatula';
+      case 'bandeja': return 'bandeja';
+      case 'extension': return 'extension';
+      default: return null;
+    }
+  })();
+  if (photo) {
+    return (
+      <div className={`relative flex items-center justify-center select-none ${className}`}>
+        <div className="h-full max-w-full aspect-square bg-white rounded-2xl overflow-hidden">
+          <img
+            src={`/products/tool-${photo}.webp`}
+            srcSet={`/products/tool-${photo}-sm.webp 320w, /products/tool-${photo}.webp 900w`}
+            sizes="(min-width: 1024px) 420px, 240px"
+            alt={productName}
+            loading="lazy"
+            draggable={false}
+            className="w-full h-full object-contain"
+          />
+        </div>
+      </div>
+    );
+  }
 
   // -------------------------------------------------------------------------
   // 1. BROCHA CLÁSICA PROFESIONAL PARA PINTAR PAREDES
