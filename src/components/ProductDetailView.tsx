@@ -224,7 +224,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
                       <PaintCanGraphic
                         colorHex={selectedColor?.hex || '#FAF9F6'}
                         colorName={selectedColor?.name || 'Blanco Nieve'}
-                        productLine={product.name.split(' ')[0]}
+                        productLine={product.name}
                         sizeName={selectedSize.name}
                         category={product.category}
                         className="w-56 h-72 sm:w-64 sm:h-80 drop-shadow-2xl"

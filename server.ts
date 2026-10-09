@@ -1026,7 +1026,8 @@ async function startServer() {
         include: {
           evidencias: { select: { evidenciaId: true, nombreArchivo: true, fechaRegistro: true }, orderBy: { fechaRegistro: 'desc' } },
           diagnostico: true,
-          cotizaciones: { orderBy: { createdAt: 'desc' } },
+          cotizaciones: { orderBy: { createdAt: 'desc' }, include: { items: { include: { producto: { select: { nombre: true, presentacion: true } } } } } },
+          despacho: true,
           empresa: { include: { ciudad: true } },
           historial: { orderBy: { fecha: 'desc' } }
         },

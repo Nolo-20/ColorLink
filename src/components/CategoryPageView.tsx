@@ -781,7 +781,7 @@ export const CategoryPageView: React.FC<CategoryPageViewProps> = ({
                         <PaintCanGraphic 
                           colorHex={prod.colors[0]?.hex || '#FAF9F6'} 
                           colorName={prod.colors[0]?.name || prod.name}
-                          productLine={prod.name.split(' ')[0]}
+                          productLine={prod.name}
                         />
                       </div>
                       <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">{prod.categoryLabel}</span>
@@ -890,7 +890,7 @@ export const CategoryPageView: React.FC<CategoryPageViewProps> = ({
                             <PaintCanGraphic
                               colorHex={item.colorHex}
                               colorName={item.toneName}
-                              productLine={group.title.split(' ')[0]}
+                              productLine={`${group.title} ${item.name}`}
                               category={category}
                               className="w-32 h-40"
                             />

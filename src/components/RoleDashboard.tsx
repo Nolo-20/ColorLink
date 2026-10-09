@@ -104,13 +104,6 @@ export const RoleDashboard: React.FC<RoleDashboardProps> = ({
                 <Plus className="w-4 h-4" />
                 <span>Nuevo Proyecto de Pintura</span>
               </button>
-              <button
-                onClick={onOpenPdfModal}
-                className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl border border-white/20 flex items-center gap-2 transition-all cursor-pointer"
-              >
-                <FileText className="w-4 h-4 text-cyan-300" />
-                <span>Descargar Ficha PDF</span>
-              </button>
             </>
           )}
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ProjectFormData, CalculationBreakdown, UserProfile, SurfaceType, SpaceEnvironment, SurfaceCondition, ColorTone } from '../types';
 import { COLOR_PALETTES } from '../data/mockData';
+import { ProjectDetailModal } from './ProjectDetailModal';
 import {
   Building2,
   MapPin,
@@ -62,6 +63,7 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
   const [clientProjects, setClientProjects] = useState<any[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const [detailProject, setDetailProject] = useState<any | null>(null);
   const [uploadError, setUploadError] = useState<Record<string, string>>({});
 
   // El cliente sube la imagen que le pidió el equipo; el proyecto vuelve a "en revisión"
@@ -309,12 +311,11 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
                     </div>
 
                     <button
-                      onClick={onOpenPdfModal}
-                      className="p-2.5 bg-slate-900 hover:bg-emerald-600 text-white rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1 text-xs font-bold"
-                      title="Descargar Ficha y Cotización PDF"
+                      onClick={() => setDetailProject(prj)}
+                      className="px-3 py-2 bg-[#14216B] hover:bg-[#0f1a55] text-white rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1 text-xs font-bold"
                     >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>PDF</span>
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>Ver detalle</span>
                     </button>
                   </div>
                 </div>
@@ -614,6 +615,15 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
         </div>
       )}
 
+      {detailProject && (
+        <ProjectDetailModal
+          project={detailProject}
+          estado={ESTADO_CLIENTE[detailProject.estadoPipeline] || ESTADO_CLIENTE.en_revision}
+          clienteNombre={user.name}
+          clienteEmail={user.email}
+          onClose={() => setDetailProject(null)}
+        />
+      )}
     </div>
   );
 };

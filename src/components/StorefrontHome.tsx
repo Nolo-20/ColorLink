@@ -471,7 +471,7 @@ export const StorefrontHome: React.FC<StorefrontHomeProps> = ({
                       <PaintCanGraphic
                         colorHex={defaultColor?.hex || '#FAF9F6'}
                         colorName={defaultColor?.name || product.name}
-                        productLine={product.name.split(' ')[0]}
+                        productLine={product.name}
                         className="w-32 h-44"
                       />
                     </div>
