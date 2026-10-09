@@ -84,7 +84,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
           setRegEmail(userData.email);
           setRegFirstName(userData.firstName || 'Cliente');
           setRegLastName(userData.lastName || '');
-          setInfoNotice(`Cuenta de Google (${userData.email}) validada. Completa los datos de tu empresa.`);
+          setInfoNotice(`Cuenta de Google (${userData.email}) validada. Completa tus datos para terminar el registro.`);
           setAuthView('register_page');
         } else {
           onLoginSuccess(userData);
@@ -225,7 +225,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
       if (data.success && !data.isRegistered) {
         // Código correcto, pero aún no tiene cuenta: completa el registro
         extractEmailDetails(emailLower);
-        setInfoNotice(`Correo ${emailLower} verificado con éxito. Completa los datos de tu empresa para terminar.`);
+        setInfoNotice(`Correo ${emailLower} verificado con éxito. Completa tus datos para terminar.`);
         setAuthView('register_page');
         return;
       }
@@ -419,11 +419,11 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
         <div className="flex flex-col items-center text-center mb-6">
           <BrandLogo on="light" className="h-10 mb-4" />
           <h2 className="text-xl sm:text-2xl font-black text-[#002855] tracking-tight uppercase">
-            {authView === 'register_page' ? 'REGISTRO CORPORATIVO' : 'INICIA SESIÓN O REGÍSTRATE'}
+            {authView === 'register_page' ? 'CREA TU CUENTA' : 'INICIA SESIÓN O REGÍSTRATE'}
           </h2>
           <p className="text-sm text-slate-600 font-semibold mt-1">
             {authView === 'register_page'
-              ? 'Completa los datos de tu empresa'
+              ? (personType === 'juridica' ? 'Completa los datos de tu empresa' : 'Completa tus datos personales')
               : 'Escoge una opción para ingresar'}
           </p>
         </div>
