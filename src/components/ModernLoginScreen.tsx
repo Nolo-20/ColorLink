@@ -36,7 +36,7 @@ const cleanNit = (v: string) => {
   return digits.length > 9 ? `${digits.slice(0, 9)}-${digits.slice(9, 10)}` : digits;
 };
 
-type AuthView = 'main_menu' | 'email_code' | 'verify_otp' | 'register_page' | 'forgot_password';
+type AuthView = 'main_menu' | 'signup_start' | 'email_code' | 'verify_otp' | 'register_page' | 'forgot_password';
 
 export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
   onLoginSuccess,
@@ -62,6 +62,8 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
   const [regPhone, setRegPhone] = useState('');
   const [regPassword, setRegPassword] = useState(''); // NUEVO: contraseña real, ya no se inventa una por defecto
   const [personType, setPersonType] = useState<'natural' | 'juridica'>('natural');
+  // true cuando la cuenta ya existe (Google) y solo falta completar los datos
+  const [profileMode, setProfileMode] = useState(false);
   const [regDocType, setRegDocType] = useState('CC');
   const [regTaxRegime, setRegTaxRegime] = useState<'comun' | 'simplificado' | 'gran_contribuyente'>('comun');
 
@@ -84,6 +86,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
           setRegEmail(userData.email);
           setRegFirstName(userData.firstName || 'Cliente');
           setRegLastName(userData.lastName || '');
+          setProfileMode(true);
           setInfoNotice(`Cuenta de Google (${userData.email}) validada. Completa tus datos para terminar el registro.`);
           setAuthView('register_page');
         } else {
@@ -225,6 +228,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
       if (data.success && !data.isRegistered) {
         // Código correcto, pero aún no tiene cuenta: completa el registro
         extractEmailDetails(emailLower);
+        setProfileMode(false);
         setInfoNotice(`Correo ${emailLower} verificado con éxito. Completa tus datos para terminar.`);
         setAuthView('register_page');
         return;
@@ -267,9 +271,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
       }
 
       if (data.notRegistered) {
-        extractEmailDetails(emailLower);
-        setInfoNotice(`El correo "${emailLower}" aún no tiene una cuenta. Completa el formulario para registrarte.`);
-        setAuthView('register_page');
+        setErrorMessage(`No existe una cuenta con "${emailLower}". Si eres nuevo, toca "Regístrese" y verifica tu correo.`);
         return;
       }
 
@@ -319,6 +321,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return 'El correo no es válido.';
     if (!/^3[0-9]{9}$/.test(regPhone) && !/^60[0-9]{8}$/.test(regPhone)) return 'El celular debe tener 10 números y empezar por 3 (o un fijo 60X de 10 dígitos).';
     if (regAddress && regAddress.trim().length < 5) return 'La dirección es muy corta.';
+    if (profileMode && !regPassword) return null; // con Google la contraseña es opcional
     if (regPassword.length < 8) return 'La contraseña debe tener al menos 8 caracteres.';
     if (!/[A-Z]/.test(regPassword)) return 'La contraseña debe incluir una letra mayúscula.';
     if (!/[0-9]/.test(regPassword)) return 'La contraseña debe incluir un número.';
@@ -337,10 +340,6 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
       return;
     }
 
-    if (!regPassword || regPassword.length < 8) {
-      setErrorMessage('Define una contraseña de al menos 8 caracteres para tu cuenta.');
-      return;
-    }
 
     setIsLoading(true);
     const emailLower = (regEmail || userEmail).trim().toLowerCase();
@@ -360,7 +359,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
         password: regPassword
       };
 
-      const res = await fetch('/api/auth/register', {
+      const res = await fetch(profileMode ? '/api/auth/complete-profile' : '/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -419,12 +418,14 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
         <div className="flex flex-col items-center text-center mb-6">
           <BrandLogo on="light" className="h-10 mb-4" />
           <h2 className="text-xl sm:text-2xl font-black text-[#002855] tracking-tight uppercase">
-            {authView === 'register_page' ? 'CREA TU CUENTA' : 'INICIA SESIÓN O REGÍSTRATE'}
+            {authView === 'register_page' || authView === 'signup_start' ? 'CREA TU CUENTA' : 'INICIA SESIÓN O REGÍSTRATE'}
           </h2>
           <p className="text-sm text-slate-600 font-semibold mt-1">
             {authView === 'register_page'
               ? (personType === 'juridica' ? 'Completa los datos de tu empresa' : 'Completa tus datos personales')
-              : 'Escoge una opción para ingresar'}
+              : authView === 'signup_start'
+                ? 'Primero verificamos tu correo'
+                : 'Escoge una opción para ingresar'}
           </p>
         </div>
 
@@ -538,8 +539,9 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  extractEmailDetails(userEmail);
-                  setAuthView('register_page');
+                  setErrorMessage('');
+                  setInfoNotice('');
+                  setAuthView('signup_start');
                 }}
                 className="text-xs font-bold text-[#002855] hover:underline cursor-pointer"
               >
@@ -596,6 +598,41 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
         {/* =================================================================== */}
         {/* EMAIL FOR OTP CODE VIEW */}
         {/* =================================================================== */}
+        {authView === 'signup_start' && (
+          <div className="space-y-4">
+            <p className="text-xs text-slate-500 text-center leading-relaxed">
+              Elige cómo verificar tu correo. Después completas tus datos y quedas registrado.
+            </p>
+            <button
+              type="button"
+              onClick={() => { setErrorMessage(''); setAuthView('email_code'); }}
+              className="w-full py-3.5 px-4 bg-white hover:bg-slate-50 text-[#002855] font-black text-xs sm:text-sm rounded-lg border-2 border-[#002855] cursor-pointer transition-colors uppercase tracking-wider shadow-xs"
+            >
+              Recibir código por e-mail
+            </button>
+            <button
+              type="button"
+              onClick={handleOpenGooglePopup}
+              disabled={isLoading}
+              className="w-full py-3.5 px-4 bg-white hover:bg-slate-50 text-[#002855] font-black text-xs sm:text-sm rounded-lg border-2 border-[#002855] cursor-pointer transition-colors tracking-wider flex items-center justify-center gap-3 shadow-xs"
+            >
+              <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.66-2.84z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15A10.95 10.95 0 0 0 12 1 11 11 0 0 0 2.18 7.06l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38z"/>
+              </svg>
+              REGISTRARME CON GOOGLE
+            </button>
+            <div className="text-center pt-1">
+              <span className="text-xs text-slate-500">¿Ya tienes cuenta? </span>
+              <button type="button" onClick={() => { setErrorMessage(''); setAuthView('main_menu'); }} className="text-xs font-bold text-[#002855] hover:underline cursor-pointer">
+                Inicia sesión
+              </button>
+            </div>
+          </div>
+        )}
+
         {authView === 'email_code' && (
           <form onSubmit={(e) => { e.preventDefault(); handleRequestEmailCode(); }} className="space-y-4">
             <div className="text-center space-y-1">
@@ -845,13 +882,14 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                 </div>
 
                 <div>
-                  <label className="text-[10px] font-bold text-slate-700 block mb-0.5">Correo Personal / Contacto *</label>
+                  <label className="text-[10px] font-bold text-slate-700 block mb-0.5">Correo Personal / Contacto * <span className="text-emerald-700 font-semibold">(verificado)</span></label>
                   <input
                     type="email"
                     value={regEmail || userEmail}
-                    onChange={(e) => setRegEmail(e.target.value.replace(/\s/g, '').slice(0, 100))}
+                    readOnly
+                    title="Correo verificado"
                     placeholder="tucorreo@gmail.com"
-                    className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
+                    className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-200 bg-slate-100 text-slate-600 cursor-not-allowed focus:outline-none"
                     required
                   />
                 </div>
@@ -954,13 +992,14 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                 </div>
 
                 <div>
-                  <label className="text-[10px] font-bold text-slate-700 block mb-0.5">Correo Corporativo *</label>
+                  <label className="text-[10px] font-bold text-slate-700 block mb-0.5">Correo Corporativo * <span className="text-emerald-700 font-semibold">(verificado)</span></label>
                   <input
                     type="email"
                     value={regEmail || userEmail}
-                    onChange={(e) => setRegEmail(e.target.value.replace(/\s/g, '').slice(0, 100))}
+                    readOnly
+                    title="Correo verificado"
                     placeholder="compras@constructorabc.com"
-                    className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
+                    className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-200 bg-slate-100 text-slate-600 cursor-not-allowed focus:outline-none"
                     required
                   />
                 </div>

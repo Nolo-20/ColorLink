@@ -202,6 +202,38 @@ function validatePasswordPolicy(pw: string): string | null {
   return null;
 }
 
+
+// Valida y limpia los datos del registro (persona natural o jurídica)
+function validateSignupFields(body: any, opts: { requirePassword: boolean }):
+  | { error: string }
+  | { nombre: string; apellido: string; correo: string; tipoPersona: 'natural' | 'juridica'; documento: string; empresa: string; direccion: string; ciudad: string; celular: string } {
+  const { firstName, lastName, email, company, documentId, address, city, phone, password, personType, documentType } = body || {};
+  const txt = (v: any) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : '');
+  const nombre = txt(firstName), apellido = txt(lastName), correo = txt(email).toLowerCase();
+  const tipoPersona: 'natural' | 'juridica' = personType === 'juridica' ? 'juridica' : 'natural';
+  const tipoDoc = tipoPersona === 'juridica' ? 'NIT' : (['CC', 'CE', 'PAS'].includes(documentType) ? documentType : 'CC');
+  const documento = txt(documentId).toUpperCase();
+  const empresa = txt(company), direccion = txt(address), ciudad = txt(city), celular = txt(phone).replace(/\D/g, '');
+  const soloLetras = /^[A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+( [A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+)*$/;
+
+  if (!soloLetras.test(nombre) || nombre.length < 2 || nombre.length > 40) return { error: 'El nombre solo puede tener letras (2 a 40 caracteres).' };
+  if (!soloLetras.test(apellido) || apellido.length < 2 || apellido.length > 40) return { error: 'El apellido solo puede tener letras (2 a 40 caracteres).' };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(correo) || correo.length > 100) return { error: 'El correo no es válido.' };
+  const docOk = ({ CC: /^[0-9]{6,10}$/, CE: /^[A-Z0-9]{6,12}$/, PAS: /^[A-Z0-9]{5,12}$/, NIT: /^[0-9]{9}-[0-9]$/ } as Record<string, RegExp>)[tipoDoc].test(documento);
+  if (!docOk) return { error: tipoDoc === 'NIT' ? 'El NIT debe tener 9 números y el dígito de verificación (ej. 901234567-8).' : 'El número de documento no es válido para el tipo seleccionado.' };
+  if (tipoPersona === 'juridica' && (empresa.length < 3 || empresa.length > 100)) return { error: 'La razón social debe tener entre 3 y 100 caracteres.' };
+  if (!/^3[0-9]{9}$/.test(celular) && !/^60[0-9]{8}$/.test(celular)) return { error: 'El celular debe tener 10 números y empezar por 3.' };
+  if (direccion.length > 120 || (direccion && direccion.length < 5)) return { error: 'La dirección no es válida.' };
+  if (ciudad.length > 60) return { error: 'La ciudad no es válida.' };
+  if (opts.requirePassword || password) {
+    const policyError = validatePasswordPolicy(String(password || ''));
+    if (policyError) return { error: policyError };
+  }
+  return { nombre, apellido, correo, tipoPersona, documento, empresa, direccion, ciudad, celular };
+}
+
+const SIGNUP_COOKIE = { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' as const, maxAge: 30 * 60 * 1000 };
+
 // El token incluye una huella de la contraseña actual: cuando la contraseña cambia, el enlace deja de servir.
 function passwordFingerprint(passwordHash: string | null) {
   return createHash('sha256').update(passwordHash || '').digest('hex').slice(0, 16);
@@ -429,6 +461,7 @@ async function startServer() {
         return res.json({ success: true, isRegistered: true, user: safeUser(existingUser) });
       }
 
+      res.cookie('signup', jwt.sign({ email: cleanEmail, purpose: 'signup' }, JWT_SECRET, { expiresIn: '30m' }), SIGNUP_COOKIE);
       return res.json({
         success: true,
         isRegistered: false,
@@ -470,29 +503,17 @@ async function startServer() {
   // 3. Registro (siempre como rol "cliente")
   app.post('/api/auth/register', authLimiter, async (req, res) => {
     try {
-      const { firstName, lastName, email, company, documentId, address, city, phone, password, personType, documentType } = req.body;
-      const txt = (v: any) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : '');
-      const nombre = txt(firstName), apellido = txt(lastName), correo = txt(email).toLowerCase();
-      const tipoPersona = personType === 'juridica' ? 'juridica' : 'natural';
-      const tipoDoc = tipoPersona === 'juridica' ? 'NIT' : (['CC', 'CE', 'PAS'].includes(documentType) ? documentType : 'CC');
-      const documento = txt(documentId).toUpperCase();
-      const empresa = txt(company), direccion = txt(address), ciudad = txt(city), celular = txt(phone).replace(/\D/g, '');
-      const soloLetras = /^[A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+( [A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+)*$/;
+      const v = validateSignupFields(req.body, { requirePassword: true });
+      if ('error' in v) return res.status(400).json({ success: false, error: v.error });
+      const { nombre, apellido, correo, tipoPersona, documento, empresa, direccion, ciudad, celular } = v;
 
-      const fail = (error: string) => res.status(400).json({ success: false, error });
-      if (!soloLetras.test(nombre) || nombre.length < 2 || nombre.length > 40) return fail('El nombre solo puede tener letras (2 a 40 caracteres).');
-      if (!soloLetras.test(apellido) || apellido.length < 2 || apellido.length > 40) return fail('El apellido solo puede tener letras (2 a 40 caracteres).');
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(correo) || correo.length > 100) return fail('El correo no es válido.');
-      const docOk = {
-        CC: /^[0-9]{6,10}$/, CE: /^[A-Z0-9]{6,12}$/, PAS: /^[A-Z0-9]{5,12}$/, NIT: /^[0-9]{9}-[0-9]$/
-      }[tipoDoc]!.test(documento);
-      if (!docOk) return fail(tipoDoc === 'NIT' ? 'El NIT debe tener 9 números y el dígito de verificación (ej. 901234567-8).' : 'El número de documento no es válido para el tipo seleccionado.');
-      if (tipoPersona === 'juridica' && (empresa.length < 3 || empresa.length > 100)) return fail('La razón social debe tener entre 3 y 100 caracteres.');
-      if (!/^3[0-9]{9}$/.test(celular) && !/^60[0-9]{8}$/.test(celular)) return fail('El celular debe tener 10 números y empezar por 3.');
-      if (direccion.length > 120 || (direccion && direccion.length < 5)) return fail('La dirección no es válida.');
-      if (ciudad.length > 60) return fail('La ciudad no es válida.');
-      const policyError = validatePasswordPolicy(String(password || ''));
-      if (policyError) return fail(policyError);
+      // Solo se registra un correo que ya fue verificado (código por correo o Google)
+      let verificado: any = null;
+      try { verificado = jwt.verify(req.cookies?.signup || '', JWT_SECRET); } catch { verificado = null; }
+      if (!verificado || verificado.purpose !== 'signup' || verificado.email !== correo) {
+        return res.status(403).json({ success: false, error: 'Primero verifica tu correo con el código que te enviamos o con Google.' });
+      }
+      const password = req.body.password;
 
       const cleanEmail = correo;
 
@@ -532,6 +553,7 @@ async function startServer() {
       const token = issueSessionToken(newUser);
       res.cookie('session', token, cookieOptions);
 
+      res.clearCookie('signup');
       sendWelcomeEmail(newUser.email, newUser.nombre).catch(err => console.error('[welcome-email]', err));
       res.json({ success: true, user: safeUser(newUser), message: 'Registro completado con éxito' });
     } catch (error: any) {
@@ -710,7 +732,7 @@ async function startServer() {
       const token = issueSessionToken(user);
       res.cookie('session', token, cookieOptions);
 
-      const needsProfile = !user.company; // le falta completar datos de empresa
+      const needsProfile = !user.documentId; // le faltan sus datos (documento, celular...)
       return res.send(renderAuthResultPage(true, '', { ...safeUser(user), needsProfile }));
     } catch (e: any) {
       console.warn('[oauth-callback]', e.message);
@@ -908,23 +930,26 @@ async function startServer() {
   // 8. Completar perfil (empresa) para un usuario ya autenticado (ej. tras login social)
   app.post('/api/auth/complete-profile', requireAuth, async (req: any, res) => {
     try {
-      const { company, documentId, address, city, phone } = req.body;
-      if (!company || !documentId || !address) {
-        return res.status(400).json({ success: false, error: 'Empresa, documento y dirección son requeridos' });
-      }
+      const actual = await prisma.usuario.findUnique({ where: { usuarioId: req.user.id } });
+      if (!actual) return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+      const v = validateSignupFields({ ...req.body, email: actual.email }, { requirePassword: false });
+      if ('error' in v) return res.status(400).json({ success: false, error: v.error });
 
-      const updated = await prisma.usuario.update({
-        where: { usuarioId: req.user.id },
-        data: {
-          company: company.trim(),
-          documentId: documentId.trim(),
-          address: address.trim(),
-          city: city || 'Medellín',
-          telefono: phone || undefined
-        },
-        include: { rol: true }
-      });
+      const docEnUso = await prisma.usuario.findFirst({ where: { documentId: v.documento, NOT: { usuarioId: actual.usuarioId } } });
+      if (docEnUso) return res.status(409).json({ success: false, error: 'Ya existe una cuenta con ese número de documento' });
 
+      const data: any = {
+        nombre: v.nombre,
+        apellido: v.apellido,
+        company: v.tipoPersona === 'juridica' ? v.empresa : null,
+        documentId: v.documento,
+        address: v.direccion || null,
+        city: v.ciudad || 'Medellín',
+        telefono: v.celular
+      };
+      if (req.body.password) data.passwordHash = await bcrypt.hash(String(req.body.password), 10);
+
+      const updated = await prisma.usuario.update({ where: { usuarioId: actual.usuarioId }, data, include: { rol: true } });
       res.json({ success: true, user: safeUser(updated) });
     } catch (error: any) {
       console.error('[complete-profile]', error);
