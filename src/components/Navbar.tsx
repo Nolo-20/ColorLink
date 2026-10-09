@@ -119,8 +119,8 @@ export const Navbar: React.FC<NavbarProps> = ({
     <header className="sticky top-0 z-40 bg-[#0A1A36] text-white shadow-xl font-sans border-b border-slate-800/80">
 
       {/* 1. Top Enterprise Micro-Bar */}
-      <div className="bg-[#050D1C] border-b border-slate-800/60 px-4 py-1.5 text-[11px] text-slate-300">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
+      <div className="bg-[#050D1C] border-b border-slate-800/60 px-3 sm:px-4 py-1.5 text-[10px] sm:text-[11px] text-slate-300">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 whitespace-nowrap">
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -128,7 +128,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               className="flex items-center gap-1.5 hover:text-emerald-400 text-slate-300 font-semibold transition-colors cursor-pointer group"
             >
               <MapPin className="w-3.5 h-3.5 text-emerald-400 group-hover:scale-110 transition-transform" />
-              <span>Puntos de Venta & Centros de Color (Medellín, Itagüí, Bello, Envigado)</span>
+              <span className="sm:hidden">Puntos de venta</span>
+              <span className="hidden sm:inline">Puntos de Venta & Centros de Color (Medellín, Itagüí, Bello, Envigado)</span>
             </button>
           </div>
 
@@ -138,15 +139,15 @@ export const Navbar: React.FC<NavbarProps> = ({
               Asesoría Técnica Especializada
             </span>
             <span className="text-emerald-400 font-bold bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/50">
-              🚚 Envío gratis en compras &gt; $150.000 COP
+              🚚 Envío gratis<span className="hidden sm:inline"> en compras</span> &gt; $150.000<span className="hidden sm:inline"> COP</span>
             </span>
           </div>
         </div>
       </div>
 
       {/* 2. Main Navigation Bar */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 gap-3 sm:gap-6">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-14 sm:h-16 gap-2 sm:gap-6">
 
           {/* Brand Logo */}
           <button
@@ -157,8 +158,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             className="flex items-center gap-2.5 sm:gap-3 text-left shrink-0 cursor-pointer focus:outline-hidden group"
           >
             <div>
-              <BrandLogo on="dark" className="h-8 sm:h-9" />
-              <span className="text-[9px] font-semibold text-slate-400 block tracking-wider uppercase mt-0.5">
+              <BrandLogo on="dark" className="h-7 sm:h-9" />
+              <span className="hidden sm:block text-[9px] font-semibold text-slate-400 tracking-wider uppercase mt-0.5">
                 Recubrimientos & Pinturas
               </span>
             </div>
@@ -167,7 +168,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Search */}
           <form
             onSubmit={handleSearchSubmit}
-            className={`relative transition-all duration-300 ease-in-out ${
+            className={`hidden sm:block relative transition-all duration-300 ease-in-out ${
               isSearchFocused
                 ? 'flex-1 max-w-xl shadow-lg ring-2 ring-emerald-400/80 rounded-full'
                 : 'w-48 sm:w-64 md:w-80 max-w-md'
@@ -242,12 +243,12 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Right Actions: Cart & Auth */}
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
 
             <button
               type="button"
               onClick={triggerCartOpen}
-              className={`relative p-2.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-white border border-slate-700/70 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 ${
+              className={`relative p-2 sm:p-2.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-white border border-slate-700/70 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 ${
                 cartBounce ? 'scale-105 ring-2 ring-emerald-400' : ''
               }`}
               title="Abrir Carrito de Compras"
@@ -265,7 +266,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab('pedidos')}
-                className={`relative p-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 border ${
+                className={`relative p-2 sm:p-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 border ${
                   activeTab === 'pedidos'
                     ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-black shadow-md'
                     : 'bg-slate-900/80 hover:bg-slate-800 text-white border-slate-700/70'
@@ -377,10 +378,10 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 type="button"
                 onClick={onOpenLogin}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 text-xs font-black shadow-md transition-all cursor-pointer"
+                className="flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 text-xs font-black shadow-md transition-all cursor-pointer"
               >
                 <LogIn className="w-4 h-4" />
-                <span>Ingresar</span>
+                <span className="hidden min-[360px]:inline">Ingresar</span>
               </button>
             )}
 
@@ -394,6 +395,21 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
         </div>
+
+        {/* Búsqueda en celular: fila completa debajo del logo */}
+        <form onSubmit={handleSearchSubmit} className="sm:hidden relative pb-2.5">
+          <Search className="w-4 h-4 absolute left-3.5 top-2.5 pointer-events-none text-slate-400" />
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              if (onSearchChange) onSearchChange(e.target.value);
+            }}
+            placeholder="Buscar pinturas, epóxicos, rodillos..."
+            className="w-full pl-10 pr-3 py-2 bg-[#050D1C] border border-slate-700/80 rounded-full text-[13px] text-white placeholder-slate-400 focus:outline-hidden focus:border-cyan-400/60"
+          />
+        </form>
       </div>
 
       {/* 3. Secondary Category Navigation Bar */}

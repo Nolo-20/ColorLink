@@ -153,7 +153,16 @@ export const StorefrontHome: React.FC<StorefrontHomeProps> = ({
       {/* =================================================================== */}
       {/* 1. HERO CAROUSEL BANNER (Pintuco style banner)                      */}
       {/* =================================================================== */}
-      <div className="relative w-full overflow-hidden bg-slate-950 text-white min-h-[420px] sm:min-h-[480px] flex items-center shadow-lg">
+      <div
+        className="relative w-full overflow-hidden bg-slate-950 text-white min-h-[440px] sm:min-h-[480px] flex items-center shadow-lg"
+        onTouchStart={(e) => { (e.currentTarget as any)._x = e.touches[0].clientX; }}
+        onTouchEnd={(e) => {
+          const x0 = (e.currentTarget as any)._x;
+          if (x0 == null) return;
+          const dx = e.changedTouches[0].clientX - x0;
+          if (Math.abs(dx) > 45) setCurrentSlide(prev => (prev + (dx < 0 ? 1 : -1) + HERO_SLIDES.length) % HERO_SLIDES.length);
+        }}
+      >
         {HERO_SLIDES.map((slide, idx) => {
           const isActive = idx === currentSlide;
           const targetProduct = STORE_PRODUCTS.find(p => p.id === slide.productId);
@@ -169,42 +178,43 @@ export const StorefrontHome: React.FC<StorefrontHomeProps> = ({
               <div className={`absolute inset-0 bg-gradient-to-r ${slide.bgGradient} opacity-90`} />
               <img
                 src={slide.image}
-                alt={slide.title}
+                alt=""
+                aria-hidden="true"
                 className="absolute inset-0 w-full h-full object-cover mix-blend-overlay opacity-30"
                 referrerPolicy="no-referrer"
               />
 
-              <div className="relative max-w-7xl mx-auto px-6 sm:px-12 w-full grid grid-cols-1 lg:grid-cols-12 gap-8 items-center py-12">
+              <div className="relative max-w-7xl mx-auto px-5 sm:px-12 w-full grid grid-cols-1 lg:grid-cols-12 gap-8 items-center pt-8 pb-14 sm:py-12">
                 
                 {/* Left Text details */}
-                <div className="lg:col-span-8 space-y-4">
-                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-xs font-bold text-white uppercase tracking-wider">
+                <div className="lg:col-span-8 space-y-3 sm:space-y-4">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-[10px] sm:text-xs font-bold text-white uppercase tracking-wider">
                     <Sparkles className="w-3.5 h-3.5 text-amber-300" />
                     <span>Lanzamiento Oficial ColorLink</span>
                   </div>
 
                   <div className="space-y-1">
-                    <h2 className="text-4xl sm:text-6xl font-black tracking-tight text-white uppercase">
+                    <h2 className="text-[2rem] leading-none sm:text-6xl font-black tracking-tight text-white uppercase">
                       {slide.title}
                     </h2>
-                    <h3 className={`text-xl sm:text-2xl font-black ${slide.textColor} tracking-wide`}>
+                    <h3 className={`text-lg sm:text-2xl font-black leading-tight ${slide.textColor} tracking-wide`}>
                       {slide.tagline}
                     </h3>
-                    <p className="text-xs sm:text-sm font-extrabold uppercase tracking-wider text-slate-300">
+                    <p className="text-[11px] sm:text-sm font-extrabold uppercase tracking-wider text-slate-300">
                       {slide.sub}
                     </p>
                   </div>
 
-                  <p className="text-sm sm:text-base text-slate-200 max-w-xl font-medium leading-relaxed">
+                  <p className="text-[13px] sm:text-base text-slate-200 max-w-xl font-medium leading-relaxed line-clamp-3 sm:line-clamp-none">
                     {slide.highlight}
                   </p>
 
-                  <div className="pt-3 flex flex-wrap items-center gap-3">
+                  <div className="pt-2 sm:pt-3 flex flex-wrap items-center gap-2.5 sm:gap-3">
                     {targetProduct && (
                       <button
                         type="button"
                         onClick={() => onSelectProduct(targetProduct)}
-                        className="px-8 py-3.5 bg-white hover:bg-slate-100 text-slate-950 font-black text-sm rounded-xl shadow-lg transition-all cursor-pointer transform hover:-translate-y-0.5"
+                        className="px-5 sm:px-8 py-3 sm:py-3.5 bg-white hover:bg-slate-100 text-slate-950 font-black text-[13px] sm:text-sm rounded-xl shadow-lg transition-all cursor-pointer transform hover:-translate-y-0.5"
                       >
                         Conoce más
                       </button>
@@ -212,7 +222,7 @@ export const StorefrontHome: React.FC<StorefrontHomeProps> = ({
                     <button
                       type="button"
                       onClick={() => onOpenCalculator(targetProduct)}
-                      className="px-6 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-sm rounded-xl shadow-lg transition-all flex items-center gap-2 cursor-pointer"
+                      className="px-4 sm:px-6 py-3 sm:py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-[13px] sm:text-sm rounded-xl shadow-lg transition-all flex items-center gap-2 cursor-pointer"
                     >
                       <Calculator className="w-4 h-4" />
                       <span>Calcular m² para mi obra</span>
@@ -282,7 +292,7 @@ export const StorefrontHome: React.FC<StorefrontHomeProps> = ({
         <button
           type="button"
           onClick={() => setCurrentSlide(prev => (prev - 1 + HERO_SLIDES.length) % HERO_SLIDES.length)}
-          className="absolute left-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center transition-colors cursor-pointer"
+          className="hidden sm:flex absolute left-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-black/40 hover:bg-black/60 text-white items-center justify-center transition-colors cursor-pointer"
           aria-label="Anterior slide"
         >
           <ChevronLeft className="w-5 h-5" />
@@ -290,7 +300,7 @@ export const StorefrontHome: React.FC<StorefrontHomeProps> = ({
         <button
           type="button"
           onClick={() => setCurrentSlide(prev => (prev + 1) % HERO_SLIDES.length)}
-          className="absolute right-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center transition-colors cursor-pointer"
+          className="hidden sm:flex absolute right-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-black/40 hover:bg-black/60 text-white items-center justify-center transition-colors cursor-pointer"
           aria-label="Siguiente slide"
         >
           <ChevronRight className="w-5 h-5" />

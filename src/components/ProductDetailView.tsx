@@ -181,7 +181,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0.3, scale: 0.96 }}
                   transition={{ duration: 0.35, ease: 'easeOut' }}
-                  className="w-full rounded-3xl border border-slate-200 bg-gradient-to-b from-slate-50 via-slate-100/50 to-slate-200/40 p-6 sm:p-8 flex flex-col items-center justify-between min-h-[480px] sm:min-h-[530px] relative overflow-hidden shadow-xs"
+                  className="w-full rounded-3xl border border-slate-200 bg-gradient-to-b from-slate-50 via-slate-100/50 to-slate-200/40 p-3 sm:p-8 flex flex-col items-center justify-between min-h-[420px] sm:min-h-[530px] relative overflow-hidden shadow-xs"
                 >
                   {/* Dynamic subtle radial lighting matching selected color */}
                   <div 
@@ -272,19 +272,19 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
                         <button
                           type="button"
                           onClick={() => setIsVisualizerOpen(true)}
-                          className="w-full py-3.5 px-5 rounded-2xl bg-gradient-to-r from-[#0B1E48] via-blue-900 to-[#0B1E48] hover:from-blue-900 hover:to-blue-950 text-white font-black text-xs sm:text-sm shadow-lg flex items-center justify-between transition-all group cursor-pointer border border-blue-800/60 active:scale-99"
+                          className="w-full py-3 sm:py-3.5 px-3 sm:px-5 gap-2 rounded-2xl bg-gradient-to-r from-[#0B1E48] via-blue-900 to-[#0B1E48] hover:from-blue-900 hover:to-blue-950 text-white font-black text-xs sm:text-sm shadow-lg flex items-center justify-between transition-all group cursor-pointer border border-blue-800/60 active:scale-99"
                         >
-                          <div className="flex items-center gap-3">
-                            <span className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform">
+                          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+                            <span className="w-9 h-9 shrink-0 rounded-xl bg-white/15 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform">
                               <Eye className="w-4.5 h-4.5" />
                             </span>
-                            <div className="text-left">
-                              <span className="block font-black text-xs sm:text-sm">{buttonContent.title}</span>
+                            <div className="text-left min-w-0">
+                              <span className="block font-black text-xs sm:text-sm leading-snug">{buttonContent.title}</span>
                               <span className="block text-[11px] text-blue-200 font-medium">{buttonContent.subtitle}</span>
                             </div>
                           </div>
-                          <span className="inline-flex items-center gap-1 text-emerald-400 font-black text-xs px-3 py-1.5 rounded-xl bg-white/10 group-hover:bg-white/20 transition-colors">
-                            <span>Visualizar</span>
+                          <span className="shrink-0 inline-flex items-center gap-1 text-emerald-400 font-black text-xs px-2 sm:px-3 py-1.5 rounded-xl bg-white/10 group-hover:bg-white/20 transition-colors">
+                            <span className="hidden sm:inline">Visualizar</span>
                             <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
                           </span>
                         </button>
@@ -318,7 +318,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
             /* ---------------------------------------------------- */
             /* 3. TOOL DISPLAY STAGE (Wall Painting Tools)          */
             /* ---------------------------------------------------- */
-            <div className="bg-slate-50 rounded-3xl border border-slate-200 overflow-hidden flex flex-col items-center p-6 sm:p-8 space-y-6">
+            <div className="bg-slate-50 rounded-3xl border border-slate-200 overflow-hidden flex flex-col items-center p-4 sm:p-8 space-y-6">
               {/* Badge indicando herramienta profesional de pintor */}
               <div className="px-4 py-1.5 rounded-full bg-white border border-slate-200 text-slate-800 text-xs font-black shadow-xs flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -684,7 +684,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
       {/* ======================================================== */}
       {/* TECHNICAL SPECS SECTION AT BOTTOM */}
       {/* ======================================================== */}
-      <div className="mt-8 bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-8">
+      <div className="mt-8 bg-white rounded-3xl border border-slate-200 shadow-sm p-4 sm:p-8">
         <h3 className="text-base sm:text-lg font-black text-slate-900 uppercase tracking-wider mb-4 flex items-center gap-2">
           <Info className="w-5 h-5 text-emerald-600" />
           <span>Ficha Técnica y Rendimiento Oficial</span>
