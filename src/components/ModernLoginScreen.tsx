@@ -549,13 +549,31 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
             <p className="text-xs text-slate-500 text-center leading-relaxed">
               Elige cómo verificar tu correo. Después completas tus datos y quedas registrado.
             </p>
-            <button
-              type="button"
-              onClick={() => { setErrorMessage(''); setAuthView('email_code'); }}
-              className="w-full py-3.5 px-4 bg-white hover:bg-slate-50 text-[#002855] font-black text-xs sm:text-sm rounded-lg border-2 border-[#002855] cursor-pointer transition-colors uppercase tracking-wider shadow-xs"
-            >
-              Recibir código por e-mail
-            </button>
+            <form onSubmit={(e) => { e.preventDefault(); handleRequestEmailCode(); }} className="space-y-2.5">
+              <label htmlFor="signup-email" className="block text-xs font-bold text-slate-700 text-center">
+                Recibir código de verificación por e-mail
+              </label>
+              <input
+                id="signup-email"
+                type="email"
+                value={userEmail}
+                onChange={(e) => setUserEmail(e.target.value.replace(/\s/g, ''))}
+                placeholder="exemplo@e-mail.com"
+                className="w-full px-3.5 py-3 bg-white text-slate-800 placeholder-slate-400 rounded-lg text-sm border border-slate-300 focus:outline-none focus:border-[#002855]"
+                required
+                autoFocus
+              />
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full py-3.5 px-4 bg-[#002855] hover:bg-[#001D3D] text-white font-black text-xs sm:text-sm rounded-lg cursor-pointer transition-colors uppercase tracking-wider shadow-md flex items-center justify-center"
+              >
+                {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <span>Enviar código</span>}
+              </button>
+            </form>
+            <div className="flex items-center gap-3 text-[11px] text-slate-400 font-semibold">
+              <span className="h-px flex-1 bg-slate-200" /> o <span className="h-px flex-1 bg-slate-200" />
+            </div>
             <button
               type="button"
               onClick={handleOpenGooglePopup}
