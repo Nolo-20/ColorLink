@@ -1,7 +1,6 @@
 import { BrandLogo } from './BrandLogo';
 import React, { useState, useEffect } from 'react';
 import { UserProfile } from '../types';
-import { DEMO_PROFILES } from '../data/mockData';
 import {
   HelpCircle,
   RefreshCw,
@@ -72,7 +71,6 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
   const [errorMessage, setErrorMessage] = useState('');
   const [infoNotice, setInfoNotice] = useState('');
   const [resendCooldown, setResendCooldown] = useState(0);
-  const [showDemoAccounts, setShowDemoAccounts] = useState(false);
   const [forgotSent, setForgotSent] = useState(false);
 
   // Escucha el resultado real de Google (postMessage desde /auth/callback en tu backend)
@@ -380,15 +378,6 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
     }
   };
 
-  // Perfiles demo: solo pre-llena el formulario de login con contraseña — sigue pasando por el backend real
-  const handleSelectDemoAccount = (role: 'cliente' | 'asesor' | 'calidad' | 'administrador') => {
-    const profile = DEMO_PROFILES[role];
-    setUserEmail(profile.email);
-    setUserPassword('ColorLink*2026');
-    setShowDemoAccounts(false);
-    setInfoNotice(`Credenciales de prueba cargadas para rol: ${role.toUpperCase()}. Estas cuentas deben existir realmente en tu base de datos.`);
-  };
-
   return (
     <div className="flex flex-col items-center justify-center p-4 font-sans selection:bg-[#002855] selection:text-white">
 
@@ -547,49 +536,6 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
               >
                 Regístrese
               </button>
-            </div>
-
-            <div className="border-t border-slate-100 pt-3 text-center">
-              <button
-                type="button"
-                onClick={() => setShowDemoAccounts(!showDemoAccounts)}
-                className="text-[11px] text-slate-400 hover:text-slate-600 font-medium"
-              >
-                {showDemoAccounts ? 'Ocultar Cuentas Demo' : 'Acceso Rápido con Perfiles Demo'}
-              </button>
-
-              {showDemoAccounts && (
-                <div className="mt-2 grid grid-cols-2 gap-1.5 text-[10px]">
-                  <button
-                    type="button"
-                    onClick={() => handleSelectDemoAccount('cliente')}
-                    className="p-1.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold"
-                  >
-                    🏗️ Cliente Constructora
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectDemoAccount('asesor')}
-                    className="p-1.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold"
-                  >
-                    👔 Asesor Comercial
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectDemoAccount('calidad')}
-                    className="p-1.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold"
-                  >
-                    🔍 Perito Calidad
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectDemoAccount('administrador')}
-                    className="p-1.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold"
-                  >
-                    📦 Administrador Bodega
-                  </button>
-                </div>
-              )}
             </div>
 
           </div>
