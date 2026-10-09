@@ -44,8 +44,8 @@ const PROYECTO_STAFF_INCLUDE = {
   cotizaciones: { orderBy: { createdAt: 'desc' }, include: { items: { include: { producto: true } } } },
   empresa: { include: { ciudad: true } },
   usuario: { select: { usuarioId: true, nombre: true, apellido: true, email: true, telefono: true, company: true, documentId: true } },
-  asesorAsignado: { select: { usuarioId: true, nombre: true, apellido: true, email: true } },
-  peritoAsignado: { select: { usuarioId: true, nombre: true, apellido: true, email: true } },
+  asesorAsignado: { select: { usuarioId: true, nombre: true, apellido: true, email: true, telefono: true, avatarUrl: true } },
+  peritoAsignado: { select: { usuarioId: true, nombre: true, apellido: true, email: true, telefono: true, avatarUrl: true } },
   historial: { orderBy: { fecha: 'desc' } },
   despacho: true
 } as const;
@@ -1299,7 +1299,7 @@ async function startServer() {
       const rolFiltro = String(req.query.role || '');
       const usuarios = await prisma.usuario.findMany({
         where: rolFiltro ? { rol: { rol: rolFiltro } } : undefined,
-        select: { usuarioId: true, nombre: true, apellido: true, email: true, rol: { select: { rol: true } } }
+        select: { usuarioId: true, nombre: true, apellido: true, email: true, activo: true, avatarUrl: true, rol: { select: { rol: true } } }
       });
       res.json({ success: true, users: usuarios });
     } catch (error: any) {
@@ -1563,7 +1563,7 @@ async function startServer() {
   // Acceso libre: cualquier miembro de calidad puede emitir veredicto; el primero que lo hace queda auto-asignado.
   app.put('/api/projects/:id/quality-verdict', requireAuth, requireRole('calidad', 'administrador'), async (req: any, res) => {
     try {
-      const { humedadRelativa, severidadFisuras, notasPerito, aprobadoCalidad, sistemaRecomendado } = req.body;
+      const { humedadRelativa, severidadFisuras, notasPerito, aprobadoCalidad, sistemaRecomendado, patologiaDetectada } = req.body;
 
       const proyectoActual = await prisma.proyecto.findUnique({ where: { proyectoId: req.params.id } });
       if (!proyectoActual) return res.status(404).json({ success: false, error: 'Proyecto no encontrado' });
@@ -1580,6 +1580,7 @@ async function startServer() {
           severidadFisuras: severidadFisuras || undefined,
           notasPerito: notasPerito || undefined,
           sistemaRecomendado: sistemaRecomendado ? String(sistemaRecomendado) : undefined,
+          patologiaDetectada: patologiaDetectada ? String(patologiaDetectada).slice(0, 500) : undefined,
           aprobadoCalidad: aprobadoCalidad != null ? Boolean(aprobadoCalidad) : undefined,
           peritoNombre: actor.usuarioNombre,
           fechaVeredicto: new Date()
@@ -1590,6 +1591,7 @@ async function startServer() {
           severidadFisuras: severidadFisuras || null,
           notasPerito: notasPerito || null,
           sistemaRecomendado: sistemaRecomendado ? String(sistemaRecomendado) : null,
+          patologiaDetectada: patologiaDetectada ? String(patologiaDetectada).slice(0, 500) : null,
           aprobadoCalidad: aprobadoCalidad != null ? Boolean(aprobadoCalidad) : null,
           peritoNombre: actor.usuarioNombre,
           fechaVeredicto: new Date()

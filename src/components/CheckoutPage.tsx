@@ -26,14 +26,16 @@ interface CheckoutPageProps {
   cartItems: CartItem[];
   user: UserProfile;
   onBackToCart: () => void;
-  onOrderCompleted: (orderNumber: string, orderDetails?: any) => void;
+  onOrderCompleted: (orderNumber: string, orderDetails?: any) => Promise<{ orderNum?: string; pickupCode?: string; error?: string }>;
+  onGoToOrders: () => void;
 }
 
 export const CheckoutPage: React.FC<CheckoutPageProps> = ({
   cartItems,
   user,
   onBackToCart,
-  onOrderCompleted
+  onOrderCompleted,
+  onGoToOrders
 }) => {
   // Delivery mode: 'envio' | 'recogida'
   const [deliveryMode, setDeliveryMode] = useState<'envio' | 'recogida'>('envio');
@@ -99,37 +101,45 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
   const [successOrderInfo, setSuccessOrderInfo] = useState<{ orderNum: string; pickupCode?: string } | null>(null);
   const [redirectCountdown, setRedirectCountdown] = useState<number>(3);
 
-  const completeAndRedirectToOrders = (orderNum: string, pCode?: string) => {
-    onOrderCompleted(orderNum, {
+  const [orderError, setOrderError] = useState('');
+
+  const buildOrderDetails = () => ({
       deliveryMethod: deliveryMode === 'recogida' ? 'sucursal' : 'domicilio',
       pickupStore: deliveryMode === 'recogida' ? `${selectedBranch.name} (${selectedBranch.address})` : undefined,
       branchName: deliveryMode === 'recogida' ? selectedBranch.name : undefined,
-      pickupCode: pCode,
       shippingAddress: deliveryMode === 'recogida' ? `${selectedBranch.name}, ${selectedBranch.address}` : `${shippingData.address}, ${shippingData.city}`,
       city: deliveryMode === 'recogida' ? selectedBranch.city : shippingData.city
-    });
-  };
+  });
 
-  const handleConfirmOrder = () => {
+  const completeAndRedirectToOrders = (_orderNum?: string, _pCode?: string) => onGoToOrders();
+
+  // El número de pedido y el código de retiro los genera el servidor (el código es el que se canjea en sucursal)
+  const handleConfirmOrder = async () => {
+    if (isSubmitting) return;
     setIsSubmitting(true);
-    setTimeout(() => {
-      const orderNum = `CL-${Math.floor(100000 + Math.random() * 900000)}`;
-      const pickupCode = deliveryMode === 'recogida' ? `PK-${Math.floor(100000 + Math.random() * 900000)}` : undefined;
-      setGeneratedOrderNumber(orderNum);
-      if (pickupCode) setGeneratedPickupCode(pickupCode);
-      setIsSubmitting(false);
-      setSuccessOrderInfo({ orderNum, pickupCode });
+    setOrderError('');
+    const result = await onOrderCompleted('', buildOrderDetails());
+    setIsSubmitting(false);
+    if (!result || result.error || !result.orderNum) {
+      setOrderError(result?.error || 'No se pudo registrar el pedido. Intenta de nuevo.');
+      return;
+    }
+    const { orderNum, pickupCode } = result;
+    setGeneratedOrderNumber(orderNum);
+    if (pickupCode) setGeneratedPickupCode(pickupCode);
+    setSuccessOrderInfo({ orderNum, pickupCode });
 
-      let count = 3;
+    // Con código de retiro no se redirige solo: el cliente debe alcanzar a verlo
+    if (pickupCode) return;
+    let count = 3;
+    setRedirectCountdown(count);
+    const interval = setInterval(() => {
+      count -= 1;
       setRedirectCountdown(count);
-      const interval = setInterval(() => {
-        count -= 1;
-        setRedirectCountdown(count);
-        if (count <= 0) {
-          clearInterval(interval);
-          completeAndRedirectToOrders(orderNum, pickupCode);
-        }
-      }, 900);
+      if (count <= 0) {
+        clearInterval(interval);
+        onGoToOrders();
+      }
     }, 900);
   };
 
@@ -180,10 +190,16 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
 
           {/* Redirection indicator and direct action button */}
           <div className="space-y-3 pt-2">
-            <div className="flex items-center justify-center gap-2 text-xs font-bold text-slate-500">
-              <div className="w-4 h-4 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
-              <span>Redirigiéndote a tus pedidos en {redirectCountdown}s...</span>
-            </div>
+            {successOrderInfo.pickupCode ? (
+              <p className="text-xs font-semibold text-slate-500">
+                Guarda este código: lo presentas en la sucursal para retirar tu pedido. También te llega por correo.
+              </p>
+            ) : (
+              <div className="flex items-center justify-center gap-2 text-xs font-bold text-slate-500">
+                <div className="w-4 h-4 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+                <span>Redirigiéndote a tus pedidos en {redirectCountdown}s...</span>
+              </div>
+            )}
 
             <button
               type="button"
@@ -630,6 +646,12 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
               </div>
             )}
           </div>
+
+          {orderError && (
+            <p role="alert" className="text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+              {orderError}
+            </p>
+          )}
 
           {/* Prominent Yellow Button: Pagar en COP (Like Image 4) */}
           <button

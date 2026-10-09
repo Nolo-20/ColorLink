@@ -393,16 +393,23 @@ export default function App() {
       });
       const data = await response.json();
 
-      if (data.success) {
+      if (data.success && data.order) {
         setCartItems(prev => prev.filter(item => !item.selectedForCheckout));
         loadRealOrders();
+        const o = data.order;
+        return {
+          orderNum: `CL-${String(o.ordenId).slice(0, 8).toUpperCase()}`,
+          pickupCode: o.metodoEntrega === 'recoger_tienda' && o.qrToken ? String(o.qrToken).slice(0, 8).toUpperCase() : undefined,
+        };
       }
+      return { error: data.error || 'No se pudo registrar el pedido.' };
     } catch (err) {
       console.error('Error creando la orden real:', err);
+      return { error: 'No se pudo conectar con el servidor. Intenta de nuevo.' };
     }
-
-    setActiveTab('pedidos');
   };
+
+  const goToOrders = () => setActiveTab('pedidos');
 
   const handleCancelOrder = async (orderId: string) => {
     try {
@@ -613,6 +620,7 @@ export default function App() {
             user={user}
             onBackToCart={() => setActiveTab('carrito')}
             onOrderCompleted={handleOrderCompleted}
+              onGoToOrders={goToOrders}
           />
         )}
 
