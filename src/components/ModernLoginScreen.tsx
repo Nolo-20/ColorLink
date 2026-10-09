@@ -1014,7 +1014,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                       value={regPhone}
                       onChange={(e) => setRegPhone(cleanPhone(e.target.value))}
 
-                      placeholder="+57 314 000-0000"
+                      placeholder="3140000000" inputMode="numeric"
                       className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                       required
                     />
