@@ -470,20 +470,39 @@ async function startServer() {
   // 3. Registro (siempre como rol "cliente")
   app.post('/api/auth/register', authLimiter, async (req, res) => {
     try {
-      const { firstName, lastName, email, company, documentId, address, city, phone, password } = req.body;
+      const { firstName, lastName, email, company, documentId, address, city, phone, password, personType, documentType } = req.body;
+      const txt = (v: any) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : '');
+      const nombre = txt(firstName), apellido = txt(lastName), correo = txt(email).toLowerCase();
+      const tipoPersona = personType === 'juridica' ? 'juridica' : 'natural';
+      const tipoDoc = tipoPersona === 'juridica' ? 'NIT' : (['CC', 'CE', 'PAS'].includes(documentType) ? documentType : 'CC');
+      const documento = txt(documentId).toUpperCase();
+      const empresa = txt(company), direccion = txt(address), ciudad = txt(city), celular = txt(phone).replace(/\D/g, '');
+      const soloLetras = /^[A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+( [A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+)*$/;
 
-      if (!firstName || !lastName || !email || !company || !documentId || !address || !password) {
-        return res.status(400).json({ success: false, error: 'Todos los campos, incluida la contraseña, son requeridos' });
-      }
-      if (String(password).length < 8) {
-        return res.status(400).json({ success: false, error: 'La contraseña debe tener al menos 8 caracteres' });
-      }
+      const fail = (error: string) => res.status(400).json({ success: false, error });
+      if (!soloLetras.test(nombre) || nombre.length < 2 || nombre.length > 40) return fail('El nombre solo puede tener letras (2 a 40 caracteres).');
+      if (!soloLetras.test(apellido) || apellido.length < 2 || apellido.length > 40) return fail('El apellido solo puede tener letras (2 a 40 caracteres).');
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(correo) || correo.length > 100) return fail('El correo no es válido.');
+      const docOk = {
+        CC: /^[0-9]{6,10}$/, CE: /^[A-Z0-9]{6,12}$/, PAS: /^[A-Z0-9]{5,12}$/, NIT: /^[0-9]{9}-[0-9]$/
+      }[tipoDoc]!.test(documento);
+      if (!docOk) return fail(tipoDoc === 'NIT' ? 'El NIT debe tener 9 números y el dígito de verificación (ej. 901234567-8).' : 'El número de documento no es válido para el tipo seleccionado.');
+      if (tipoPersona === 'juridica' && (empresa.length < 3 || empresa.length > 100)) return fail('La razón social debe tener entre 3 y 100 caracteres.');
+      if (!/^3[0-9]{9}$/.test(celular) && !/^60[0-9]{8}$/.test(celular)) return fail('El celular debe tener 10 números y empezar por 3.');
+      if (direccion.length > 120 || (direccion && direccion.length < 5)) return fail('La dirección no es válida.');
+      if (ciudad.length > 60) return fail('La ciudad no es válida.');
+      const policyError = validatePasswordPolicy(String(password || ''));
+      if (policyError) return fail(policyError);
 
-      const cleanEmail = String(email).trim().toLowerCase();
+      const cleanEmail = correo;
 
       const existing = await prisma.usuario.findUnique({ where: { email: cleanEmail } });
       if (existing) {
         return res.status(409).json({ success: false, error: 'Ya existe una cuenta con este correo' });
+      }
+      const docEnUso = await prisma.usuario.findFirst({ where: { documentId: documento } });
+      if (docEnUso) {
+        return res.status(409).json({ success: false, error: 'Ya existe una cuenta con ese número de documento' });
       }
 
       const rolCliente = await prisma.rol.findFirst({ where: { rol: 'cliente' } });
@@ -495,17 +514,17 @@ async function startServer() {
 
       const newUser = await prisma.usuario.create({
         data: {
-          nombre: String(firstName).trim(),
-          apellido: String(lastName).trim(),
+          nombre,
+          apellido,
           email: cleanEmail,
-          telefono: phone || null,
+          telefono: celular,
           passwordHash,
           authProvider: 'credentials',
           rolId: rolCliente.rolId,
-          company: company.trim(),
-          documentId: documentId.trim(),
-          address: address.trim(),
-          city: city || 'Medellín'
+          company: tipoPersona === 'juridica' ? empresa : null,
+          documentId: documento,
+          address: direccion || null,
+          city: ciudad || 'Medellín'
         },
         include: { rol: true }
       });
@@ -513,10 +532,6 @@ async function startServer() {
       const token = issueSessionToken(newUser);
       res.cookie('session', token, cookieOptions);
 
-      const policyError = validatePasswordPolicy(String(password || ''));
-      if (policyError) {
-        return res.status(400).json({ success: false, error: policyError });
-      }
       sendWelcomeEmail(newUser.email, newUser.nombre).catch(err => console.error('[welcome-email]', err));
       res.json({ success: true, user: safeUser(newUser), message: 'Registro completado con éxito' });
     } catch (error: any) {
@@ -932,9 +947,11 @@ async function startServer() {
   // usando los datos de empresa que ya tiene guardados en su perfil.
   async function findOrCreateEmpresaForUser(usuarioId: string, ciudadNombre: string) {
     const usuario = await prisma.usuario.findUnique({ where: { usuarioId } });
-    if (!usuario?.company || !usuario.documentId) {
-      throw new Error('El usuario debe completar los datos de su empresa antes de crear un proyecto');
+    if (!usuario?.documentId) {
+      throw new Error('Completa tu número de documento en "Mi cuenta" antes de crear un proyecto.');
     }
+    // Persona natural: el proyecto queda a su nombre; empresa: a su razón social
+    const titular = usuario.company || `${usuario.nombre} ${usuario.apellido}`.trim();
 
     let empresa = await prisma.empresaCliente.findFirst({ where: { nitCedula: usuario.documentId } });
     if (empresa) return empresa;
@@ -943,7 +960,7 @@ async function startServer() {
     empresa = await prisma.empresaCliente.create({
       data: {
         nitCedula: usuario.documentId,
-        razonSocial: usuario.company,
+        razonSocial: titular,
         direccionDespacho: usuario.address || '',
         ciudadId: ciudad.ciudadId
       }

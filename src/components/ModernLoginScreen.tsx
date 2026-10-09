@@ -21,6 +21,21 @@ interface ModernLoginScreenProps {
   checkoutNotice?: boolean;
 }
 
+
+// ---------- Restricciones de los campos del registro ----------
+const onlyLetters = (v: string) => v.replace(/[^A-Za-zÁÉÍÓÚÜáéíóúüÑñ ]/g, '').replace(/\s{2,}/g, ' ').slice(0, 40);
+const cleanDocument = (v: string, type: string) =>
+  type === 'CC' ? v.replace(/\D/g, '').slice(0, 10) : v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
+const cleanPhone = (v: string) => {
+  let d = v.replace(/\D/g, '');
+  if (d.length > 10 && d.startsWith('57')) d = d.slice(2);
+  return d.slice(0, 10);
+};
+const cleanNit = (v: string) => {
+  const digits = v.replace(/[^0-9]/g, '');
+  return digits.length > 9 ? `${digits.slice(0, 9)}-${digits.slice(9, 10)}` : digits;
+};
+
 type AuthView = 'main_menu' | 'email_code' | 'verify_otp' | 'register_page' | 'forgot_password';
 
 export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
@@ -289,16 +304,25 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
   };
 
   const validarRegistro = (): string | null => {
-    const soloLetras = /^[A-Za-zÁÉÍÓÚáéíóúÑñ\s]{2,30}$/;
-    const soloNumeros = /^[0-9]{6,12}$/;
-    const telefono = /^\+?[0-9\s-]{7,15}$/;
-
-    if (!soloLetras.test(regFirstName.trim())) return 'El nombre solo debe contener letras (2-30 caracteres).';
-    if (!soloLetras.test(regLastName.trim())) return 'El apellido solo debe contener letras (2-30 caracteres).';
-    if (!soloNumeros.test(regNit.replace(/[.\-]/g, ''))) return 'El documento/NIT debe tener solo números (6-12 dígitos).';
-    if (!telefono.test(regPhone.trim())) return 'El teléfono no tiene un formato válido.';
-    if (personType === 'juridica' && regCompany.trim().length < 3) return 'La razón social debe tener al menos 3 caracteres.';
+    const nombre = /^[A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+( [A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+)*$/;
+    const email = (regEmail || userEmail).trim();
+    if (!nombre.test(regFirstName.trim()) || regFirstName.trim().length < 2) return 'El nombre solo puede tener letras (mínimo 2).';
+    if (!nombre.test(regLastName.trim()) || regLastName.trim().length < 2) return 'El apellido solo puede tener letras (mínimo 2).';
+    if (personType === 'natural') {
+      if (regDocType === 'CC' && !/^[0-9]{6,10}$/.test(regNit)) return 'La cédula debe tener entre 6 y 10 números.';
+      if (regDocType === 'CE' && !/^[A-Z0-9]{6,12}$/.test(regNit)) return 'La cédula de extranjería debe tener entre 6 y 12 caracteres (letras o números).';
+      if (regDocType === 'PAS' && !/^[A-Z0-9]{5,12}$/.test(regNit)) return 'El pasaporte debe tener entre 5 y 12 caracteres (letras o números).';
+    } else {
+      if (!/^[0-9]{9}-[0-9]$/.test(regNit)) return 'El NIT debe tener 9 números y el dígito de verificación (ej. 901234567-8).';
+      if (regCompany.trim().length < 3) return 'La razón social debe tener al menos 3 caracteres.';
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return 'El correo no es válido.';
+    if (!/^3[0-9]{9}$/.test(regPhone) && !/^60[0-9]{8}$/.test(regPhone)) return 'El celular debe tener 10 números y empezar por 3 (o un fijo 60X de 10 dígitos).';
+    if (regAddress && regAddress.trim().length < 5) return 'La dirección es muy corta.';
     if (regPassword.length < 8) return 'La contraseña debe tener al menos 8 caracteres.';
+    if (!/[A-Z]/.test(regPassword)) return 'La contraseña debe incluir una letra mayúscula.';
+    if (!/[0-9]/.test(regPassword)) return 'La contraseña debe incluir un número.';
+    if (!/[^A-Za-z0-9]/.test(regPassword)) return 'La contraseña debe incluir un carácter especial (! @ # $ %).';
     return null;
   };
 
@@ -326,7 +350,9 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
         firstName: regFirstName,
         lastName: regLastName,
         email: emailLower,
-        company: regCompany,
+        personType,
+        documentType: personType === 'juridica' ? 'NIT' : regDocType,
+        company: personType === 'juridica' ? regCompany.trim() : '',
         documentId: regNit,
         address: regAddress,
         city: regCity,
@@ -770,8 +796,8 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                     <input
                       type="text"
                       value={regFirstName}
-                      onChange={(e) => setRegFirstName(e.target.value)}
-                      maxLength={15}
+                      onChange={(e) => setRegFirstName(onlyLetters(e.target.value))}
+                      maxLength={40}
                       placeholder="Ej. Juan Carlos"
                       className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                       required
@@ -782,8 +808,8 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                     <input
                       type="text"
                       value={regLastName}
-                      onChange={(e) => setRegLastName(e.target.value)}
-                      maxLength={15}
+                      onChange={(e) => setRegLastName(onlyLetters(e.target.value))}
+                      maxLength={40}
                       placeholder="Ej. Gómez Pérez"
                       className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                       required
@@ -796,7 +822,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                     <label className="text-[10px] font-bold text-slate-700 block mb-0.5">Tipo Doc</label>
                     <select
                       value={regDocType}
-                      onChange={(e) => setRegDocType(e.target.value)}
+                      onChange={(e) => { setRegDocType(e.target.value); setRegNit(''); }}
                       className="w-full px-2 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855] bg-white"
                     >
                       <option value="CC">C.C.</option>
@@ -809,9 +835,9 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                     <input
                       type="text"
                       value={regNit}
-                      onChange={(e) => setRegNit(e.target.value)}
-                      maxLength={12}
-                      placeholder="Ej. 1.020.345.678"
+                      onChange={(e) => setRegNit(cleanDocument(e.target.value, regDocType))}
+                                            inputMode={regDocType === 'CC' ? 'numeric' : 'text'}
+                      placeholder={regDocType === 'CC' ? 'Ej. 1020345678' : regDocType === 'CE' ? 'Ej. 1234567' : 'Ej. AB123456'}
                       className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                       required
                     />
@@ -823,7 +849,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                   <input
                     type="email"
                     value={regEmail || userEmail}
-                    onChange={(e) => setRegEmail(e.target.value)}
+                    onChange={(e) => setRegEmail(e.target.value.replace(/\s/g, '').slice(0, 100))}
                     placeholder="tucorreo@gmail.com"
                     className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                     required
@@ -853,9 +879,9 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                     <input
                       type="tel"
                       value={regPhone}
-                      onChange={(e) => setRegPhone(e.target.value)}
-                      maxLength={10}
-                      placeholder="+57 310 000-0000"
+                      onChange={(e) => setRegPhone(cleanPhone(e.target.value))}
+
+                      placeholder="3100000000" inputMode="numeric"
                       className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                       required
                     />
@@ -867,7 +893,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                   <input
                     type="text"
                     value={regAddress}
-                    onChange={(e) => setRegAddress(e.target.value)}
+                    onChange={(e) => setRegAddress(e.target.value.replace(/[^A-Za-z0-9ÁÉÍÓÚÜáéíóúüÑñ#\-.,°/ ]/g, '').slice(0, 120))}
                     placeholder="Ej. Calle 10 # 43E-28"
                     className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                   />
@@ -881,7 +907,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                     <input
                       type="text"
                       value={regCompany}
-                      onChange={(e) => setRegCompany(e.target.value)}
+                      onChange={(e) => setRegCompany(e.target.value.replace(/[^A-Za-z0-9ÁÉÍÓÚÜáéíóúüÑñ&.,\- ]/g, '').slice(0, 100))}
                       placeholder="Constructora ABC S.A.S."
                       className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                       required
@@ -892,8 +918,8 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                     <input
                       type="text"
                       value={regNit}
-                      onChange={(e) => setRegNit(e.target.value)}
-                      placeholder="901.234.567-8"
+                      onChange={(e) => setRegNit(cleanNit(e.target.value))}
+                      placeholder="901234567-8" inputMode="numeric"
                       className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                       required
                     />
@@ -906,9 +932,9 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                     <input
                       type="text"
                       value={regFirstName}
-                      onChange={(e) => setRegFirstName(e.target.value)}
-                      maxLength={10}
-                      placeholder="Ingeniero / Arquitecto"
+                      onChange={(e) => setRegFirstName(onlyLetters(e.target.value))}
+                      maxLength={40}
+                      placeholder="Ej. Juan Carlos"
                       className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                       required
                     />
@@ -918,9 +944,9 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                     <input
                       type="text"
                       value={regLastName}
-                      onChange={(e) => setRegLastName(e.target.value)}
-                      maxLength={10}
-                      placeholder="Residente de Obra"
+                      onChange={(e) => setRegLastName(onlyLetters(e.target.value))}
+                      maxLength={40}
+                      placeholder="Ej. Gómez Pérez"
                       className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                       required
                     />
@@ -932,7 +958,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                   <input
                     type="email"
                     value={regEmail || userEmail}
-                    onChange={(e) => setRegEmail(e.target.value)}
+                    onChange={(e) => setRegEmail(e.target.value.replace(/\s/g, '').slice(0, 100))}
                     placeholder="compras@constructorabc.com"
                     className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                     required
@@ -976,7 +1002,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                     <input
                       type="text"
                       value={regAddress}
-                      onChange={(e) => setRegAddress(e.target.value)}
+                      onChange={(e) => setRegAddress(e.target.value.replace(/[^A-Za-z0-9ÁÉÍÓÚÜáéíóúüÑñ#\-.,°/ ]/g, '').slice(0, 120))}
                       placeholder="Cra 43A # 18 Sur-135"
                       className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                     />
@@ -986,8 +1012,8 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                     <input
                       type="tel"
                       value={regPhone}
-                      onChange={(e) => setRegPhone(e.target.value)}
-                      maxLength={10}
+                      onChange={(e) => setRegPhone(cleanPhone(e.target.value))}
+
                       placeholder="+57 314 000-0000"
                       className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                       required
@@ -1018,6 +1044,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                   {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                 </button>
               </div>
+              <p className="text-[10px] text-slate-500 mt-1">Mínimo 8 caracteres, con una mayúscula, un número y un carácter especial.</p>
             </div>
 
             <div className="flex items-center justify-between pt-3 border-t border-slate-100">
