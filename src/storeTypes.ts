@@ -63,8 +63,14 @@ export interface CustomerOrder {
     price: number;
     quantity: number;
     image: string;
+    /** Opinión que el cliente ya dejó sobre este producto (si existe) */
+    review?: { resenaId: string; calificacion: number; comentario?: string | null; tieneFoto: boolean } | null;
   }>;
   trackingHistory: OrderTrackingStep[];
+  /** Fecha real de entrega (del historial) */
+  deliveredAt?: string;
+  /** Evaluación del vendedor que el cliente ya dejó en este pedido */
+  sellerRating?: { calificacion: number; comentario?: string | null } | null;
   trackingNumber?: string;
   carrier?: string;
   estimatedDelivery?: string;

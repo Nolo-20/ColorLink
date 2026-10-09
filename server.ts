@@ -2316,8 +2316,12 @@ async function startServer() {
 
       // Ya no se valida contra la tabla Producto: se confía en lo que manda el carrito
       // (precio y nombre quedan congelados en la orden, como una factura real).
+      const corto = (v: any, max: number) => (v == null || v === '' ? null : String(v).replace(/[\r\n]/g, ' ').trim().slice(0, max) || null);
       const itemsConPrecio = items.map((i: any) => ({
         productoId: null, // el catálogo de la tienda es independiente del catálogo B2B de cotizaciones por ahora
+        codigoProductoExterno: corto(i.productId, 80), // id del producto en la tienda (lo usan las opiniones)
+        presentacion: corto(i.sizeName, 60),
+        color: corto(i.colorName, 60),
         nombreProducto: i.name,
         cantidad: Number(i.cantidad || i.quantity),
         precioUnitario: Number(i.price),
@@ -2353,13 +2357,181 @@ async function startServer() {
     try {
       const ordenes = await prisma.orden.findMany({
         where: { usuarioId: req.user.id },
-        include: { items: { include: { producto: true } }, historial: { orderBy: { fecha: 'asc' } } },
+        include: {
+          items: { include: { producto: true, resena: { select: { resenaId: true, calificacion: true, comentario: true, fotoDataUri: true } } } },
+          historial: { orderBy: { fecha: 'asc' } },
+          evaluacion: { select: { calificacion: true, comentario: true } }
+        },
         orderBy: { createdAt: 'desc' }
       });
-      res.json({ success: true, orders: ordenes });
+      // La foto de la opinión no viaja en la lista: solo si existe (se ve en /api/reviews/:id/photo)
+      const orders = ordenes.map(o => ({
+        ...o,
+        items: o.items.map(({ resena, ...it }) => ({
+          ...it,
+          resena: resena ? { resenaId: resena.resenaId, calificacion: resena.calificacion, comentario: resena.comentario, tieneFoto: !!resena.fotoDataUri } : null
+        }))
+      }));
+      res.json({ success: true, orders });
     } catch (error: any) {
       console.error('[get-orders]', error);
       res.status(500).json({ success: false, error: 'No se pudieron cargar tus pedidos' });
+    }
+  });
+
+  // ----------------------------------------------------------------
+  // OPINIONES DE PRODUCTO Y EVALUACIÓN DEL VENDEDOR
+  // Solo quien compró y recibió el pedido puede opinar (compra verificada).
+  // ----------------------------------------------------------------
+
+  const reviewLimiter = rateLimit({ windowMs: 10 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false,
+    message: { success: false, error: 'Demasiados intentos. Espera unos minutos.' } });
+
+  const limpiarComentario = (v: any) => {
+    const t = String(v ?? '').replace(/\r\n/g, '\n').trim();
+    return t ? t.slice(0, 1500) : null;
+  };
+  const calificacionValida = (v: any) => Number.isInteger(Number(v)) && Number(v) >= 1 && Number(v) <= 5;
+  /** "Juan Manuel Olave" -> "Juan O." para mostrar en público sin exponer el nombre completo */
+  const nombrePublico = (nombre?: string | null, apellido?: string | null) =>
+    `${String(nombre || 'Cliente').split(' ')[0]}${apellido ? ` ${apellido.trim().charAt(0).toUpperCase()}.` : ''}`;
+
+  // Público: opiniones visibles de un producto de la tienda
+  app.get('/api/products/:key/reviews', async (req, res) => {
+    try {
+      const key = String(req.params.key).slice(0, 80);
+      const [resenas, agrupado] = await Promise.all([
+        prisma.resenaProducto.findMany({
+          where: { productoKey: key, visible: true },
+          orderBy: { createdAt: 'desc' },
+          take: 100,
+          select: {
+            resenaId: true, calificacion: true, comentario: true, createdAt: true, updatedAt: true,
+            fotoDataUri: true,
+            ordenItem: { select: { presentacion: true, color: true } },
+            usuario: { select: { nombre: true, apellido: true, city: true } }
+          }
+        }),
+        prisma.resenaProducto.groupBy({ by: ['calificacion'], where: { productoKey: key, visible: true }, _count: { _all: true } })
+      ]);
+      const distribucion: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+      agrupado.forEach(g => { distribucion[g.calificacion] = g._count._all; });
+      const total = Object.values(distribucion).reduce((a, b) => a + b, 0);
+      const promedio = total ? Object.entries(distribucion).reduce((a, [k, n]) => a + Number(k) * n, 0) / total : 0;
+      res.setHeader('Cache-Control', 'no-cache');
+      res.json({
+        success: true,
+        promedio: Math.round(promedio * 10) / 10,
+        total,
+        distribucion,
+        resenas: resenas.map(r => ({
+          resenaId: r.resenaId,
+          calificacion: r.calificacion,
+          comentario: r.comentario,
+          fecha: r.createdAt,
+          editada: r.updatedAt.getTime() - r.createdAt.getTime() > 60_000,
+          autor: nombrePublico(r.usuario.nombre, r.usuario.apellido),
+          ciudad: r.usuario.city || null,
+          presentacion: r.ordenItem?.presentacion || null,
+          color: r.ordenItem?.color || null,
+          tieneFoto: !!r.fotoDataUri
+        }))
+      });
+    } catch (error: any) {
+      console.error('[product-reviews]', error);
+      res.status(500).json({ success: false, error: 'No se pudieron cargar las opiniones' });
+    }
+  });
+
+  // Foto de una opinión (pública si la opinión está visible; su autor siempre la puede ver)
+  app.get('/api/reviews/:id/photo', async (req: any, res) => {
+    try {
+      const r = await prisma.resenaProducto.findUnique({ where: { resenaId: req.params.id }, select: { fotoDataUri: true, visible: true } });
+      if (!r?.fotoDataUri || !r.visible) return res.status(404).end();
+      const m = r.fotoDataUri.match(/^data:(image\/(?:png|jpe?g|webp));base64,(.+)$/);
+      if (!m) return res.status(404).end();
+      res.setHeader('Content-Type', m[1]);
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.send(Buffer.from(m[2], 'base64'));
+    } catch {
+      res.status(404).end();
+    }
+  });
+
+  /** Verifica que el pedido sea del usuario y esté entregado. */
+  async function pedidoEntregadoDe(ordenId: string, usuarioId: string) {
+    const orden = await prisma.orden.findUnique({ where: { ordenId }, include: { items: true } });
+    if (!orden || orden.usuarioId !== usuarioId) return { error: 'Pedido no encontrado', status: 404 as const };
+    if (orden.estado !== 'entregado') return { error: 'Podrás opinar cuando el pedido esté entregado.', status: 400 as const };
+    return { orden };
+  }
+
+  // Crear o editar la opinión de un producto comprado
+  app.put('/api/orders/:ordenId/items/:itemId/review', requireAuth, reviewLimiter, async (req: any, res) => {
+    try {
+      const { calificacion, comentario, imageBase64, quitarFoto, productoKey } = req.body || {};
+      if (!calificacionValida(calificacion)) return res.status(400).json({ success: false, error: 'Elige una calificación de 1 a 5 estrellas.' });
+
+      const r = await pedidoEntregadoDe(req.params.ordenId, req.user.id);
+      if ('error' in r) return res.status(r.status).json({ success: false, error: r.error });
+      const item = r.orden.items.find(i => i.ordenItemId === req.params.itemId);
+      if (!item) return res.status(404).json({ success: false, error: 'Ese producto no está en el pedido.' });
+
+      // El id del catálogo sale de la orden; los pedidos antiguos no lo guardaban y lo manda la tienda
+      const key = item.codigoProductoExterno || (typeof productoKey === 'string' ? productoKey.trim().slice(0, 80) : '');
+      if (!key) return res.status(400).json({ success: false, error: 'No se pudo identificar el producto.' });
+
+      let foto: string | null | undefined = undefined;
+      if (imageBase64) {
+        const f = parseImageDataUri(imageBase64);
+        if (!f || f.tamanoMb > 4) return res.status(400).json({ success: false, error: 'La foto debe ser PNG, JPG o WEBP de máximo 4 MB.' });
+        foto = f.dataUri;
+      } else if (quitarFoto) {
+        foto = null;
+      }
+
+      const texto = limpiarComentario(comentario);
+      const resena = await prisma.resenaProducto.upsert({
+        where: { ordenItemId: item.ordenItemId },
+        update: { calificacion: Number(calificacion), comentario: texto, ...(foto !== undefined ? { fotoDataUri: foto } : {}) },
+        create: {
+          productoKey: key,
+          nombreProducto: item.nombreProducto,
+          usuarioId: req.user.id,
+          ordenId: r.orden.ordenId,
+          ordenItemId: item.ordenItemId,
+          calificacion: Number(calificacion),
+          comentario: texto,
+          fotoDataUri: foto ?? null
+        },
+        select: { resenaId: true, calificacion: true, comentario: true, fotoDataUri: true }
+      });
+      res.json({ success: true, review: { resenaId: resena.resenaId, calificacion: resena.calificacion, comentario: resena.comentario, tieneFoto: !!resena.fotoDataUri } });
+    } catch (error: any) {
+      console.error('[save-review]', error);
+      res.status(400).json({ success: false, error: 'No se pudo guardar tu opinión' });
+    }
+  });
+
+  // Evaluar al vendedor (el servicio de ColorLink en ese pedido)
+  app.put('/api/orders/:ordenId/seller-rating', requireAuth, reviewLimiter, async (req: any, res) => {
+    try {
+      const { calificacion, comentario } = req.body || {};
+      if (!calificacionValida(calificacion)) return res.status(400).json({ success: false, error: 'Elige una calificación de 1 a 5 estrellas.' });
+      const r = await pedidoEntregadoDe(req.params.ordenId, req.user.id);
+      if ('error' in r) return res.status(r.status).json({ success: false, error: r.error });
+      const texto = limpiarComentario(comentario);
+      const ev = await prisma.evaluacionVendedor.upsert({
+        where: { ordenId: r.orden.ordenId },
+        update: { calificacion: Number(calificacion), comentario: texto },
+        create: { ordenId: r.orden.ordenId, usuarioId: req.user.id, calificacion: Number(calificacion), comentario: texto },
+        select: { calificacion: true, comentario: true }
+      });
+      res.json({ success: true, evaluacion: ev });
+    } catch (error: any) {
+      console.error('[seller-rating]', error);
+      res.status(400).json({ success: false, error: 'No se pudo guardar tu evaluación' });
     }
   });
 

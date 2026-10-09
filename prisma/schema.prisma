@@ -48,6 +48,8 @@ model Usuario {
   ordenes Orden[]
   activo       Boolean             @default(true)
   notificacionesVistasAt DateTime? @map("notificaciones_vistas_at")
+  resenas      ResenaProducto[]
+  evaluaciones EvaluacionVendedor[]
 
   @@map("usuario")
 }
@@ -184,6 +186,8 @@ model Orden {
   updatedAt        DateTime @default(now()) @updatedAt @map("updated_at")
   items            OrdenItem[]
   historial        EstadoOrdenHistorial[]
+  resenas          ResenaProducto[]
+  evaluacion       EvaluacionVendedor?
 
   @@map("orden")
 }
@@ -199,8 +203,48 @@ model OrdenItem {
   cantidad               Int
   precioUnitario         Float     @map("precio_unitario")
   subtotal               Float
+  presentacion           String?
+  color                  String?
+  resena                 ResenaProducto?
 
   @@map("orden_item")
+}
+
+// Opinión de un cliente sobre un producto que compró y recibió (se muestra en la ficha del producto)
+model ResenaProducto {
+  resenaId       String    @id @default(uuid()) @map("resena_id")
+  productoKey    String    @map("producto_key") // id del producto en el catálogo de la tienda
+  nombreProducto String    @map("nombre_producto")
+  usuarioId      String    @map("usuario_id")
+  usuario        Usuario   @relation(fields: [usuarioId], references: [usuarioId])
+  ordenId        String    @map("orden_id")
+  orden          Orden     @relation(fields: [ordenId], references: [ordenId])
+  ordenItemId    String    @unique @map("orden_item_id")
+  ordenItem      OrdenItem @relation(fields: [ordenItemId], references: [ordenItemId], onDelete: Cascade)
+  calificacion   Int
+  comentario     String?
+  fotoDataUri    String?   @map("foto_data_uri")
+  visible        Boolean   @default(true)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  @@index([productoKey, createdAt])
+  @@map("resena_producto")
+}
+
+// Calificación del servicio de ColorLink (vendedor) en un pedido entregado
+model EvaluacionVendedor {
+  evaluacionId String   @id @default(uuid()) @map("evaluacion_id")
+  ordenId      String   @unique @map("orden_id")
+  orden        Orden    @relation(fields: [ordenId], references: [ordenId], onDelete: Cascade)
+  usuarioId    String   @map("usuario_id")
+  usuario      Usuario  @relation(fields: [usuarioId], references: [usuarioId])
+  calificacion Int
+  comentario   String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("evaluacion_vendedor")
 }
 
 model EstadoOrdenHistorial {

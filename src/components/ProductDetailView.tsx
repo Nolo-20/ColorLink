@@ -1,3 +1,4 @@
+import { ProductReviewsSection, Stars, useProductReviews } from './Reviews';
 import React, { useState } from 'react';
 import { 
   Calculator, 
@@ -115,6 +116,8 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
       window.open(`https://twitter.com/intent/tweet?text=${text}`, '_blank');
     }
   };
+
+  const opiniones = useProductReviews(product.id);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
@@ -384,14 +387,16 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
                 <span>Retira hoy*</span>
               </span>
 
-              <div className="flex items-center gap-1 text-slate-400 text-xs">
-                <div className="flex items-center text-amber-400">
-                  {[...Array(5)].map((_, i) => (
-                    <Star key={i} className="w-3.5 h-3.5 fill-current" />
-                  ))}
-                </div>
-                <span className="font-bold text-slate-600">({product.reviewsCount || 0}) comentarios</span>
-              </div>
+              <a
+                href="#opiniones"
+                onClick={(e) => { e.preventDefault(); document.getElementById('opiniones')?.scrollIntoView({ behavior: 'smooth' }); }}
+                className="flex items-center gap-1.5 text-xs hover:underline"
+              >
+                <Stars value={opiniones?.promedio || 0} size="w-3.5 h-3.5" />
+                <span className="font-bold text-slate-600">
+                  {!opiniones ? '' : opiniones.total === 0 ? 'Sin opiniones aún' : `${opiniones.promedio.toFixed(1)} · ${opiniones.total} ${opiniones.total === 1 ? 'opinión' : 'opiniones'}`}
+                </span>
+              </a>
             </div>
 
             {/* Description with Ver más / Ver menos */}
@@ -709,6 +714,9 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Opiniones reales de clientes (compras verificadas) */}
+      <ProductReviewsSection data={opiniones} productName={product.name} />
 
       {/* Paint Calculator Modal (Exact Match with Screenshot 8) */}
       <PaintCalculatorModal

@@ -137,19 +137,25 @@ export default function App() {
               carrier: isPickup ? 'Retiro en Sucursal Asignada' : 'Flota ColorLink',
               estimatedDelivery: isPickup ? 'Disponible en tienda' : 'Próximas 24-48 horas',
               items: (o.items || []).map((it: any) => {
-                const catalogProduct = STORE_PRODUCTS.find(p => p.id === it.codigoProductoExterno);
+                // Pedidos antiguos no guardaban el id del catálogo: se reconoce por el nombre
+                const catalogProduct = STORE_PRODUCTS.find(p => p.id === it.codigoProductoExterno)
+                  || STORE_PRODUCTS.find(p => p.name.trim().toLowerCase() === String(it.nombreProducto || '').trim().toLowerCase());
+                const color = it.color ? catalogProduct?.colors?.find((c: any) => c.name === it.color) : undefined;
                 return {
                   id: it.ordenItemId,
-                  productId: it.codigoProductoExterno || '',
+                  productId: it.codigoProductoExterno || catalogProduct?.id || '',
                   name: it.nombreProducto,
-                  sizeName: catalogProduct?.sizes?.[0]?.name || '',
-                  colorName: '',
-                  colorHex: '',
+                  sizeName: it.presentacion || '',
+                  colorName: it.color || '',
+                  colorHex: color?.hex || '',
                   price: it.precioUnitario,
                   quantity: it.cantidad,
-                  image: catalogProduct?.image || ''
+                  image: catalogProduct?.image || '',
+                  review: it.resena || null
                 };
               }),
+              deliveredAt: (o.historial || []).filter((h: any) => h.estado === 'entregado').map((h: any) => h.fecha).pop(),
+              sellerRating: o.evaluacion || null,
               trackingHistory: (o.historial || []).map((h: any) => ({
                 status: h.estado,
                 label: estadoLabels[h.estado] || h.estado,
@@ -389,7 +395,7 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          items: purchasedItems.map(it => ({ productId: it.productId, name: it.name, price: it.price, cantidad: it.quantity })),
+          items: purchasedItems.map(it => ({ productId: it.productId, name: it.name, price: it.price, cantidad: it.quantity, sizeName: it.sizeName, colorName: it.colorName })),
           metodoEntrega: (orderDetails?.deliveryMethod === 'sucursal' || orderDetails?.deliveryMethod === 'pickup') ? 'recoger_tienda' : 'domicilio',
           direccionEntrega: orderDetails?.shippingAddress || undefined
         })
@@ -646,6 +652,7 @@ export default function App() {
               setActiveTab('tienda');
             }}
             onOpenSupport={() => setIsAssistantModalOpen(true)}
+            onOrdersChanged={loadRealOrders}
           />
         )}
 

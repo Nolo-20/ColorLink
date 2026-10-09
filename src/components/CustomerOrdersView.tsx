@@ -22,6 +22,8 @@ import {
 } from 'lucide-react';
 import { CustomerOrder, OrderStatus, CartItem, StoreProduct, StoreProductSize, StoreProductColor } from '../types';
 import { PickupReceiptModal } from './PickupReceiptModal';
+import { ProductReviewModal, PickItemModal, SellerRatingModal, Stars, ItemParaOpinar } from './Reviews';
+import { Star, MessageSquareText } from 'lucide-react';
 
 interface CustomerOrdersViewProps {
   orders: CustomerOrder[];
@@ -29,6 +31,8 @@ interface CustomerOrdersViewProps {
   onBuyAgain: (item: CustomerOrder['items'][0]) => void;
   onNavigateToStore: () => void;
   onOpenSupport?: (orderNumber: string) => void;
+  /** Recarga los pedidos (p. ej. después de dejar una opinión) */
+  onOrdersChanged?: () => void;
 }
 
 export const CustomerOrdersView: React.FC<CustomerOrdersViewProps> = ({
@@ -36,8 +40,24 @@ export const CustomerOrdersView: React.FC<CustomerOrdersViewProps> = ({
   onCancelOrder,
   onBuyAgain,
   onNavigateToStore,
-  onOpenSupport
+  onOpenSupport,
+  onOrdersChanged
 }) => {
+  // Opiniones y evaluaciones guardadas en esta sesión (se ven al instante, sin esperar la recarga)
+  const [reviewsLocal, setReviewsLocal] = useState<Record<string, ItemParaOpinar['review']>>({});
+  const [sellerLocal, setSellerLocal] = useState<Record<string, { calificacion: number; comentario?: string | null }>>({});
+  const [reviewTarget, setReviewTarget] = useState<{ orderId: string; item: ItemParaOpinar } | null>(null);
+  const [pickTarget, setPickTarget] = useState<{ orderId: string; items: ItemParaOpinar[] } | null>(null);
+  const [sellerTarget, setSellerTarget] = useState<CustomerOrder | null>(null);
+  const [aviso, setAviso] = useState('');
+
+  const conOpinion = (it: CustomerOrder['items'][0]): ItemParaOpinar => ({ ...it, review: reviewsLocal[it.id] !== undefined ? reviewsLocal[it.id] : it.review });
+  const abrirOpinion = (order: CustomerOrder) => {
+    const items = order.items.map(conOpinion);
+    if (items.length === 1) setReviewTarget({ orderId: order.id, item: items[0] });
+    else setPickTarget({ orderId: order.id, items });
+  };
+  const mostrarAviso = (t: string) => { setAviso(t); setTimeout(() => setAviso(''), 4000); };
   const [activeTab, setActiveTab] = useState<'pedidos' | 'comprar_de_nuevo' | 'pendientes'>('pedidos');
   const [searchQuery, setSearchQuery] = useState('');
   const [timeFilter, setTimeFilter] = useState('ultimos_3_meses');
@@ -259,7 +279,11 @@ export const CustomerOrdersView: React.FC<CustomerOrdersViewProps> = ({
                       {isDelivered && (
                         <div className="flex items-center gap-1.5 text-green-700 font-black text-base sm:text-lg">
                           <CheckCircle2 className="w-5 h-5 text-green-600" />
-                          <span>Entregado el {order.estimatedDelivery || 'recientemente'}</span>
+                          <span>
+                            {order.deliveredAt
+                              ? `${order.deliveryMethod === 'sucursal' ? 'Retirado' : 'Entregado'} el ${new Date(order.deliveredAt).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })}`
+                              : order.deliveryMethod === 'sucursal' ? 'Retirado en tienda' : 'Entregado'}
+                          </span>
                         </div>
                       )}
                       {isShipped && (
@@ -340,7 +364,11 @@ export const CustomerOrdersView: React.FC<CustomerOrdersViewProps> = ({
                               {item.name}
                             </h4>
                             <p className="text-[11px] text-slate-500 mt-0.5">
-                              Presentación: <strong>{item.sizeName}</strong> {item.colorName && `• Color: ${item.colorName}`} • Cant: <strong>{item.quantity}</strong>
+                              {[
+                                item.sizeName ? <>Presentación: <strong>{item.sizeName}</strong></> : null,
+                                item.colorName ? <>Color: <strong>{item.colorName}</strong></> : null,
+                                <>Cant: <strong>{item.quantity}</strong></>
+                              ].filter(Boolean).map((parte, i) => <React.Fragment key={i}>{i > 0 && ' • '}{parte}</React.Fragment>)}
                             </p>
                             <p className="text-xs font-black text-slate-900 mt-1">
                               ${(item.price * item.quantity).toLocaleString('es-CO')} COP
@@ -355,6 +383,30 @@ export const CustomerOrdersView: React.FC<CustomerOrdersViewProps> = ({
                               <RotateCcw className="w-3.5 h-3.5" />
                               <span>Comprar nuevamente</span>
                             </button>
+
+                            {isDelivered && (() => {
+                              const it = conOpinion(item);
+                              return it.review ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setReviewTarget({ orderId: order.id, item: it })}
+                                  className="mt-2.5 ml-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs cursor-pointer"
+                                  title="Editar tu opinión"
+                                >
+                                  <Stars value={it.review.calificacion} size="w-3 h-3" />
+                                  <span>Tu opinión</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setReviewTarget({ orderId: order.id, item: it })}
+                                  className="mt-2.5 ml-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 font-semibold text-xs cursor-pointer"
+                                >
+                                  <Star className="w-3.5 h-3.5 text-amber-500" />
+                                  <span>Calificar producto</span>
+                                </button>
+                              );
+                            })()}
                           </div>
 
                         </div>
@@ -365,6 +417,38 @@ export const CustomerOrdersView: React.FC<CustomerOrdersViewProps> = ({
 
                   {/* Right Column: Actions matching Image 1 */}
                   <div className="lg:col-span-4 space-y-2.5 w-full">
+                    {isDelivered ? (
+                      <>
+                        {/* Pedido finalizado: soporte, evaluar al vendedor y opinar del producto */}
+                        <button
+                          type="button"
+                          onClick={() => onOpenSupport ? onOpenSupport(order.orderNumber) : window.open(`https://wa.me/573147892045?text=Hola,%20necesito%20soporte%20sobre%20mi%20pedido%20${order.orderNumber}`, '_blank')}
+                          className="w-full py-2.5 px-4 bg-amber-400 hover:bg-amber-300 active:bg-amber-500 text-slate-950 font-bold text-xs rounded-full shadow-xs transition-all text-center cursor-pointer"
+                        >
+                          Obtener soporte
+                        </button>
+                        {(() => {
+                          const ev = sellerLocal[order.id] || order.sellerRating;
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => setSellerTarget(order)}
+                              className="w-full py-2.5 px-4 bg-white hover:bg-slate-50 text-slate-800 font-semibold text-xs rounded-full border border-slate-400 transition-all text-center cursor-pointer inline-flex items-center justify-center gap-2"
+                            >
+                              {ev ? (<><span>Evaluaste al vendedor</span><Stars value={ev.calificacion} size="w-3 h-3" /></>) : 'Evaluar al vendedor'}
+                            </button>
+                          );
+                        })()}
+                        <button
+                          type="button"
+                          onClick={() => abrirOpinion(order)}
+                          className="w-full py-2.5 px-4 bg-white hover:bg-slate-50 text-slate-800 font-semibold text-xs rounded-full border border-slate-400 transition-all text-center cursor-pointer"
+                        >
+                          {order.items.every(it => conOpinion(it).review) ? 'Editar tu opinión' : 'Escribir una opinión'}
+                        </button>
+                      </>
+                    ) : (
+                      <>
                     
                     {/* Primary Pickup Voucher Button if pickup */}
                     {(order.deliveryMethod === 'sucursal' || !!order.pickupStore || !!order.pickupCode) && (
@@ -432,6 +516,8 @@ export const CustomerOrdersView: React.FC<CustomerOrdersViewProps> = ({
                       <span>Descargar comprobante</span>
                     </button>
 
+                      </>
+                    )}
                   </div>
 
                 </div>
@@ -651,6 +737,49 @@ export const CustomerOrdersView: React.FC<CustomerOrdersViewProps> = ({
           order={receiptModalOrder}
           onClose={() => setReceiptModalOrder(null)}
         />
+      )}
+
+      {pickTarget && (
+        <PickItemModal
+          items={pickTarget.items}
+          onClose={() => setPickTarget(null)}
+          onPick={(item) => { setReviewTarget({ orderId: pickTarget.orderId, item }); setPickTarget(null); }}
+        />
+      )}
+
+      {reviewTarget && (
+        <ProductReviewModal
+          orderId={reviewTarget.orderId}
+          item={reviewTarget.item}
+          onClose={() => setReviewTarget(null)}
+          onSaved={(review) => {
+            setReviewsLocal(prev => ({ ...prev, [reviewTarget.item.id]: review }));
+            setReviewTarget(null);
+            mostrarAviso('¡Gracias! Tu opinión ya aparece en la página del producto.');
+            onOrdersChanged?.();
+          }}
+        />
+      )}
+
+      {sellerTarget && (
+        <SellerRatingModal
+          orderId={sellerTarget.id}
+          orderNumber={sellerTarget.orderNumber}
+          actual={sellerLocal[sellerTarget.id] || sellerTarget.sellerRating}
+          onClose={() => setSellerTarget(null)}
+          onSaved={(ev) => {
+            setSellerLocal(prev => ({ ...prev, [sellerTarget.id]: ev }));
+            setSellerTarget(null);
+            mostrarAviso('¡Gracias por evaluar nuestro servicio!');
+            onOrdersChanged?.();
+          }}
+        />
+      )}
+
+      {aviso && (
+        <div role="status" className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[80] bg-slate-900 text-white text-sm font-semibold px-4 py-3 rounded-xl shadow-xl inline-flex items-center gap-2">
+          <MessageSquareText className="w-4 h-4 text-amber-400" /> {aviso}
+        </div>
       )}
 
     </div>
