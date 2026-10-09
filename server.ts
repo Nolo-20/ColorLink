@@ -95,6 +95,47 @@ async function sendWhatsAppMessage(_toPhone: string, _body: string) {
   return;
 }
 
+/** Convierte una entrada del historial de un proyecto en un aviso entendible para el cliente (sin notas internas). */
+function textoHistorialCliente(
+  h: { estadoAnterior: string | null; estadoNuevo: string; comentario: string | null },
+  nombreProyecto: string
+): { titulo: string; detalle: string } {
+  const c = h.comentario || '';
+  const nombre = `«${nombreProyecto}»`;
+  const ESTADO: Record<string, string> = {
+    en_revision: 'en revisión', imagen_por_corregir: 'pendiente de una nueva foto', en_peritaje: 'en revisión técnica',
+    cotizado: 'cotizado', aprobado_calidad: 'aprobado por calidad', rechazado: 'con ajustes técnicos pendientes',
+    despachado: 'despachado', cancelado: 'cancelado'
+  };
+  if (c.startsWith('Escalado a asesor ')) {
+    const asesor = c.slice('Escalado a asesor '.length).split('.')[0];
+    return { titulo: 'Tienes un asesor asignado', detalle: `${asesor} está a cargo de tu proyecto ${nombre}. Puedes escribirle desde el proyecto.` };
+  }
+  if (c.startsWith('Enviado a peritaje con ')) return { titulo: 'Tu proyecto pasó a revisión técnica', detalle: `Un perito de calidad está revisando ${nombre}.` };
+  if (c.startsWith('Cotización técnica:')) {
+    const total = /Total (\$[\d.,]+ COP)/.exec(c)?.[1];
+    return { titulo: 'Tu cotización está lista', detalle: `${nombre}${total ? ` · total ${total}` : ''}.` };
+  }
+  if (c.startsWith('Veredicto de calidad: APROBADO')) return { titulo: 'Tu proyecto fue aprobado por calidad', detalle: `${nombre} quedó listo para el despacho del material.` };
+  if (c.startsWith('Veredicto de calidad: RECHAZADO')) return { titulo: 'Calidad pidió ajustes en tu proyecto', detalle: `Tu asesor te contará qué se debe ajustar en ${nombre}.` };
+  if (c.startsWith('Veredicto de calidad:')) return { titulo: 'Calidad revisó tu proyecto', detalle: `Se registraron observaciones técnicas en ${nombre}.` };
+  if (c.startsWith('Se pidió al cliente cambiar la imagen')) {
+    const motivo = c.split('Motivo: ')[1];
+    return { titulo: 'Necesitamos otra foto de tu proyecto', detalle: `${nombre}${motivo ? `: ${motivo}` : ''}` };
+  }
+  if (c.startsWith('Despachado con guía')) {
+    const guia = /guía ([^,.]+)/.exec(c)?.[1];
+    return { titulo: 'Tu material va en camino', detalle: `${nombre}${guia ? ` · guía ${guia}` : ''}.` };
+  }
+  if (c.startsWith('Entrega confirmada en obra')) return { titulo: 'Entrega confirmada en obra', detalle: `El material de ${nombre} fue recibido.` };
+  if (c.startsWith('Proyecto registrado')) return { titulo: 'Proyecto recibido', detalle: `${nombre} está en revisión.` };
+  if (c.startsWith('El cliente subió una nueva imagen')) return { titulo: 'Recibimos tu nueva foto', detalle: `${nombre} vuelve a revisión.` };
+  if (h.estadoAnterior !== h.estadoNuevo && ESTADO[h.estadoNuevo]) {
+    return { titulo: `Tu proyecto ahora está ${ESTADO[h.estadoNuevo]}`, detalle: nombre };
+  }
+  return { titulo: 'Tu proyecto tuvo una actualización', detalle: nombre };
+}
+
 const escapeHtml = (s: any) =>
   String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
 
@@ -1036,6 +1077,30 @@ async function startServer() {
     });
   }
 
+  // Aviso por correo de un mensaje nuevo en la conversación del proyecto
+  async function sendNewMessageEmail(email: string, d: { nombreProyecto: string; autor: string; texto: string; paraCliente: boolean; enlace: string }) {
+    if (!process.env.SMTP_HOST) return;
+    const proyecto = String(d.nombreProyecto).replace(/[\r\n]/g, ' ');
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM || '"ColorLink" <no-reply@colorlink.com>',
+      to: email,
+      subject: d.paraCliente ? `Tu asesor te escribió sobre "${proyecto}"` : `Nuevo mensaje del cliente en "${proyecto}"`,
+      html: `
+    <div style="font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #f1f5f9;">
+      <div style="background: #0A1A36; padding: 24px 32px; border-radius: 12px 12px 0 0;">
+        <img src="${APP_URL}/brand/logo-on-dark.png" alt="ColorLink" height="34" style="display:block;height:34px;width:auto;border:0;" />
+      </div>
+      <div style="background: #ffffff; padding: 32px; border-radius: 0 0 12px 12px;">
+        <p style="color:#64748b; font-size:12px; font-weight:700; text-transform:uppercase; margin:0 0 6px;">${escapeHtml(proyecto)}</p>
+        <h2 style="color: #0A1A36; margin: 0 0 14px; font-size:18px;">${escapeHtml(d.autor)} te escribió</h2>
+        <div style="background:#f8fafc; border-left:4px solid #F4C20D; padding:12px 14px; color:#334155; font-size:14px; line-height:1.6; white-space:pre-wrap;">${escapeHtml(d.texto)}</div>
+        ${d.enlace ? `<p style="margin:22px 0 0;"><a href="${escapeHtml(d.enlace)}" style="background:#14216B; color:#fff; text-decoration:none; font-weight:700; font-size:13px; padding:10px 18px; border-radius:10px; display:inline-block;">Responder</a></p>` : ''}
+        <p style="color:#94a3b8; font-size:12px; margin-top:22px;">Responde desde ${d.paraCliente ? 'tu proyecto en ColorLink' : 'el ERP de ColorLink'}; este correo no recibe respuestas.</p>
+      </div>
+    </div>`
+    });
+  }
+
   async function sendProjectCreatedEmail(email: string, nombreProyecto: string, proyectoId: string) {
     if (!process.env.SMTP_HOST) return;
     await transporter.sendMail({
@@ -1071,11 +1136,22 @@ async function startServer() {
           cotizaciones: { orderBy: { createdAt: 'desc' }, include: { items: { include: { producto: { select: { nombre: true, presentacion: true } } } } } },
           despacho: true,
           empresa: { include: { ciudad: true } },
-          historial: { orderBy: { fecha: 'desc' } }
+          historial: { orderBy: { fecha: 'desc' } },
+          asesorAsignado: { select: { nombre: true, apellido: true, email: true, telefono: true, avatarUrl: true } },
+          _count: { select: { mensajes: { where: { leidoCliente: false, autorRol: { not: 'cliente' } } } } }
         },
         orderBy: { updatedAt: 'desc' }
       });
-      res.json({ success: true, projects: proyectos });
+      // Al cliente no se le envían las notas internas del equipo, solo un texto pensado para él
+      const projects = proyectos.map(({ _count, historial, ...p }) => ({
+        ...p,
+        mensajesSinLeer: _count.mensajes,
+        historial: historial.map(h => ({
+          id: h.id, estadoAnterior: h.estadoAnterior, estadoNuevo: h.estadoNuevo, fecha: h.fecha,
+          comentario: textoHistorialCliente(h, p.nombreProyecto).detalle
+        }))
+      }));
+      res.json({ success: true, projects });
     } catch (error: any) {
       console.error('[get-projects]', error);
       res.status(500).json({ success: false, error: 'No se pudieron cargar los proyectos' });
@@ -1305,6 +1381,209 @@ async function startServer() {
     } catch (error: any) {
       console.error('[get-users]', error);
       res.status(500).json({ success: false, error: 'No se pudieron cargar los usuarios' });
+    }
+  });
+
+  // ----------------------------------------------------------------
+  // MENSAJES DEL PROYECTO (cliente <-> asesor / equipo ColorLink)
+  // ----------------------------------------------------------------
+
+  const messageLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false,
+    message: { success: false, error: 'Estás enviando mensajes muy rápido. Espera un momento.' } });
+
+  /** Devuelve el proyecto si quien pide es el cliente dueño o alguien del equipo; si no, null. */
+  async function proyectoParaConversacion(proyectoId: string, user: any) {
+    const proyecto = await prisma.proyecto.findUnique({
+      where: { proyectoId },
+      select: {
+        proyectoId: true, usuarioId: true, nombreProyecto: true, asesorAsignadoId: true,
+        usuario: { select: { email: true, nombre: true } },
+        asesorAsignado: { select: { usuarioId: true, nombre: true, apellido: true, email: true, telefono: true, avatarUrl: true } }
+      }
+    });
+    if (!proyecto) return null;
+    const esDueno = proyecto.usuarioId === user.id;
+    const esEquipo = STAFF_ROLES.includes(user.role);
+    if (!esDueno && !esEquipo) return null;
+    return { proyecto, esDueno };
+  }
+
+  app.get('/api/projects/:id/messages', requireAuth, async (req: any, res) => {
+    try {
+      const acceso = await proyectoParaConversacion(req.params.id, req.user);
+      if (!acceso) return res.status(404).json({ success: false, error: 'Proyecto no encontrado' });
+      const { proyecto, esDueno } = acceso;
+
+      // Quien abre la conversación deja leídos los mensajes de la otra parte
+      if (esDueno) {
+        await prisma.mensajeProyecto.updateMany({ where: { proyectoId: proyecto.proyectoId, leidoCliente: false, autorRol: { not: 'cliente' } }, data: { leidoCliente: true } });
+      } else {
+        await prisma.mensajeProyecto.updateMany({ where: { proyectoId: proyecto.proyectoId, leidoEquipo: false, autorRol: 'cliente' }, data: { leidoEquipo: true } });
+      }
+
+      const mensajes = await prisma.mensajeProyecto.findMany({
+        where: { proyectoId: proyecto.proyectoId },
+        orderBy: { createdAt: 'asc' },
+        take: 300,
+        select: { mensajeId: true, autorId: true, autorNombre: true, autorRol: true, texto: true, createdAt: true, leidoCliente: true, leidoEquipo: true }
+      });
+      res.json({ success: true, messages: mensajes, asesor: proyecto.asesorAsignado, proyecto: { proyectoId: proyecto.proyectoId, nombreProyecto: proyecto.nombreProyecto } });
+    } catch (error: any) {
+      console.error('[get-messages]', error);
+      res.status(500).json({ success: false, error: 'No se pudieron cargar los mensajes' });
+    }
+  });
+
+  app.post('/api/projects/:id/messages', requireAuth, messageLimiter, async (req: any, res) => {
+    try {
+      const texto = String(req.body?.texto ?? '').replace(/\r\n/g, '\n').trim();
+      if (!texto) return res.status(400).json({ success: false, error: 'Escribe un mensaje.' });
+      if (texto.length > 1000) return res.status(400).json({ success: false, error: 'El mensaje puede tener máximo 1000 caracteres.' });
+
+      const acceso = await proyectoParaConversacion(req.params.id, req.user);
+      if (!acceso) return res.status(404).json({ success: false, error: 'Proyecto no encontrado' });
+      const { proyecto, esDueno } = acceso;
+
+      const actor = await actorSnapshot(req.user);
+      const autorRol = esDueno ? 'cliente' : req.user.role;
+
+      // Para no llenar el correo: solo se avisa si la otra parte no tenía mensajes sin leer de este autor en los últimos 15 min
+      const reciente = await prisma.mensajeProyecto.findFirst({
+        where: { proyectoId: proyecto.proyectoId, autorRol, createdAt: { gte: new Date(Date.now() - 15 * 60 * 1000) },
+          ...(esDueno ? { leidoEquipo: false } : { leidoCliente: false }) },
+        select: { mensajeId: true }
+      });
+
+      const mensaje = await prisma.mensajeProyecto.create({
+        data: {
+          proyectoId: proyecto.proyectoId,
+          autorId: req.user.id,
+          autorNombre: actor.usuarioNombre,
+          autorRol,
+          texto,
+          // Lo que uno mismo escribe ya está leído por su lado
+          leidoCliente: esDueno,
+          leidoEquipo: !esDueno
+        },
+        select: { mensajeId: true, autorId: true, autorNombre: true, autorRol: true, texto: true, createdAt: true, leidoCliente: true, leidoEquipo: true }
+      });
+
+      if (!reciente) {
+        const destino = esDueno ? proyecto.asesorAsignado?.email : proyecto.usuario?.email;
+        if (destino) {
+          sendNewMessageEmail(destino, {
+            nombreProyecto: proyecto.nombreProyecto,
+            autor: actor.usuarioNombre,
+            texto,
+            paraCliente: !esDueno,
+            enlace: esDueno ? (process.env.ERP_URL || '') : APP_URL
+          }).catch(err => console.error('[message-email]', err));
+        }
+      }
+
+      res.json({ success: true, message: mensaje });
+    } catch (error: any) {
+      console.error('[post-message]', error);
+      res.status(400).json({ success: false, error: 'No se pudo enviar el mensaje' });
+    }
+  });
+
+  // ERP: proyectos con mensajes del cliente sin leer (el asesor ve los suyos y los que no tienen asesor)
+  app.get('/api/messages/unread', requireAuth, requireRole(...STAFF_ROLES), async (req: any, res) => {
+    try {
+      const filtroProyecto = req.user.role === 'administrador' ? {}
+        : req.user.role === 'calidad' ? { peritoAsignadoId: req.user.id }
+        : req.user.role === 'asesor' ? { OR: [{ asesorAsignadoId: req.user.id }, { asesorAsignadoId: null }] }
+        : {};
+      const grupos = await prisma.mensajeProyecto.groupBy({
+        by: ['proyectoId'],
+        where: { autorRol: 'cliente', leidoEquipo: false, proyecto: filtroProyecto },
+        _count: { _all: true },
+        _max: { createdAt: true }
+      });
+      res.json({ success: true, unread: grupos.map(g => ({ proyectoId: g.proyectoId, sinLeer: g._count._all, ultimo: g._max.createdAt })) });
+    } catch (error: any) {
+      console.error('[unread-messages]', error);
+      res.status(500).json({ success: false, error: 'No se pudieron cargar los mensajes' });
+    }
+  });
+
+  // ----------------------------------------------------------------
+  // NOTIFICACIONES DEL CLIENTE (campana con contador)
+  // Se arman a partir del historial real de sus proyectos, pedidos y mensajes del equipo.
+  // ----------------------------------------------------------------
+
+  app.get('/api/notifications', requireAuth, async (req: any, res) => {
+    try {
+      const yo = await prisma.usuario.findUnique({ where: { usuarioId: req.user.id }, select: { notificacionesVistasAt: true, createdAt: true } });
+      if (!yo) return res.status(401).json({ success: false, error: 'Sesión inválida' });
+      const desde = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+      // Primera vez: se cuenta solo la última semana para no mostrar un número enorme
+      const vistasHasta = yo.notificacionesVistasAt || new Date(Math.max(yo.createdAt.getTime(), Date.now() - 7 * 24 * 60 * 60 * 1000));
+
+      const [histProy, histOrden, mensajes] = await Promise.all([
+        prisma.estadoProyectoHistorial.findMany({
+          where: { fecha: { gte: desde }, proyecto: { usuarioId: req.user.id }, OR: [{ usuarioId: null }, { usuarioId: { not: req.user.id } }] },
+          orderBy: { fecha: 'desc' }, take: 40,
+          include: { proyecto: { select: { nombreProyecto: true } } }
+        }),
+        prisma.estadoOrdenHistorial.findMany({
+          where: { fecha: { gte: desde }, orden: { usuarioId: req.user.id }, estado: { notIn: ['creado', 'confirmado'] }, OR: [{ usuarioId: null }, { usuarioId: { not: req.user.id } }] },
+          orderBy: { fecha: 'desc' }, take: 40,
+          include: { orden: { select: { ordenId: true, metodoEntrega: true } } }
+        }),
+        prisma.mensajeProyecto.findMany({
+          where: { createdAt: { gte: desde }, proyecto: { usuarioId: req.user.id }, autorRol: { not: 'cliente' } },
+          orderBy: { createdAt: 'desc' }, take: 40,
+          include: { proyecto: { select: { nombreProyecto: true } } }
+        })
+      ]);
+
+      const ESTADO_ORDEN_CLIENTE: Record<string, string> = {
+        en_alistamiento: 'se está preparando en bodega', en_camino: 'va en camino', listo_recoger: 'está listo para retirar en la sucursal',
+        entregado: 'fue entregado', cancelado: 'fue cancelado'
+      };
+
+      const items = [
+        ...histProy.map(h => {
+          const t = textoHistorialCliente(h, h.proyecto.nombreProyecto);
+          return { id: `p-${h.id}`, tipo: 'proyecto', titulo: t.titulo, detalle: t.detalle, fecha: h.fecha, enlace: { tipo: 'proyecto', id: h.proyectoId } };
+        }),
+        ...histOrden.map(h => {
+          const codigo = `CL-${h.orden.ordenId.slice(0, 8).toUpperCase()}`;
+          const listo = h.estado === 'listo_recoger';
+          return {
+            id: `o-${h.id}`, tipo: 'pedido',
+            titulo: listo ? 'Tu pedido está listo para retirar' : `Tu pedido ${ESTADO_ORDEN_CLIENTE[h.estado] || 'tuvo una actualización'}`,
+            detalle: `Pedido ${codigo}${listo ? ' · presenta tu código de retiro en la sucursal' : ''}`,
+            fecha: h.fecha, enlace: { tipo: 'pedido', id: h.orden.ordenId }
+          };
+        }),
+        ...mensajes.map(m => ({
+          id: `m-${m.mensajeId}`, tipo: 'mensaje',
+          titulo: `Nuevo mensaje de ${m.autorNombre}`,
+          detalle: `${m.proyecto.nombreProyecto}: ${m.texto.length > 90 ? m.texto.slice(0, 90) + '…' : m.texto}`,
+          fecha: m.createdAt, enlace: { tipo: 'proyecto', id: m.proyectoId, abrirChat: true }
+        }))
+      ]
+        .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())
+        .slice(0, 40)
+        .map(n => ({ ...n, leida: new Date(n.fecha).getTime() <= vistasHasta.getTime() }));
+
+      res.json({ success: true, notifications: items, sinLeer: items.filter(n => !n.leida).length });
+    } catch (error: any) {
+      console.error('[notifications]', error);
+      res.status(500).json({ success: false, error: 'No se pudieron cargar las notificaciones' });
+    }
+  });
+
+  app.post('/api/notifications/read', requireAuth, async (req: any, res) => {
+    try {
+      await prisma.usuario.update({ where: { usuarioId: req.user.id }, data: { notificacionesVistasAt: new Date() } });
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('[notifications-read]', error);
+      res.status(400).json({ success: false, error: 'No se pudieron marcar como leídas' });
     }
   });
 

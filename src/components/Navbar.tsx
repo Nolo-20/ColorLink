@@ -41,7 +41,10 @@ interface NavbarProps {
   hasValidatedData: boolean;
   onLogout?: () => void;
   onOpenVirtualAssistant?: () => void;
+  onOpenNotification?: (n: Notificacion) => void;
 }
+
+import { NotificationBell, Notificacion } from './NotificationBell';
 
 // Avatar con ícono genérico por defecto (en vez de una foto de stock fija) cuando el usuario no tiene foto propia
 const UserAvatarImg: React.FC<{ avatar?: string | null; name: string; sizeClass?: string }> = ({ avatar, name, sizeClass = 'w-7 h-7' }) => {
@@ -71,7 +74,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLoadSampleCase,
   hasValidatedData,
   onLogout,
-  onOpenVirtualAssistant
+  onOpenVirtualAssistant,
+  onOpenNotification
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
@@ -263,10 +267,14 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
 
             {isLoggedIn && (
+              <NotificationBell onOpenItem={(n) => onOpenNotification ? onOpenNotification(n) : setActiveTab(n.enlace.tipo === 'pedido' ? 'pedidos' : 'captura')} />
+            )}
+
+            {isLoggedIn && (
               <button
                 type="button"
                 onClick={() => setActiveTab('pedidos')}
-                className={`relative p-2 sm:p-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 border ${
+                className={`relative hidden sm:flex p-2 sm:p-2.5 rounded-xl transition-all cursor-pointer items-center gap-1.5 active:scale-95 border ${
                   activeTab === 'pedidos'
                     ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-black shadow-md'
                     : 'bg-slate-900/80 hover:bg-slate-800 text-white border-slate-700/70'
@@ -283,7 +291,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
-                  className="flex items-center gap-2 p-1 pl-2 pr-2.5 rounded-full bg-[#050D1C] border border-slate-700 hover:border-emerald-400 transition-all cursor-pointer group"
+                  className="flex items-center gap-2 p-1 sm:pl-2 sm:pr-2.5 rounded-full bg-[#050D1C] border border-slate-700 hover:border-emerald-400 transition-all cursor-pointer group"
                 >
                   <UserAvatarImg avatar={user.avatar} name={user.name} sizeClass="w-7 h-7" />
                   <div className="hidden sm:block text-left">
@@ -294,7 +302,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       {user.role}
                     </span>
                   </div>
-                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-white transition-transform" />
+                  <ChevronDown className="hidden sm:block w-3.5 h-3.5 text-slate-400 group-hover:text-white transition-transform" />
                 </button>
 
                 {isUserDropdownOpen && (

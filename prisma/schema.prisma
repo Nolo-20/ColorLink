@@ -47,6 +47,7 @@ model Usuario {
   proyectosComoPerito Proyecto[] @relation("ProyectoPerito")
   ordenes Orden[]
   activo       Boolean             @default(true)
+  notificacionesVistasAt DateTime? @map("notificaciones_vistas_at")
 
   @@map("usuario")
 }
@@ -108,8 +109,26 @@ model Proyecto {
   observacionImagen String?      @map("observacion_imagen")
   historial        EstadoProyectoHistorial[]
   despacho         DespachoProyecto?
+  mensajes         MensajeProyecto[]
 
   @@map("proyecto")
+}
+
+// Conversación cliente <-> equipo ColorLink dentro de un proyecto
+model MensajeProyecto {
+  mensajeId    String   @id @default(uuid()) @map("mensaje_id")
+  proyectoId   String   @map("proyecto_id")
+  proyecto     Proyecto @relation(fields: [proyectoId], references: [proyectoId], onDelete: Cascade)
+  autorId      String?  @map("autor_id")
+  autorNombre  String   @map("autor_nombre")
+  autorRol     String   @map("autor_rol") // cliente | asesor | calidad | despachos | administrador
+  texto        String
+  leidoCliente Boolean  @default(false) @map("leido_cliente")
+  leidoEquipo  Boolean  @default(false) @map("leido_equipo")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([proyectoId, createdAt])
+  @@map("mensaje_proyecto")
 }
 
 // Trazabilidad de cada proyecto: quién cambió qué y cuándo (snapshot del nombre y rol del actor)

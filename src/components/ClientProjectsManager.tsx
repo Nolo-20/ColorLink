@@ -3,6 +3,7 @@ import { ProjectFormData, CalculationBreakdown, UserProfile, SurfaceType, SpaceE
 import { COLOR_PALETTES } from '../data/mockData';
 import { ProjectDetailModal } from './ProjectDetailModal';
 import {
+  MessageSquare,
   Building2,
   MapPin,
   Layers,
@@ -32,10 +33,15 @@ interface ClientProjectsManagerProps {
   user: UserProfile;
   onOpenPdfModal: () => void;
   onOpenAssistant: () => void;
+  /** Proyecto a abrir apenas cargue la lista (desde una notificación) */
+  focusProject?: { id: string; chat: boolean } | null;
+  onFocusHandled?: () => void;
+  /** Avisa que cambió el número de mensajes sin leer (para refrescar la campana) */
+  onMessagesRead?: () => void;
 }
 
 // Estados reales del proyecto (los mueve el equipo desde el ERP) con texto para el cliente
-const ESTADO_CLIENTE: Record<string, { label: string; detalle: string; clase: string }> = {
+export const ESTADO_CLIENTE: Record<string, { label: string; detalle: string; clase: string }> = {
   en_revision: { label: 'En revisión', detalle: 'Nuestro equipo está revisando tu solicitud.', clase: 'bg-blue-50 text-blue-700 border-blue-200' },
   imagen_por_corregir: { label: 'Imagen por corregir', detalle: 'Necesitamos otra foto para continuar.', clase: 'bg-rose-50 text-rose-700 border-rose-200' },
   en_peritaje: { label: 'En peritaje', detalle: 'Un perito técnico está evaluando la superficie.', clase: 'bg-violet-50 text-violet-700 border-violet-200' },
@@ -54,7 +60,10 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
   calculation,
   user,
   onOpenPdfModal,
-  onOpenAssistant
+  onOpenAssistant,
+  focusProject,
+  onFocusHandled,
+  onMessagesRead
 }) => {
   const [viewMode, setViewMode] = useState<'list' | 'create'>('list');
   const [activeStep, setActiveStep] = useState<1 | 2 | 3>(1);
@@ -64,6 +73,15 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [detailProject, setDetailProject] = useState<any | null>(null);
+  const [detailChat, setDetailChat] = useState(false);
+
+  const abrirDetalle = (prj: any, chat = false) => { setDetailChat(chat); setDetailProject(prj); };
+
+  const recargarProyectos = () =>
+    fetch('/api/projects')
+      .then(res => res.json())
+      .then(data => { if (data.success) setClientProjects(data.projects); })
+      .catch(() => undefined);
   const [uploadError, setUploadError] = useState<Record<string, string>>({});
 
   // El cliente sube la imagen que le pidió el equipo; el proyecto vuelve a "en revisión"
@@ -98,13 +116,19 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
   };
 
   useEffect(() => {
-    fetch('/api/projects')
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) setClientProjects(data.projects);
-      })
-      .finally(() => setLoadingProjects(false));
+    recargarProyectos().finally(() => setLoadingProjects(false));
+    // Se refresca solo para ver cambios de estado y mensajes nuevos del asesor
+    const id = setInterval(() => { if (document.visibilityState === 'visible') recargarProyectos(); }, 30000);
+    return () => clearInterval(id);
   }, []);
+
+  // Abrir el proyecto que viene de una notificación
+  useEffect(() => {
+    if (!focusProject || loadingProjects) return;
+    const prj = clientProjects.find(p => p.proyectoId === focusProject.id);
+    if (prj) { setViewMode('list'); abrirDetalle(prj, focusProject.chat); }
+    onFocusHandled?.();
+  }, [focusProject, loadingProjects]);
 
   const surfaces: Array<{ id: SurfaceType; label: string; desc: string; icon: string }> = [
     { id: 'revoque', label: 'Revoque / Pañete', desc: 'Mortero tradicional o afinado', icon: '🏗️' },
@@ -271,8 +295,29 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
 
                     <div className="flex items-center gap-2 text-xs text-slate-500">
                       <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span>{prj.empresa?.ciudad?.ciudad || 'Medellín'} • {prj.tipoSuperficie}</span>
+                      <span>{[prj.empresa?.ciudad?.ciudad, prj.tipoSuperficie].filter(Boolean).join(' • ') || 'Sin ubicación'}</span>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() => abrirDetalle(prj, true)}
+                      className="w-full flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 px-3 py-2 text-left cursor-pointer"
+                    >
+                      <MessageSquare className="w-4 h-4 text-[#14216B] shrink-0" />
+                      <span className="min-w-0 flex-1 text-[11px] leading-tight">
+                        <span className="block text-slate-500">{prj.asesorAsignado ? 'Tu asesor' : 'Asesor por asignar'}</span>
+                        <span className="block font-bold text-slate-800 truncate">
+                          {prj.asesorAsignado ? `${prj.asesorAsignado.nombre} ${prj.asesorAsignado.apellido || ''}` : 'Escríbele al equipo ColorLink'}
+                        </span>
+                      </span>
+                      {prj.mensajesSinLeer > 0 ? (
+                        <span className="shrink-0 min-w-5 h-5 px-1.5 rounded-full bg-red-600 text-white text-[10px] font-black flex items-center justify-center" title="Mensajes sin leer">
+                          {prj.mensajesSinLeer > 9 ? '9+' : prj.mensajesSinLeer}
+                        </span>
+                      ) : (
+                        <span className="shrink-0 text-[11px] font-bold text-[#14216B]">Escribir</span>
+                      )}
+                    </button>
                   </div>
 
                   {/* Paint Spec & Calculated Buckets */}
@@ -311,7 +356,7 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
                     </div>
 
                     <button
-                      onClick={() => setDetailProject(prj)}
+                      onClick={() => abrirDetalle(prj)}
                       className="px-3 py-2 bg-[#14216B] hover:bg-[#0f1a55] text-white rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1 text-xs font-bold"
                     >
                       <FileText className="w-3.5 h-3.5" />
@@ -621,7 +666,15 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
           estado={ESTADO_CLIENTE[detailProject.estadoPipeline] || ESTADO_CLIENTE.en_revision}
           clienteNombre={user.name}
           clienteEmail={user.email}
-          onClose={() => setDetailProject(null)}
+          focusChat={detailChat}
+          onMessagesRead={() => {
+            if (detailProject.mensajesSinLeer) {
+              setClientProjects(prev => prev.map(p => p.proyectoId === detailProject.proyectoId ? { ...p, mensajesSinLeer: 0 } : p));
+              setDetailProject((d: any) => (d ? { ...d, mensajesSinLeer: 0 } : d));
+              onMessagesRead?.();
+            }
+          }}
+          onClose={() => { setDetailProject(null); recargarProyectos(); }}
         />
       )}
     </div>

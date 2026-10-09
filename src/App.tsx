@@ -1,3 +1,4 @@
+import { refrescarNotificaciones } from './components/NotificationBell';
 import React, { useState, useEffect } from 'react';
 import {
   ActiveTab,
@@ -378,6 +379,8 @@ export default function App() {
   };
 
   // ---------- Checkout REAL: crea la orden de verdad en Postgres ----------
+  const [focusProject, setFocusProject] = useState<{ id: string; chat: boolean } | null>(null);
+
   const handleOrderCompleted = async (orderNumber: string, orderDetails?: any) => {
     const purchasedItems = cartItems.filter(item => item.selectedForCheckout);
 
@@ -516,6 +519,15 @@ export default function App() {
         hasValidatedData={Boolean(formData.id)}
         onLogout={handleLogout}
         onOpenVirtualAssistant={() => setIsAssistantModalOpen(true)}
+        onOpenNotification={(n) => {
+          if (n.enlace.tipo === 'pedido') {
+            loadRealOrders();
+            setActiveTab('pedidos');
+          } else {
+            setFocusProject({ id: n.enlace.id, chat: Boolean(n.enlace.abrirChat) });
+            setActiveTab('captura');
+          }
+        }}
       />
 
       <main className="flex-1">
@@ -673,6 +685,9 @@ export default function App() {
         {activeTab === 'captura' && (
           isLoggedIn ? (
             <ClientProjectsManager
+              focusProject={focusProject}
+              onFocusHandled={() => setFocusProject(null)}
+              onMessagesRead={refrescarNotificaciones}
               formData={formData}
               setFormData={(newVal) => {
                 setFormData(newVal);

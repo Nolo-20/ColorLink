@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile, ProjectFormData, CalculationBreakdown, ActiveTab } from '../types';
+import { ProjectDetailModal } from './ProjectDetailModal';
+import { ESTADO_CLIENTE } from './ClientProjectsManager';
 import {
   Building2,
   Layers,
@@ -20,8 +22,30 @@ import {
   Droplet,
   ExternalLink,
   MessageSquareQuote,
-  Plus
+  Plus,
+  MessageSquare
 } from 'lucide-react';
+
+// Pasos que ve el cliente, calculados del estado real del proyecto
+const PASOS = ['Recibido', 'Cotizado', 'Aprobado', 'Despachado'];
+const pasoActual = (p: any): number => {
+  switch (p.estadoPipeline) {
+    case 'cotizado': case 'en_peritaje': case 'rechazado': return 1;
+    case 'aprobado_calidad': return 2;
+    case 'despachado': return 3;
+    default: return 0;
+  }
+};
+const PROXIMO_PASO: Record<string, string> = {
+  en_revision: 'Tu asesor revisa la solicitud y prepara la cotización.',
+  imagen_por_corregir: 'Sube una nueva foto del área para continuar.',
+  en_peritaje: 'Un perito de calidad revisa la superficie antes de aprobar el sistema.',
+  cotizado: 'Revisa la cotización y escríbele a tu asesor si tienes dudas.',
+  aprobado_calidad: 'Coordinamos el despacho del material a tu obra.',
+  rechazado: 'Tu asesor te contará los ajustes técnicos que se requieren.',
+  despachado: 'El material va en camino; confirma la recepción en obra.',
+  cancelado: 'Este proyecto fue cerrado.'
+};
 
 interface RoleDashboardProps {
   user: UserProfile;
@@ -45,14 +69,19 @@ export const RoleDashboard: React.FC<RoleDashboardProps> = ({
 
   const [misProyectos, setMisProyectos] = useState<any[]>([]);
   const [loadingMisProyectos, setLoadingMisProyectos] = useState(true);
+  const [detalle, setDetalle] = useState<{ p: any; chat: boolean } | null>(null);
+
+  const cargarProyectos = () =>
+    fetch('/api/projects')
+      .then(res => res.json())
+      .then(data => { if (data.success) setMisProyectos(data.projects); })
+      .catch(() => undefined);
 
   useEffect(() => {
-    if (user.role === 'cliente') {
-      fetch('/api/projects')
-        .then(res => res.json())
-        .then(data => { if (data.success) setMisProyectos(data.projects); })
-        .finally(() => setLoadingMisProyectos(false));
-    }
+    if (user.role !== 'cliente') return;
+    cargarProyectos().finally(() => setLoadingMisProyectos(false));
+    const id = setInterval(() => { if (document.visibilityState === 'visible') cargarProyectos(); }, 30000);
+    return () => clearInterval(id);
   }, [user.role]);
 
   const proyectosCola = misProyectos.slice(0, 4); // los 4 más recientes/actualizados
@@ -236,14 +265,29 @@ export const RoleDashboard: React.FC<RoleDashboardProps> = ({
 
                       <div className="pt-4 border-t border-slate-100 space-y-2">
                         <span className="text-[11px] font-bold text-slate-500 uppercase">Estado del Proyecto:</span>
-                        <div className="grid grid-cols-4 gap-2 text-center text-xs">
-                          <div className="p-2 bg-emerald-100 text-emerald-800 font-bold rounded-lg border border-emerald-300">1. Capturado</div>
-                          <div className="p-2 bg-emerald-100 text-emerald-800 font-bold rounded-lg border border-emerald-300">2. Validado</div>
-                          <div className={`p-2 font-bold rounded-lg border ${p.diagnostico ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>3. Diagnóstico IA</div>
-                          <div className={`p-2 font-bold rounded-lg border ${p.estadoPipeline === 'aprobado_calidad' ? 'bg-purple-100 text-purple-800 border-purple-300' : 'bg-blue-100 text-blue-800 border-blue-300'}`}>
-                            {p.estadoPipeline === 'aprobado_calidad' ? '4. Aprobado' : '4. Cotizado'}
+                        {p.estadoPipeline === 'cancelado' ? (
+                          <p className="text-xs font-bold text-slate-500 bg-slate-100 rounded-lg p-2 border border-slate-200">Proyecto cancelado</p>
+                        ) : (
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+                            {PASOS.map((paso, i) => {
+                              const actual = pasoActual(p);
+                              const etiqueta = i === 3 && p.despacho?.fechaEntrega ? 'Entregado' : paso;
+                              const clase = i < actual
+                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                : i === actual
+                                  ? 'bg-[#14216B] text-white border-[#14216B]'
+                                  : 'bg-slate-50 text-slate-400 border-slate-200';
+                              return (
+                                <div key={paso} className={`p-2 font-bold rounded-lg border ${clase}`} aria-current={i === actual ? 'step' : undefined}>
+                                  {i + 1}. {etiqueta}
+                                </div>
+                              );
+                            })}
                           </div>
-                        </div>
+                        )}
+                        <p className="text-[11px] text-slate-500">
+                          Estado actual: <strong className="text-slate-700">{(ESTADO_CLIENTE[p.estadoPipeline] || ESTADO_CLIENTE.en_revision).label}</strong>
+                        </p>
                       </div>
                     </div>
 
@@ -251,42 +295,50 @@ export const RoleDashboard: React.FC<RoleDashboardProps> = ({
                       <div className="space-y-4">
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.18em]">Seguimiento Comercial</span>
-                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-1 border border-emerald-200">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                            Activo
-                          </span>
+                          {p.mensajesSinLeer > 0 && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-red-600 text-white text-[10px] font-black px-2 py-1">
+                              <MessageSquare className="w-3 h-3" />
+                              {p.mensajesSinLeer} {p.mensajesSinLeer === 1 ? 'mensaje nuevo' : 'mensajes nuevos'}
+                            </span>
+                          )}
                         </div>
 
                         <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center border-2 border-emerald-500 shadow-sm">
-                            <Users className="w-5 h-5" />
-                          </div>
+                          {p.asesorAsignado?.avatarUrl ? (
+                            <img src={p.asesorAsignado.avatarUrl} alt="" className="w-12 h-12 rounded-full object-cover border-2 border-emerald-500 shadow-sm" />
+                          ) : (
+                            <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center border-2 border-emerald-500 shadow-sm font-black">
+                              {p.asesorAsignado ? p.asesorAsignado.nombre.charAt(0).toUpperCase() : <Users className="w-5 h-5" />}
+                            </div>
+                          )}
                           <div className="min-w-0">
                             <h4 className="font-extrabold text-sm text-slate-900 truncate">
                               {p.asesorAsignado ? `${p.asesorAsignado.nombre} ${p.asesorAsignado.apellido}` : 'Equipo ColorLink'}
                             </h4>
-                            <p className="text-xs text-slate-500">
-                              {p.asesorAsignado ? 'Tu asesor asignado' : 'Un asesor revisará tu proyecto pronto'}
+                            <p className="text-xs text-slate-500 truncate">
+                              {p.asesorAsignado ? (p.asesorAsignado.email || 'Tu asesor asignado') : 'Un asesor revisará tu proyecto pronto'}
                             </p>
                           </div>
                         </div>
 
                         <div className="rounded-xl bg-white border border-slate-200 p-3 space-y-2">
-                          <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 uppercase">
-                            <span>Próximo paso</span>
-                            <span className="text-emerald-700">24h</span>
-                          </div>
+                          <div className="text-[10px] font-bold text-slate-500 uppercase">Próximo paso</div>
                           <p className="text-xs text-slate-700 leading-relaxed">
-                            {p.asesorAsignado
-                              ? 'Revisión y coordinación de la cotización con el cliente.'
-                              : 'Asignación de asesor y revisión comercial del proyecto.'}
+                            {PROXIMO_PASO[p.estadoPipeline] || PROXIMO_PASO.en_revision}
                           </p>
                         </div>
                       </div>
 
                       <div className="space-y-2">
                         <button
-                          onClick={() => setActiveTab('captura')}
+                          onClick={() => setDetalle({ p, chat: true })}
+                          className="w-full py-2.5 bg-white hover:bg-slate-50 text-slate-900 border border-slate-300 font-bold text-xs rounded-xl shadow-sm transition-all cursor-pointer inline-flex items-center justify-center gap-1.5"
+                        >
+                          <MessageSquare className="w-4 h-4" />
+                          {p.asesorAsignado ? `Escribir a ${p.asesorAsignado.nombre}` : 'Escribir al equipo ColorLink'}
+                        </button>
+                        <button
+                          onClick={() => setDetalle({ p, chat: false })}
                           className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-sm transition-all cursor-pointer text-center block"
                         >
                           Ver Detalle Completo
@@ -469,6 +521,23 @@ export const RoleDashboard: React.FC<RoleDashboardProps> = ({
   )
 }
 
+      {detalle && (
+        <ProjectDetailModal
+          project={detalle.p}
+          estado={ESTADO_CLIENTE[detalle.p.estadoPipeline] || ESTADO_CLIENTE.en_revision}
+          clienteNombre={user.name}
+          clienteEmail={user.email}
+          focusChat={detalle.chat}
+          onMessagesRead={() => {
+            if (detalle.p.mensajesSinLeer) {
+              setMisProyectos(prev => prev.map(x => x.proyectoId === detalle.p.proyectoId ? { ...x, mensajesSinLeer: 0 } : x));
+              setDetalle(d => (d ? { ...d, p: { ...d.p, mensajesSinLeer: 0 } } : d));
+              window.dispatchEvent(new Event('colorlink:notificaciones'));
+            }
+          }}
+          onClose={() => { setDetalle(null); cargarProyectos(); }}
+        />
+      )}
         </div >
       );
 };

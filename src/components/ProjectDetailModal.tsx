@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
+import { ProjectChat, AsesorContacto } from './ProjectChat';
 import { X, Printer, MapPin, Ruler, Palette, Layers, Truck, Clock } from 'lucide-react';
 
 interface ProjectDetailModalProps {
@@ -7,6 +8,10 @@ interface ProjectDetailModalProps {
   clienteNombre?: string;
   clienteEmail?: string;
   onClose: () => void;
+  /** Abre el modal directamente en la conversación con el asesor */
+  focusChat?: boolean;
+  /** Se llama cuando el cliente ya vio los mensajes (para bajar el contador) */
+  onMessagesRead?: () => void;
 }
 
 const money = (n?: number | null) => `$${Math.round(n || 0).toLocaleString('es-CO')}`;
@@ -19,7 +24,16 @@ const ESTADO_TXT: Record<string, string> = {
 };
 
 /** Detalle del proyecto del cliente, con su cotización real y descarga en PDF (impresión del navegador). */
-export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({ project: p, estado, clienteNombre, clienteEmail, onClose }) => {
+export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({ project: p, estado, clienteNombre, clienteEmail, onClose, focusChat, onMessagesRead }) => {
+  const chatRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focusChat) setTimeout(() => chatRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
+  }, [focusChat, p.proyectoId]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
   const cot = p.cotizaciones?.[0];
   const items: any[] = cot?.items || [];
   const ciudad = p.empresa?.ciudad?.ciudad || '';
@@ -128,6 +142,12 @@ ${pasos.length ? `<h2>Sistema recomendado</h2><ol>${pasos.map(x => `<li>${esc(x)
             )}
           </div>
 
+          <div ref={chatRef} className="space-y-3 scroll-mt-24">
+            <h3 className="text-xs font-black uppercase tracking-wider text-slate-700">Tu asesor y mensajes</h3>
+            <AsesorContacto asesor={p.asesorAsignado} proyecto={p.nombreProyecto} />
+            <ProjectChat proyectoId={p.proyectoId} autoFocus={focusChat} onRead={onMessagesRead} />
+          </div>
+
           {p.despacho && (
             <div className="rounded-2xl border border-slate-200 p-3 text-xs text-slate-600 space-y-1">
               <div className="flex items-center gap-2 font-bold text-slate-800"><Truck className="w-4 h-4" /> Despacho · guía {p.despacho.numeroGuia}</div>
@@ -143,7 +163,10 @@ ${pasos.length ? `<h2>Sistema recomendado</h2><ol>${pasos.map(x => `<li>${esc(x)
                 {p.historial.map((h: any) => (
                   <li key={h.id} className="flex items-start gap-2 text-xs">
                     <Clock className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
-                    <span className="text-slate-700 font-semibold">{ESTADO_TXT[h.estadoNuevo] || h.estadoNuevo}</span>
+                    <span className="min-w-0">
+                      <span className="text-slate-700 font-semibold block">{ESTADO_TXT[h.estadoNuevo] || h.estadoNuevo}</span>
+                      {h.comentario && <span className="text-slate-500 block">{h.comentario}</span>}
+                    </span>
                     <span className="text-slate-400 ml-auto shrink-0">{fecha(h.fecha)}</span>
                   </li>
                 ))}
