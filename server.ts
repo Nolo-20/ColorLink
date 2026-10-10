@@ -2396,7 +2396,7 @@ async function startServer() {
   // Crea una orden nueva a partir del carrito (el precio se recalcula del lado del servidor, nunca se confía en el que manda el navegador)
   app.post('/api/orders', requireAuth, async (req: any, res) => {
     try {
-      const { items, metodoEntrega, direccionEntrega, metodoPago } = req.body;
+      const { items, metodoEntrega, direccionEntrega, metodoPago, destinatario, telefonoContacto, ciudadEntrega, notasEntrega, factura } = req.body;
       // Pago simulado (prototipo): se registra el método elegido y se confirma automáticamente
       const METODOS_PAGO: Record<string, string> = { pse: 'PSE', card: 'tarjeta', cash_on_delivery: 'contra entrega', corporate_credit: 'crédito ColorLink 30 días' };
       const metodoPagoTxt = METODOS_PAGO[String(metodoPago)] || 'PSE';
@@ -2408,6 +2408,21 @@ async function startServer() {
       }
 
       if (items.length > 50) return res.status(400).json({ success: false, error: 'El pedido tiene demasiados productos.' });
+
+      // Datos de quien recibe (opcionales para compatibilidad; si llegan, se validan)
+      const limpio = (v: any, max: number) => (v == null ? null : String(v).replace(/[\r\n<>{}]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max) || null);
+      const quienRecibe = limpio(destinatario, 60);
+      if (quienRecibe && !/^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ' .-]{2,60}$/.test(quienRecibe)) return res.status(400).json({ success: false, error: 'El nombre de quien recibe solo puede tener letras.' });
+      const celContacto = telefonoContacto == null ? null : String(telefonoContacto).replace(/\D/g, '').replace(/^57(?=3\d{9}$)/, '');
+      if (celContacto && !/^3\d{9}$/.test(celContacto)) return res.status(400).json({ success: false, error: 'El celular de contacto debe tener 10 números y empezar por 3.' });
+      const metodoPagoFinal = ['pse', 'card', 'cash_on_delivery', 'corporate_credit'].includes(String(metodoPago)) ? String(metodoPago) : 'pse';
+      let facturaRazon: string | null = null; let facturaNit: string | null = null;
+      if (factura && typeof factura === 'object') {
+        facturaRazon = limpio(factura.companyName, 100);
+        facturaNit = factura.nit == null ? null : String(factura.nit).replace(/[.\s]/g, '');
+        if (!facturaRazon || facturaRazon.length < 2) return res.status(400).json({ success: false, error: 'Escribe la razón social para la factura.' });
+        if (!facturaNit || !/^\d{6,10}(-\d)?$/.test(facturaNit)) return res.status(400).json({ success: false, error: 'NIT no válido para la factura.' });
+      }
       const direccion = String(direccionEntrega ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, 400);
       if (metodoEntrega === 'domicilio' && direccion.length < 5) {
         return res.status(400).json({ success: false, error: 'Escribe la dirección de entrega.' });
@@ -2453,6 +2468,14 @@ async function startServer() {
           estado: 'confirmado',
           metodoEntrega,
           direccionEntrega: direccionEntregaFinal,
+          destinatario: quienRecibe,
+          telefonoContacto: celContacto || null,
+          ciudadEntrega: limpio(ciudadEntrega, 60),
+          notasEntrega: limpio(notasEntrega, 200),
+          metodoPago: metodoPagoFinal,
+          costoEnvio,
+          facturaRazonSocial: facturaRazon,
+          facturaNit,
           items: { create: itemsConPrecio },
           historial: { create: {
             estado: 'confirmado',

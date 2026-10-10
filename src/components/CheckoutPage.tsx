@@ -237,12 +237,11 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
   const buildOrderDetails = () => {
     const name = collapse(form.recipientName);
     const phone = cleanPhone(form.phone);
-    const contact = `Recibe: ${name} · Cel: ${phone}`;
-    const invoice = form.requireInvoice ? ` · Factura: ${collapse(form.companyName)} NIT ${cleanNit(form.nit)}` : '';
     const notes = collapse(form.deliveryNotes.replace(FREE_TEXT_RE, ''));
+    // Quien recibe, el celular, las notas y la factura viajan en campos propios
     const shippingAddress = deliveryMode === 'recogida'
-      ? `${selectedBranch.name}, ${selectedBranch.address} · Retira: ${name} · Cel: ${phone}${invoice}`
-      : `${collapse(form.address)}${form.neighborhood.trim() ? `, ${collapse(form.neighborhood)}` : ''}, ${form.city} · ${contact}${notes ? ` · Nota: ${notes}` : ''}${invoice}`;
+      ? `${selectedBranch.name}, ${selectedBranch.address}`
+      : `${collapse(form.address)}${form.neighborhood.trim() ? `, ${collapse(form.neighborhood)}` : ''}, ${form.city}`;
     return {
       deliveryMethod: deliveryMode === 'recogida' ? 'sucursal' : 'domicilio',
       pickupStore: deliveryMode === 'recogida' ? `${selectedBranch.name} (${selectedBranch.address})` : undefined,

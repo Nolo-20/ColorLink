@@ -181,6 +181,14 @@ model Orden {
   estado           String   @default("creado") // creado, confirmado, en_alistamiento, en_camino, listo_recoger, entregado, cancelado
   metodoEntrega    String   @map("metodo_entrega") // domicilio | recoger_tienda
   direccionEntrega String?  @map("direccion_entrega")
+  destinatario     String?
+  telefonoContacto String?  @map("telefono_contacto")
+  ciudadEntrega    String?  @map("ciudad_entrega")
+  notasEntrega     String?  @map("notas_entrega")
+  metodoPago       String?  @map("metodo_pago") // pse | card | cash_on_delivery | corporate_credit (simulado)
+  costoEnvio       Float    @default(0) @map("costo_envio")
+  facturaRazonSocial String? @map("factura_razon_social")
+  facturaNit       String?  @map("factura_nit")
   qrToken          String   @unique @default(uuid()) @map("qr_token")
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @default(now()) @updatedAt @map("updated_at")

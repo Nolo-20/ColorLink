@@ -42,11 +42,19 @@ import { VirtualAssistantModal } from './components/VirtualAssistantModal';
 import { FloatingAssistantButton } from './components/FloatingAssistantButton';
 import { ResetPasswordScreen } from './components/ResetPasswordScreen';
 
+/** Producto indicado en la URL (?producto=<id>), si existe en el catálogo */
+const productoDesdeUrl = (): StoreProduct | undefined => {
+  if (typeof window === 'undefined') return undefined;
+  const id = new URLSearchParams(window.location.search).get('producto');
+  return id ? STORE_PRODUCTS.find(x => x.id === id) : undefined;
+};
+
 export default function App() {
   // ---------- Sesión real ----------
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [isCheckingSession, setIsCheckingSession] = useState(true);
-  const [activeTab, setActiveTab] = useState<ActiveTab>('tienda');
+  // Si la tienda se abre con ?producto=<id>, arranca mostrando ese producto
+  const [activeTab, setActiveTab] = useState<ActiveTab>(() => (productoDesdeUrl() ? 'producto_detalle' : 'tienda'));
   const [user, setUser] = useState<UserProfile>(DEMO_PROFILES.cliente);
 
   useEffect(() => {
@@ -63,7 +71,7 @@ export default function App() {
 
   // ---------- Carrito (100% cliente, como lo diseñó AI Studio) ----------
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
-  const [selectedProduct, setSelectedProduct] = useState<StoreProduct | undefined>(undefined);
+  const [selectedProduct, setSelectedProduct] = useState<StoreProduct | undefined>(() => productoDesdeUrl());
   const [selectedColorForDetail, setSelectedColorForDetail] = useState<string | undefined>(undefined);
   const [selectedCategory, setSelectedCategory] = useState<StoreCategory>('todos');
   const [searchFilter, setSearchFilter] = useState('');
@@ -121,14 +129,15 @@ export default function App() {
               date: new Date(o.createdAt).toLocaleDateString('es-CO'),
               createdAt: o.createdAt,
               total: o.total,
-              subtotal: Math.round(o.total / 1.19),
-              shipping: 0,
-              tax: o.total - Math.round(o.total / 1.19),
-              recipientName: user.name,
+              // Precios con IVA incluido; el envío se cobra aparte
+              subtotal: Math.round((o.total - (o.costoEnvio || 0)) / 1.19),
+              shipping: o.costoEnvio || 0,
+              tax: (o.total - (o.costoEnvio || 0)) - Math.round((o.total - (o.costoEnvio || 0)) / 1.19),
+              recipientName: o.destinatario || user.name,
               recipientEmail: user.email,
-              recipientPhone: user.phone,
+              recipientPhone: o.telefonoContacto || user.phone,
               shippingAddress: o.direccionEntrega || '',
-              city: '',
+              city: o.ciudadEntrega || '',
               deliveryMethod: isPickup ? 'sucursal' : 'domicilio',
               pickupCode: isPickup ? o.qrToken.slice(0, 8).toUpperCase() : undefined,
               transactionId: o.ordenId,
@@ -392,6 +401,30 @@ export default function App() {
   };
 
   // ---------- Checkout REAL: crea la orden de verdad en Postgres ----------
+  // ---------- Enlace directo a un producto (?producto=<id>) ----------
+  // Al abrir la tienda con ese parámetro se muestra el producto; al navegar, la barra de direcciones lo refleja
+  useEffect(() => {
+    // Botones Atrás / Adelante del navegador
+    const abrirDesdeUrl = () => {
+      const p = productoDesdeUrl();
+      if (p) { setSelectedProduct(p); setSelectedColorForDetail(undefined); setActiveTab('producto_detalle'); }
+      else setActiveTab(prev => (prev === 'producto_detalle' ? 'tienda' : prev));
+    };
+    window.addEventListener('popstate', abrirDesdeUrl);
+    return () => window.removeEventListener('popstate', abrirDesdeUrl);
+  }, []);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const actual = url.searchParams.get('producto');
+    const deseado = activeTab === 'producto_detalle' && selectedProduct ? selectedProduct.id : null;
+    if (actual === deseado) return;
+    if (deseado) url.searchParams.set('producto', deseado); else url.searchParams.delete('producto');
+    // Abrir un producto crea una entrada en el historial (el botón Atrás vuelve a la tienda)
+    if (deseado) window.history.pushState(null, '', url.toString());
+    else window.history.replaceState(null, '', url.toString());
+  }, [activeTab, selectedProduct?.id]);
+
   const [focusProject, setFocusProject] = useState<{ id: string; chat: boolean } | null>(null);
 
   const handleOrderCompleted = async (orderNumber: string, orderDetails?: any) => {
@@ -405,6 +438,11 @@ export default function App() {
           items: purchasedItems.map(it => ({ productId: it.productId, name: it.name, price: it.price, cantidad: it.quantity, sizeId: it.sizeId, sizeName: it.sizeName, colorName: it.colorName })),
           metodoEntrega: (orderDetails?.deliveryMethod === 'sucursal' || orderDetails?.deliveryMethod === 'pickup') ? 'recoger_tienda' : 'domicilio',
           metodoPago: orderDetails?.paymentMethod,
+          destinatario: orderDetails?.recipientName,
+          telefonoContacto: orderDetails?.recipientPhone,
+          ciudadEntrega: orderDetails?.city,
+          notasEntrega: orderDetails?.deliveryNotes,
+          factura: orderDetails?.invoice,
           direccionEntrega: orderDetails?.shippingAddress || undefined
         })
       });

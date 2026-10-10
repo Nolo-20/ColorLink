@@ -115,7 +115,8 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
   React.useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
 
   // La tienda aún no tiene URL por producto: se comparte el sitio con el nombre del producto
-  const shareUrl = typeof window !== 'undefined' ? window.location.origin + '/' : '';
+  // Enlace directo al producto (la tienda lo abre al cargar con ?producto=<id>)
+  const shareUrl = typeof window !== 'undefined' ? `${window.location.origin}/?producto=${encodeURIComponent(product.id)}` : '';
   const shareText = `Mira este producto en ColorLink: ${product.name}${!product.isTool && selectedColor ? ` (${selectedColor.name})` : ''}`;
   const shareLinks = {
     whatsapp: `https://api.whatsapp.com/send?text=${encodeURIComponent(`${shareText} ${shareUrl}`)}`,
