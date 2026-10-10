@@ -2657,6 +2657,77 @@ async function startServer() {
     }
   });
 
+  // ERP: moderación de opiniones y evaluaciones del vendedor (solo administrador)
+  app.get('/api/admin/reviews', requireAuth, requireRole('administrador'), async (_req: any, res) => {
+    try {
+      const [resenas, evaluaciones] = await Promise.all([
+        prisma.resenaProducto.findMany({
+          orderBy: { createdAt: 'desc' },
+          take: 500,
+          select: {
+            resenaId: true, productoKey: true, nombreProducto: true, calificacion: true, comentario: true, visible: true,
+            createdAt: true, updatedAt: true, ordenId: true, fotoDataUri: true,
+            ordenItem: { select: { presentacion: true, color: true } },
+            usuario: { select: { nombre: true, apellido: true, email: true } }
+          }
+        }),
+        prisma.evaluacionVendedor.findMany({
+          orderBy: { createdAt: 'desc' },
+          take: 500,
+          select: { evaluacionId: true, ordenId: true, calificacion: true, comentario: true, createdAt: true, usuario: { select: { nombre: true, apellido: true, email: true } } }
+        })
+      ]);
+      res.json({
+        success: true,
+        resenas: resenas.map(({ fotoDataUri, usuario, ordenItem, ...r }) => ({
+          ...r,
+          tieneFoto: !!fotoDataUri,
+          presentacion: ordenItem?.presentacion || null,
+          color: ordenItem?.color || null,
+          cliente: `${usuario.nombre} ${usuario.apellido || ''}`.trim(),
+          clienteEmail: usuario.email,
+          pedido: `CL-${r.ordenId.slice(0, 8).toUpperCase()}`
+        })),
+        evaluaciones: evaluaciones.map(({ usuario, ...e }) => ({
+          ...e,
+          cliente: `${usuario.nombre} ${usuario.apellido || ''}`.trim(),
+          clienteEmail: usuario.email,
+          pedido: `CL-${e.ordenId.slice(0, 8).toUpperCase()}`
+        }))
+      });
+    } catch (error: any) {
+      console.error('[admin-reviews]', error);
+      res.status(500).json({ success: false, error: 'No se pudieron cargar las opiniones' });
+    }
+  });
+
+  app.patch('/api/admin/reviews/:id', requireAuth, requireRole('administrador'), async (req: any, res) => {
+    try {
+      const { visible } = req.body || {};
+      if (typeof visible !== 'boolean') return res.status(400).json({ success: false, error: 'Indica si la opinión queda visible u oculta.' });
+      const r = await prisma.resenaProducto.update({ where: { resenaId: req.params.id }, data: { visible }, select: { resenaId: true, visible: true } });
+      res.json({ success: true, review: r });
+    } catch (error: any) {
+      console.error('[admin-review-visibility]', error);
+      res.status(404).json({ success: false, error: 'Opinión no encontrada' });
+    }
+  });
+
+  // Foto de cualquier opinión (también ocultas) para revisarla desde el ERP
+  app.get('/api/admin/reviews/:id/photo', requireAuth, requireRole('administrador'), async (req: any, res) => {
+    try {
+      const r = await prisma.resenaProducto.findUnique({ where: { resenaId: req.params.id }, select: { fotoDataUri: true } });
+      const m = r?.fotoDataUri?.match(/^data:(image\/(?:png|jpe?g|webp));base64,(.+)$/);
+      if (!m) return res.status(404).end();
+      res.setHeader('Content-Type', m[1]);
+      res.setHeader('Cache-Control', 'private, max-age=300');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.send(Buffer.from(m[2], 'base64'));
+    } catch {
+      res.status(404).end();
+    }
+  });
+
   // Evaluar al vendedor (el servicio de ColorLink en ese pedido)
   app.put('/api/orders/:ordenId/seller-rating', requireAuth, reviewLimiter, async (req: any, res) => {
     try {
