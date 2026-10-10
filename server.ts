@@ -2396,7 +2396,10 @@ async function startServer() {
   // Crea una orden nueva a partir del carrito (el precio se recalcula del lado del servidor, nunca se confía en el que manda el navegador)
   app.post('/api/orders', requireAuth, async (req: any, res) => {
     try {
-      const { items, metodoEntrega, direccionEntrega } = req.body;
+      const { items, metodoEntrega, direccionEntrega, metodoPago } = req.body;
+      // Pago simulado (prototipo): se registra el método elegido y se confirma automáticamente
+      const METODOS_PAGO: Record<string, string> = { pse: 'PSE', card: 'tarjeta', cash_on_delivery: 'contra entrega', corporate_credit: 'crédito ColorLink 30 días' };
+      const metodoPagoTxt = METODOS_PAGO[String(metodoPago)] || 'PSE';
       if (!Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ success: false, error: 'El carrito está vacío' });
       }
@@ -2453,7 +2456,7 @@ async function startServer() {
           items: { create: itemsConPrecio },
           historial: { create: {
             estado: 'confirmado',
-            comentario: `Pedido confirmado. Pago ${metodoEntrega === 'domicilio' ? 'contra entrega' : 'en la tienda'}${costoEnvio ? `; incluye envío $${costoEnvio.toLocaleString('es-CO')}` : ''}.`,
+            comentario: `Pago simulado confirmado automáticamente (${metodoPagoTxt})${costoEnvio ? `; incluye envío $${costoEnvio.toLocaleString('es-CO')}` : ''}.`,
             usuarioId: req.user.id
           } }
         },

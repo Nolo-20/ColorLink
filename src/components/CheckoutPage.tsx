@@ -60,7 +60,32 @@ interface FormState {
   requireInvoice: boolean;
   companyName: string;
   nit: string;
+  // Pago simulado (prototipo: no se cobra nada real)
+  paymentMethod: PaymentMethod;
+  pseBank: string;
+  cardNumber: string;
+  cardHolder: string;
+  cardExp: string;
+  cardCvc: string;
 }
+
+type PaymentMethod = 'pse' | 'card' | 'cash_on_delivery' | 'corporate_credit';
+
+const PAYMENT_METHODS: Array<{ id: PaymentMethod; title: string; sub: string; icon: string }> = [
+  { id: 'pse', title: 'PSE / Transferencia', sub: 'Bancolombia, Nequi, Daviplata', icon: '🏛️' },
+  { id: 'card', title: 'Tarjeta Crédito / Débito', sub: 'Visa, Mastercard, AMEX', icon: '💳' },
+  { id: 'cash_on_delivery', title: 'Pago Contra Entrega', sub: 'Efectivo o datáfono al recibir', icon: '💵' },
+  { id: 'corporate_credit', title: 'Crédito ColorLink 30 Días', sub: 'Para constructoras aliadas', icon: '🏢' }
+];
+const PSE_BANKS = ['Bancolombia', 'Nequi', 'Daviplata', 'Banco de Bogotá', 'Davivienda', 'BBVA Colombia'];
+
+/** "4111111111111111" -> "4111 1111 1111 1111" */
+const formatCard = (v: string) => v.replace(/\D/g, '').slice(0, 19).replace(/(\d{4})(?=\d)/g, '$1 ');
+/** "0828" -> "08/28" */
+const formatExp = (v: string) => {
+  const d = v.replace(/\D/g, '').slice(0, 4);
+  return d.length > 2 ? `${d.slice(0, 2)}/${d.slice(2)}` : d;
+};
 
 type FieldKey = keyof FormState;
 
@@ -73,7 +98,11 @@ const FIELD_LABELS: Partial<Record<FieldKey, string>> = {
   neighborhood: 'barrio',
   deliveryNotes: 'instrucciones',
   companyName: 'razón social',
-  nit: 'NIT'
+  nit: 'NIT',
+  cardNumber: 'número de tarjeta',
+  cardHolder: 'titular',
+  cardExp: 'vencimiento',
+  cardCvc: 'CVV'
 };
 
 const validate = (f: FormState, mode: 'envio' | 'recogida'): Partial<Record<FieldKey, string>> => {
@@ -109,6 +138,25 @@ const validate = (f: FormState, mode: 'envio' | 'recogida'): Partial<Record<Fiel
     if (!nit) e.nit = 'Escribe el NIT.';
     else if (!/^\d{6,10}(-\d)?$/.test(nit)) e.nit = 'NIT no válido (ej. 901452880-1).';
   }
+
+  // Pago simulado: se valida el formato para que se sienta real, pero no se cobra nada
+  if (f.paymentMethod === 'card') {
+    const num = f.cardNumber.replace(/\D/g, '');
+    if (!num) e.cardNumber = 'Escribe el número de la tarjeta.';
+    else if (num.length < 13 || num.length > 19) e.cardNumber = 'El número debe tener entre 13 y 19 dígitos.';
+    const holder = collapse(f.cardHolder);
+    if (!holder) e.cardHolder = 'Escribe el nombre como aparece en la tarjeta.';
+    else if (holder.length < 3 || holder.length > 60 || !NAME_RE.test(holder)) e.cardHolder = 'Solo letras (3 a 60).';
+    const m = /^(\d{2})\/(\d{2})$/.exec(f.cardExp);
+    if (!m) e.cardExp = 'Usa el formato MM/AA.';
+    else {
+      const mes = Number(m[1]); const anio = 2000 + Number(m[2]);
+      const hoy = new Date();
+      if (mes < 1 || mes > 12) e.cardExp = 'Mes no válido.';
+      else if (anio < hoy.getFullYear() || (anio === hoy.getFullYear() && mes < hoy.getMonth() + 1)) e.cardExp = 'La tarjeta está vencida.';
+    }
+    if (!/^\d{3,4}$/.test(f.cardCvc)) e.cardCvc = '3 o 4 dígitos.';
+  }
   return e;
 };
 
@@ -135,7 +183,13 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
     deliveryNotes: '',
     requireInvoice: false,
     companyName: (user.companyName || user.company || '').slice(0, 100),
-    nit: user.nit || ''
+    nit: user.nit || '',
+    paymentMethod: 'pse',
+    pseBank: 'Bancolombia',
+    cardNumber: '',
+    cardHolder: collapse(user.name || '').slice(0, 60),
+    cardExp: '',
+    cardCvc: ''
   }));
   const [touched, setTouched] = useState<Partial<Record<FieldKey, boolean>>>({});
   const [submitAttempted, setSubmitAttempted] = useState(false);
@@ -151,7 +205,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const submittingRef = useRef(false);
   const [orderError, setOrderError] = useState('');
-  const [successOrderInfo, setSuccessOrderInfo] = useState<{ orderNum: string; pickupCode?: string; total: number; mode: 'envio' | 'recogida'; branchName?: string } | null>(null);
+  const [successOrderInfo, setSuccessOrderInfo] = useState<{ orderNum: string; pickupCode?: string; total: number; mode: 'envio' | 'recogida'; branchName?: string; payment?: PaymentMethod } | null>(null);
   const [redirectCountdown, setRedirectCountdown] = useState<number>(4);
 
   const itemsToBuy = cartItems.filter(item => item.selectedForCheckout);
@@ -199,7 +253,8 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
       recipientPhone: phone,
       recipientEmail: form.email.trim(),
       deliveryNotes: notes || undefined,
-      paymentMethod: deliveryMode === 'recogida' ? 'pago_en_tienda' : 'contra_entrega',
+      paymentMethod: form.paymentMethod,
+      paymentLabel: PAYMENT_METHODS.find(m => m.id === form.paymentMethod)?.title,
       shippingCost,
       invoice: form.requireInvoice ? { companyName: collapse(form.companyName), nit: cleanNit(form.nit) } : undefined
     };
@@ -222,7 +277,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
         return;
       }
       setRedirectCountdown(4);
-      setSuccessOrderInfo({ orderNum: result.orderNum, pickupCode: result.pickupCode, total: totalSnapshot, mode: modeSnapshot, branchName: branchSnapshot });
+      setSuccessOrderInfo({ orderNum: result.orderNum, pickupCode: result.pickupCode, total: totalSnapshot, mode: modeSnapshot, branchName: branchSnapshot, payment: form.paymentMethod });
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch {
       setOrderError('No se pudo conectar con el servidor. Intenta de nuevo.');
@@ -242,7 +297,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
             <CheckCircle2 className="w-10 h-10" />
           </div>
           <div className="space-y-2">
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">¡Pedido confirmado!</h1>
+            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">Pago Confirmado Correctamente</h1>
             <p className="text-slate-600 text-sm max-w-md mx-auto">
               Tu pedido <strong className="text-slate-900 font-mono text-base">{successOrderInfo.orderNum}</strong> fue registrado y pasa a alistamiento. Te enviamos la confirmación a tu correo.
             </p>
@@ -262,7 +317,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
               </div>
             )}
             <div className="flex justify-between items-center text-slate-600 pt-1 border-t border-slate-200">
-              <span className="font-semibold">{successOrderInfo.mode === 'recogida' ? 'Total a pagar en tienda:' : 'Total a pagar al recibir:'}</span>
+              <span className="font-semibold">{successOrderInfo.payment === 'cash_on_delivery' ? (successOrderInfo.mode === 'recogida' ? 'Total a pagar en tienda:' : 'Total a pagar al recibir:') : successOrderInfo.payment === 'corporate_credit' ? 'Total a crédito (30 días):' : 'Total pagado:'}</span>
               <span className="font-black text-slate-950 text-sm">{formatCOP(successOrderInfo.total)} COP</span>
             </div>
           </div>
@@ -325,7 +380,8 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
 
   const FIELD_IDS: Partial<Record<FieldKey, string>> = {
     recipientName: 'co-name', phone: 'co-phone', email: 'co-email', city: 'co-city', neighborhood: 'co-hood',
-    address: 'co-address', deliveryNotes: 'co-notes', companyName: 'co-company', nit: 'co-nit'
+    address: 'co-address', deliveryNotes: 'co-notes', companyName: 'co-company', nit: 'co-nit',
+    cardNumber: 'ck-cardNumber', cardHolder: 'ck-cardHolder', cardExp: 'ck-cardExp', cardCvc: 'ck-cardCvc'
   };
   const missing = (Object.keys(errors) as FieldKey[]).filter(k => FIELD_LABELS[k]);
   const goToField = (k: FieldKey) => {
@@ -548,26 +604,143 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
             </div>
           </div>
 
-          {/* 2. PAGO */}
+          {/* 2. MÉTODO DE PAGO (simulado: prototipo, no se cobra nada real) */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
             <div className="p-4 sm:p-6 border-b border-slate-100 bg-slate-50/50 flex items-center gap-3">
               <span className="w-7 h-7 rounded-full bg-slate-900 text-white font-extrabold text-xs flex items-center justify-center">2</span>
-              <h2 className="text-base sm:text-lg font-extrabold text-slate-900 tracking-tight">Pago</h2>
+              <h2 className="text-base sm:text-lg font-extrabold text-slate-900 tracking-tight">Método de Pago</h2>
             </div>
             <div className="p-4 sm:p-6 space-y-4 text-xs">
-              <div className="p-3.5 rounded-xl border border-emerald-500 bg-emerald-50/50 flex items-start gap-3">
-                <Banknote className="w-5 h-5 text-emerald-700 shrink-0" />
-                <div>
-                  <span className="font-extrabold text-slate-900 block">
-                    {deliveryMode === 'recogida' ? 'Pagas en la tienda al retirar' : 'Pago contra entrega'}
-                  </span>
-                  <span className="text-slate-600 block mt-0.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" role="radiogroup" aria-label="Método de pago">
+                {PAYMENT_METHODS.map(method => (
+                  <label
+                    key={method.id}
+                    className={`p-3.5 rounded-xl border flex items-start gap-3 cursor-pointer transition-all ${form.paymentMethod === method.id
+                      ? 'border-emerald-500 bg-emerald-50/50 ring-2 ring-emerald-500/20'
+                      : 'border-slate-200 hover:border-slate-300 bg-white'}`}
+                  >
+                    <input
+                      type="radio"
+                      name="payment_method"
+                      checked={form.paymentMethod === method.id}
+                      onChange={() => setField('paymentMethod', method.id)}
+                      className="mt-1 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span aria-hidden="true">{method.icon}</span>
+                        <span className="font-extrabold text-slate-900">{method.title}</span>
+                      </div>
+                      <span className="text-slate-500 text-[11px] block mt-0.5">{method.sub}</span>
+                    </div>
+                  </label>
+                ))}
+              </div>
+
+              {form.paymentMethod === 'pse' && (
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                  <label htmlFor="ck-pse" className="block font-bold text-slate-700">Selecciona tu Banco / Billetera Digital:</label>
+                  <select
+                    id="ck-pse"
+                    value={form.pseBank}
+                    onChange={(e) => setField('pseBank', e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-hidden font-semibold cursor-pointer"
+                  >
+                    {PSE_BANKS.map(b => <option key={b} value={b}>{b}</option>)}
+                  </select>
+                  <span className="text-[11px] text-slate-500 block">Al confirmar serás redirigido a la pasarela segura de PSE para autorizar la transacción.</span>
+                </div>
+              )}
+
+              {form.paymentMethod === 'card' && (
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+                  <div>
+                    <label htmlFor="ck-cardNumber" className="block font-bold text-slate-700 mb-1">Número de Tarjeta</label>
+                    <input
+                      id="ck-cardNumber"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="cc-number"
+                      placeholder="0000 0000 0000 0000"
+                      value={form.cardNumber}
+                      onChange={(e) => setField('cardNumber', formatCard(e.target.value))}
+                      onBlur={() => blur('cardNumber')}
+                      className={`${inputCls('cardNumber')} font-mono font-bold`}
+                      {...a11y('cardNumber')}
+                    />
+                    <ErrorText k="cardNumber" />
+                  </div>
+                  <div>
+                    <label htmlFor="ck-cardHolder" className="block font-bold text-slate-700 mb-1">Nombre del titular</label>
+                    <input
+                      id="ck-cardHolder"
+                      type="text"
+                      autoComplete="cc-name"
+                      maxLength={60}
+                      value={form.cardHolder}
+                      onChange={(e) => setField('cardHolder', e.target.value)}
+                      onBlur={() => blur('cardHolder')}
+                      className={inputCls('cardHolder')}
+                      {...a11y('cardHolder')}
+                    />
+                    <ErrorText k="cardHolder" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label htmlFor="ck-cardExp" className="block font-bold text-slate-700 mb-1">Vencimiento (MM/AA)</label>
+                      <input
+                        id="ck-cardExp"
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="cc-exp"
+                        placeholder="MM/AA"
+                        value={form.cardExp}
+                        onChange={(e) => setField('cardExp', formatExp(e.target.value))}
+                        onBlur={() => blur('cardExp')}
+                        className={`${inputCls('cardExp')} text-center font-bold`}
+                        {...a11y('cardExp')}
+                      />
+                      <ErrorText k="cardExp" />
+                    </div>
+                    <div>
+                      <label htmlFor="ck-cardCvc" className="block font-bold text-slate-700 mb-1">Código de Seguridad (CVV)</label>
+                      <input
+                        id="ck-cardCvc"
+                        type="password"
+                        inputMode="numeric"
+                        autoComplete="cc-csc"
+                        placeholder="•••"
+                        value={form.cardCvc}
+                        onChange={(e) => setField('cardCvc', e.target.value.replace(/\D/g, '').slice(0, 4))}
+                        onBlur={() => blur('cardCvc')}
+                        className={`${inputCls('cardCvc')} text-center font-bold`}
+                        {...a11y('cardCvc')}
+                      />
+                      <ErrorText k="cardCvc" />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {form.paymentMethod === 'cash_on_delivery' && (
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex items-start gap-3">
+                  <Banknote className="w-5 h-5 text-emerald-700 shrink-0" />
+                  <span className="text-slate-600">
                     {deliveryMode === 'recogida'
-                      ? 'Efectivo, tarjeta o transferencia en la tienda cuando recojas tu pedido.'
-                      : 'Efectivo o datáfono al recibir tu pedido. No te pedimos datos de tarjeta en línea.'}
+                      ? 'Pagas en efectivo o con datáfono en la tienda cuando recojas tu pedido.'
+                      : 'Pagas en efectivo o con datáfono cuando recibas tu pedido.'}
                   </span>
                 </div>
-              </div>
+              )}
+
+              {form.paymentMethod === 'corporate_credit' && (
+                <div className="p-4 bg-amber-50 rounded-xl border border-amber-200 space-y-2">
+                  <span className="font-extrabold text-amber-900 block">Crédito Comercial ColorLink (30 Días)</span>
+                  <p className="text-amber-800 leading-relaxed">
+                    Esta orden se cargará al cupo rotativo de {collapse(form.companyName) ? <strong>{collapse(form.companyName)}</strong> : 'tu empresa'} con facturación electrónica a 30 días.
+                  </p>
+                </div>
+              )}
 
               {/* Factura electrónica (opcional) */}
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
@@ -691,10 +864,10 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
             {isSubmitting ? (
               <>
                 <span className="w-4 h-4 border-2 border-slate-900 border-t-transparent rounded-full animate-spin" />
-                <span>Registrando pedido…</span>
+                <span>Procesando Pago Seguro...</span>
               </>
             ) : (
-              <span>Confirmar pedido ({formatCOP(totalAmountCOP)})</span>
+              <span>Pagar en COP ({formatCOP(totalAmountCOP)})</span>
             )}
           </button>
 

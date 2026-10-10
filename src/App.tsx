@@ -404,6 +404,7 @@ export default function App() {
         body: JSON.stringify({
           items: purchasedItems.map(it => ({ productId: it.productId, name: it.name, price: it.price, cantidad: it.quantity, sizeId: it.sizeId, sizeName: it.sizeName, colorName: it.colorName })),
           metodoEntrega: (orderDetails?.deliveryMethod === 'sucursal' || orderDetails?.deliveryMethod === 'pickup') ? 'recoger_tienda' : 'domicilio',
+          metodoPago: orderDetails?.paymentMethod,
           direccionEntrega: orderDetails?.shippingAddress || undefined
         })
       });
