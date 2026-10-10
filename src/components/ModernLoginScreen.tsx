@@ -35,6 +35,11 @@ const cleanNit = (v: string) => {
   return digits.length > 9 ? `${digits.slice(0, 9)}-${digits.slice(9, 10)}` : digits;
 };
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const emailValido = (v: string) => EMAIL_RE.test(v.trim()) && v.trim().length <= 100;
+const CIUDADES = ['Medellín', 'Envigado', 'Itagüí', 'Sabaneta', 'Bello', 'La Estrella', 'Caldas', 'Copacabana', 'Girardota', 'Rionegro', 'Bogotá', 'Cali', 'Barranquilla', 'Cartagena', 'Bucaramanga', 'Pereira', 'Manizales', 'Armenia'];
+const SOLO_LETRAS = /^[A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+( [A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+)*$/;
+
 type AuthView = 'main_menu' | 'signup_start' | 'email_code' | 'verify_otp' | 'register_page' | 'forgot_password';
 
 export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
@@ -57,14 +62,14 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
   const [regCompany, setRegCompany] = useState('');
   const [regNit, setRegNit] = useState('');
   const [regAddress, setRegAddress] = useState('');
-  const [regCity, setRegCity] = useState('Medellín');
+  const [regCity, setRegCity] = useState('');
   const [regPhone, setRegPhone] = useState('');
   const [regPassword, setRegPassword] = useState(''); // NUEVO: contraseña real, ya no se inventa una por defecto
   const [personType, setPersonType] = useState<'natural' | 'juridica'>('natural');
   // true cuando la cuenta ya existe (Google) y solo falta completar los datos
   const [profileMode, setProfileMode] = useState(false);
   const [regDocType, setRegDocType] = useState('CC');
-  const [regTaxRegime, setRegTaxRegime] = useState<'comun' | 'simplificado' | 'gran_contribuyente'>('comun');
+  const [regIntentado, setRegIntentado] = useState(false);
 
   // Status & Feedback
   const [isLoading, setIsLoading] = useState(false);
@@ -76,14 +81,16 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
   // Escucha el resultado real de Google (postMessage desde /auth/callback en tu backend)
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
+      // Solo se aceptan mensajes de la ventana de Google abierta desde este mismo sitio
+      if (event.origin !== window.location.origin) return;
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS' && event.data?.user) {
         const { needsProfile, ...userData } = event.data.user;
         if (needsProfile) {
           // El backend ya creó la cuenta pero falta el perfil de empresa
           setUserEmail(userData.email);
           setRegEmail(userData.email);
-          setRegFirstName(userData.firstName || 'Cliente');
-          setRegLastName(userData.lastName || '');
+          setRegFirstName(onlyLetters(userData.firstName || ''));
+          setRegLastName(onlyLetters(userData.lastName || ''));
           setProfileMode(true);
           setInfoNotice(`Cuenta de Google (${userData.email}) validada. Completa tus datos para terminar el registro.`);
           setAuthView('register_page');
@@ -98,6 +105,14 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
   }, []);
+
+  // Escape cierra el inicio de sesión (cuando se muestra como ventana)
+  useEffect(() => {
+    if (!onClose) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !isLoading) onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose, isLoading]);
 
   // Resend OTP cooldown timer
   useEffect(() => {
@@ -137,8 +152,13 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
   // Action: Confirm email to receive OTP
   const handleRequestEmailCode = async (targetEmail?: string) => {
     const emailToSend = targetEmail || userEmail;
+    if (isLoading) return;
     if (!emailToSend.trim()) {
       setErrorMessage('Por favor escribe tu correo electrónico.');
+      return;
+    }
+    if (!emailValido(emailToSend)) {
+      setErrorMessage('El correo no es válido. Revisa que esté bien escrito (ej. nombre@correo.com).');
       return;
     }
 
@@ -172,8 +192,13 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
 
   const handleForgotPassword = async () => {
     setErrorMessage('');
+    if (isLoading) return;
     if (!userEmail.trim()) {
       setErrorMessage('Escribe el correo de tu cuenta.');
+      return;
+    }
+    if (!emailValido(userEmail)) {
+      setErrorMessage('El correo no es válido.');
       return;
     }
     setIsLoading(true);
@@ -200,8 +225,9 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
   // Action: Verify OTP Code
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!otpCode.trim()) {
-      setErrorMessage('Por favor digita el código de 6 dígitos.');
+    if (isLoading) return;
+    if (!/^\d{6}$/.test(otpCode.trim())) {
+      setErrorMessage('Digita el código de 6 dígitos que te enviamos.');
       return;
     }
 
@@ -246,8 +272,13 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
     setErrorMessage('');
     setInfoNotice('');
 
-    if (!userEmail.trim() || !userPassword.trim()) {
+    if (isLoading) return;
+    if (!userEmail.trim() || !userPassword) {
       setErrorMessage('Por favor ingresa tu correo y contraseña.');
+      return;
+    }
+    if (!emailValido(userEmail)) {
+      setErrorMessage('El correo no es válido.');
       return;
     }
 
@@ -294,14 +325,39 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
     const fName = nameParts[0] ? nameParts[0].charAt(0).toUpperCase() + nameParts[0].slice(1) : '';
     const lName = nameParts[1] ? nameParts[1].charAt(0).toUpperCase() + nameParts[1].slice(1) : '';
 
-    setRegFirstName(fName);
-    setRegLastName(lName);
-
-    if (domainPart && !['gmail.com', 'hotmail.com', 'outlook.com', 'yahoo.com', 'icloud.com'].includes(domainPart)) {
-      const compName = domainPart.split('.')[0];
-      setRegCompany(`${compName.charAt(0).toUpperCase() + compName.slice(1)} S.A.S.`);
-    }
+    // Solo se sugiere el nombre si el correo lo trae (ej. juan.perez@...); la empresa no se inventa
+    setRegFirstName(onlyLetters(fName).trim());
+    setRegLastName(onlyLetters(lName).trim());
+    void domainPart;
   };
+
+  const erroresRegistro = (): Record<string, string> => {
+    const e: Record<string, string> = {};
+    const fn = regFirstName.trim(), ln = regLastName.trim();
+    if (!SOLO_LETRAS.test(fn) || fn.length < 2 || fn.length > 40) e.firstName = 'Solo letras, de 2 a 40 caracteres.';
+    if (!SOLO_LETRAS.test(ln) || ln.length < 2 || ln.length > 40) e.lastName = 'Solo letras, de 2 a 40 caracteres.';
+    if (personType === 'natural') {
+      if (regDocType === 'CC' && !/^[0-9]{6,10}$/.test(regNit)) e.doc = 'La cédula debe tener entre 6 y 10 números.';
+      if (regDocType === 'CE' && !/^[A-Z0-9]{6,12}$/.test(regNit)) e.doc = 'Entre 6 y 12 letras o números.';
+      if (regDocType === 'PAS' && !/^[A-Z0-9]{5,12}$/.test(regNit)) e.doc = 'Entre 5 y 12 letras o números.';
+    } else {
+      if (!/^[0-9]{9}-[0-9]$/.test(regNit)) e.doc = '9 números y el dígito de verificación (ej. 901234567-8).';
+      const emp = regCompany.trim();
+      if (emp.length < 3 || emp.length > 100) e.company = 'Entre 3 y 100 caracteres.';
+    }
+    if (!/^3[0-9]{9}$/.test(regPhone) && !/^60[0-9]{8}$/.test(regPhone)) e.phone = '10 números, empezando por 3 (o fijo 60X).';
+    if (regAddress.trim() && (regAddress.trim().length < 5 || regAddress.trim().length > 120)) e.address = 'La dirección es muy corta.';
+    if (!regCity) e.city = 'Elige tu ciudad.';
+    if (!(profileMode && !regPassword)) {
+      if (regPassword.length < 8) e.password = 'Mínimo 8 caracteres.';
+      else if (!/[A-Z]/.test(regPassword)) e.password = 'Incluye una letra mayúscula.';
+      else if (!/[0-9]/.test(regPassword)) e.password = 'Incluye un número.';
+      else if (!/[^A-Za-z0-9]/.test(regPassword)) e.password = 'Incluye un carácter especial (! @ # $ %).';
+    }
+    return e;
+  };
+  const errReg = regIntentado ? erroresRegistro() : {};
+  const FieldErr: React.FC<{ k: string }> = ({ k }) => (errReg[k] ? <p className="text-[10px] font-semibold text-red-600 mt-0.5">{errReg[k]}</p> : null);
 
   const validarRegistro = (): string | null => {
     const nombre = /^[A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+( [A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+)*$/;
@@ -318,7 +374,8 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return 'El correo no es válido.';
     if (!/^3[0-9]{9}$/.test(regPhone) && !/^60[0-9]{8}$/.test(regPhone)) return 'El celular debe tener 10 números y empezar por 3 (o un fijo 60X de 10 dígitos).';
-    if (regAddress && regAddress.trim().length < 5) return 'La dirección es muy corta.';
+    if (regAddress.trim() && regAddress.trim().length < 5) return 'La dirección es muy corta.';
+    if (!regCity) return 'Elige tu ciudad.';
     if (profileMode && !regPassword) return null; // con Google la contraseña es opcional
     if (regPassword.length < 8) return 'La contraseña debe tener al menos 8 caracteres.';
     if (!/[A-Z]/.test(regPassword)) return 'La contraseña debe incluir una letra mayúscula.';
@@ -330,7 +387,9 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
   // Action: Complete Corporate Registration
   const handleCompleteRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLoading) return;
     setErrorMessage('');
+    setRegIntentado(true);
 
     const errorValidacion = validarRegistro();
     if (errorValidacion) {
@@ -344,17 +403,17 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
 
     try {
       const payload = {
-        firstName: regFirstName,
-        lastName: regLastName,
+        firstName: regFirstName.trim(),
+        lastName: regLastName.trim(),
         email: emailLower,
         personType,
         documentType: personType === 'juridica' ? 'NIT' : regDocType,
         company: personType === 'juridica' ? regCompany.trim() : '',
         documentId: regNit,
-        address: regAddress,
+        address: regAddress.trim(),
         city: regCity,
         phone: regPhone,
-        password: regPassword
+        ...(regPassword ? { password: regPassword } : {})
       };
 
       const res = await fetch(profileMode ? '/api/auth/complete-profile' : '/api/auth/register', {
@@ -474,13 +533,13 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
               </span>
             </div>
 
-            <form onSubmit={handleLoginWithPassword} className="space-y-3">
+            <form onSubmit={handleLoginWithPassword} noValidate className="space-y-3">
               <div>
                 <input
                   type="email"
                   value={userEmail}
                   onChange={(e) => setUserEmail(e.target.value)}
-                  placeholder="exemplo@e-mail.com"
+                  placeholder="tucorreo@ejemplo.com"
                   className="w-full px-3.5 py-3 bg-white text-slate-800 placeholder-slate-400 rounded-lg text-sm border border-slate-300 focus:outline-none focus:border-[#002855] focus:ring-1 focus:ring-[#002855] transition-all"
                   required
                 />
@@ -490,14 +549,17 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={userPassword}
-                  onChange={(e) => setUserPassword(e.target.value)}
-                  placeholder="contraseña"
+                  onChange={(e) => setUserPassword(e.target.value.slice(0, 72))}
+                  autoComplete="current-password"
+                  aria-label="Contraseña"
+                  placeholder="Contraseña"
                   className="w-full px-3.5 py-3 bg-white text-slate-800 placeholder-slate-400 rounded-lg text-sm border border-slate-300 focus:outline-none focus:border-[#002855] focus:ring-1 focus:ring-[#002855] transition-all pr-10"
                   required
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -549,7 +611,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
             <p className="text-xs text-slate-500 text-center leading-relaxed">
               Elige cómo verificar tu correo. Después completas tus datos y quedas registrado.
             </p>
-            <form onSubmit={(e) => { e.preventDefault(); handleRequestEmailCode(); }} className="space-y-2.5">
+            <form onSubmit={(e) => { e.preventDefault(); handleRequestEmailCode(); }} noValidate className="space-y-2.5">
               <label htmlFor="signup-email" className="block text-xs font-bold text-slate-700 text-center">
                 Recibir código de verificación por e-mail
               </label>
@@ -558,7 +620,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                 type="email"
                 value={userEmail}
                 onChange={(e) => setUserEmail(e.target.value.replace(/\s/g, ''))}
-                placeholder="exemplo@e-mail.com"
+                placeholder="tucorreo@ejemplo.com"
                 className="w-full px-3.5 py-3 bg-white text-slate-800 placeholder-slate-400 rounded-lg text-sm border border-slate-300 focus:outline-none focus:border-[#002855]"
                 required
                 autoFocus
@@ -598,7 +660,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
         )}
 
         {authView === 'email_code' && (
-          <form onSubmit={(e) => { e.preventDefault(); handleRequestEmailCode(); }} className="space-y-4">
+          <form onSubmit={(e) => { e.preventDefault(); handleRequestEmailCode(); }} noValidate className="space-y-4">
             <div className="text-center space-y-1">
               <h3 className="text-sm font-bold text-slate-800">Recibir código de acceso por e-mail</h3>
               <p className="text-xs text-slate-500">
@@ -611,7 +673,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                 type="email"
                 value={userEmail}
                 onChange={(e) => setUserEmail(e.target.value)}
-                placeholder="exemplo@e-mail.com"
+                placeholder="tucorreo@ejemplo.com"
                 className="w-full px-3.5 py-3 bg-white text-slate-800 placeholder-slate-400 rounded-lg text-sm border border-slate-300 focus:outline-none focus:border-[#002855]"
                 required
                 autoFocus
@@ -643,7 +705,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
         {/* VERIFY 6-DIGIT OTP CODE VIEW */}
         {/* =================================================================== */}
         {authView === 'verify_otp' && (
-          <form onSubmit={handleVerifyOtp} className="space-y-4 text-center">
+          <form onSubmit={handleVerifyOtp} noValidate className="space-y-4 text-center">
             <div className="w-10 h-10 mx-auto rounded-full bg-blue-50 text-[#002855] flex items-center justify-center">
               <Mail className="w-5 h-5" />
             </div>
@@ -661,6 +723,9 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
             <div>
               <input
                 type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                aria-label="Código de 6 dígitos"
                 maxLength={6}
                 value={otpCode}
                 onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
@@ -695,7 +760,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
 
               <button
                 type="submit"
-                disabled={isLoading || otpCode.length < 4}
+                disabled={isLoading || otpCode.length !== 6}
                 className="py-2.5 px-6 bg-[#002855] hover:bg-[#001D3D] disabled:opacity-50 text-white font-black text-xs rounded-lg uppercase tracking-wider cursor-pointer"
               >
                 {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <span>Validar & Entrar</span>}
@@ -735,7 +800,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                   type="email"
                   value={userEmail}
                   onChange={(e) => setUserEmail(e.target.value)}
-                  placeholder="exemplo@e-mail.com"
+                  placeholder="tucorreo@ejemplo.com"
                   className="w-full px-3.5 py-3 bg-white text-slate-800 rounded-lg text-sm border border-slate-300 focus:outline-none focus:border-[#002855]"
                 />
                 <div className="flex items-center justify-between pt-2">
@@ -764,12 +829,12 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
         {/* CUSTOMER & CORPORATE REGISTRATION VIEW */}
         {/* =================================================================== */}
         {authView === 'register_page' && (
-          <form onSubmit={handleCompleteRegister} className="space-y-3 max-h-[460px] overflow-y-auto pr-1">
+          <form onSubmit={handleCompleteRegister} noValidate className="space-y-3 max-h-[460px] overflow-y-auto pr-1">
 
             <div className="bg-slate-100 p-1 rounded-xl grid grid-cols-2 gap-1 text-xs font-bold mb-2">
               <button
                 type="button"
-                onClick={() => setPersonType('natural')}
+                onClick={() => { if (personType !== 'natural') { setPersonType('natural'); setRegNit(''); setRegDocType('CC'); } }}
                 className={`py-1.5 px-2 rounded-lg text-center transition-all cursor-pointer ${personType === 'natural'
                   ? 'bg-[#002855] text-white shadow-xs font-black'
                   : 'text-slate-600 hover:text-slate-900'
@@ -779,7 +844,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => setPersonType('juridica')}
+                onClick={() => { if (personType !== 'juridica') { setPersonType('juridica'); setRegNit(''); } }}
                 className={`py-1.5 px-2 rounded-lg text-center transition-all cursor-pointer ${personType === 'juridica'
                   ? 'bg-[#002855] text-white shadow-xs font-black'
                   : 'text-slate-600 hover:text-slate-900'
@@ -803,6 +868,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                       className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                       required
                     />
+                    <FieldErr k="firstName" />
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-700 block mb-0.5">Apellidos *</label>
@@ -815,6 +881,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                       className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                       required
                     />
+                    <FieldErr k="lastName" />
                   </div>
                 </div>
 
@@ -842,6 +909,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                       className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                       required
                     />
+                    <FieldErr k="doc" />
                   </div>
                 </div>
 
@@ -866,15 +934,10 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                       onChange={(e) => setRegCity(e.target.value)}
                       className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855] bg-white"
                     >
-                      <option value="Medellín">Medellín</option>
-                      <option value="Bogotá">Bogotá</option>
-                      <option value="Itagüí">Itagüí</option>
-                      <option value="Bello">Bello</option>
-                      <option value="Envigado">Envigado</option>
-                      <option value="Sabaneta">Sabaneta</option>
-                      <option value="Rionegro">Rionegro</option>
-                      <option value="Cali">Cali</option>
+                      <option value="">Selecciona…</option>
+                      {CIUDADES.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
+                    <FieldErr k="city" />
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-700 block mb-0.5">Celular / WhatsApp *</label>
@@ -887,6 +950,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                       className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                       required
                     />
+                    <FieldErr k="phone" />
                   </div>
                 </div>
 
@@ -899,6 +963,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                     placeholder="Ej. Calle 10 # 43E-28"
                     className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                   />
+                    <FieldErr k="address" />
                 </div>
               </>
             ) : (
@@ -914,6 +979,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                       className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                       required
                     />
+                    <FieldErr k="company" />
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-700 block mb-0.5">NIT con Dígito de Verificación *</label>
@@ -925,6 +991,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                       className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                       required
                     />
+                    <FieldErr k="doc" />
                   </div>
                 </div>
 
@@ -940,6 +1007,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                       className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                       required
                     />
+                    <FieldErr k="firstName" />
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-700 block mb-0.5">Apellidos de Contacto *</label>
@@ -952,6 +1020,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                       className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                       required
                     />
+                    <FieldErr k="lastName" />
                   </div>
                 </div>
 
@@ -976,27 +1045,12 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                       onChange={(e) => setRegCity(e.target.value)}
                       className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855] bg-white"
                     >
-                      <option value="Medellín">Medellín</option>
-                      <option value="Bogotá">Bogotá</option>
-                      <option value="Itagüí">Itagüí</option>
-                      <option value="Bello">Bello</option>
-                      <option value="Envigado">Envigado</option>
-                      <option value="Rionegro">Rionegro</option>
-                      <option value="Cali">Cali</option>
+                      <option value="">Selecciona…</option>
+                      {CIUDADES.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
+                    <FieldErr k="city" />
                   </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-700 block mb-0.5">Régimen Tributario</label>
-                    <select
-                      value={regTaxRegime}
-                      onChange={(e) => setRegTaxRegime(e.target.value as any)}
-                      className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855] bg-white"
-                    >
-                      <option value="comun">Régimen Común</option>
-                      <option value="gran_contribuyente">Gran Contribuyente</option>
-                      <option value="simplificado">Régimen Simplificado</option>
-                    </select>
-                  </div>
+
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
@@ -1009,6 +1063,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                       placeholder="Cra 43A # 18 Sur-135"
                       className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                     />
+                    <FieldErr k="address" />
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-700 block mb-0.5">PBX / Celular Obras *</label>
@@ -1021,6 +1076,7 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
                       className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855]"
                       required
                     />
+                    <FieldErr k="phone" />
                   </div>
                 </div>
               </>
@@ -1028,26 +1084,29 @@ export const ModernLoginScreen: React.FC<ModernLoginScreenProps> = ({
 
             {/* NUEVO: contraseña real y obligatoria, sin valor por defecto oculto */}
             <div>
-              <label className="text-[10px] font-bold text-slate-700 block mb-0.5">Crea tu Contraseña *</label>
+              <label className="text-[10px] font-bold text-slate-700 block mb-0.5">{profileMode ? 'Crea una contraseña (opcional)' : 'Crea tu contraseña *'}</label>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={regPassword}
                   onChange={(e) => setRegPassword(e.target.value)}
-                  placeholder="Mínimo 8 caracteres"
-                  minLength={8}
+                  placeholder={profileMode ? 'Opcional' : 'Mínimo 8 caracteres'}
+                  maxLength={72}
+                  autoComplete="new-password"
                   className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:border-[#002855] pr-9"
-                  required
+                  required={!profileMode}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                 >
                   {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                 </button>
               </div>
-              <p className="text-[10px] text-slate-500 mt-1">Mínimo 8 caracteres, con una mayúscula, un número y un carácter especial.</p>
+              <FieldErr k="password" />
+              <p className="text-[10px] text-slate-500 mt-1">Mínimo 8 caracteres, con una mayúscula, un número y un carácter especial.{profileMode ? ' Si no la creas, entras con Google o con código por correo.' : ''}</p>
             </div>
 
             <div className="flex items-center justify-between pt-3 border-t border-slate-100">

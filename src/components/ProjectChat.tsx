@@ -25,9 +25,10 @@ const ROL_LABEL: Record<string, string> = {
   administrador: 'Equipo ColorLink'
 };
 
-const hora = (d: string) => new Date(d).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' });
+const hora = (d: string) => { const f = new Date(d); return isNaN(f.getTime()) ? '' : f.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' }); };
 const dia = (d: string) => {
   const f = new Date(d);
+  if (isNaN(f.getTime())) return '';
   const hoy = new Date();
   const ayer = new Date(); ayer.setDate(hoy.getDate() - 1);
   if (f.toDateString() === hoy.toDateString()) return 'Hoy';
@@ -95,12 +96,17 @@ export const ProjectChat: React.FC<{ proyectoId: string; autoFocus?: boolean; on
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const onReadRef = useRef(onRead);
   onReadRef.current = onRead;
+  const proyectoActual = useRef(proyectoId);
+  proyectoActual.current = proyectoId;
+  const enviandoRef = useRef(false);
 
   const cargar = async (silencioso = false) => {
+    const id = proyectoId;
     try {
-      const r = await fetch(`/api/projects/${proyectoId}/messages`);
+      const r = await fetch(`/api/projects/${id}/messages`);
       const data = await r.json();
-      if (data.success) {
+      if (id !== proyectoActual.current) return; // la respuesta llegó tarde, de otro proyecto
+      if (data.success && Array.isArray(data.messages)) {
         setMensajes(prev => (prev.length === data.messages.length && prev[prev.length - 1]?.mensajeId === data.messages[data.messages.length - 1]?.mensajeId ? prev : data.messages));
         onReadRef.current?.();
       } else if (!silencioso) {
@@ -131,8 +137,9 @@ export const ProjectChat: React.FC<{ proyectoId: string; autoFocus?: boolean; on
 
   const enviar = async () => {
     const t = texto.trim();
-    if (!t || enviando) return;
+    if (!t || enviando || enviandoRef.current) return;
     if (t.length > 1000) { setError('El mensaje puede tener máximo 1000 caracteres.'); return; }
+    enviandoRef.current = true;
     setEnviando(true);
     setError('');
     try {
@@ -143,11 +150,12 @@ export const ProjectChat: React.FC<{ proyectoId: string; autoFocus?: boolean; on
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok || !data.success) { setError(data.error || 'No se pudo enviar el mensaje.'); return; }
-      setMensajes(prev => [...prev, data.message]);
+      if (data.message) setMensajes(prev => [...prev, data.message]);
       setTexto('');
     } catch {
       setError('No hay conexión con el servidor. Intenta de nuevo.');
     } finally {
+      enviandoRef.current = false;
       setEnviando(false);
       inputRef.current?.focus();
     }
@@ -206,6 +214,8 @@ export const ProjectChat: React.FC<{ proyectoId: string; autoFocus?: boolean; on
             onChange={e => setTexto(e.target.value.slice(0, 1000))}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviar(); } }}
             rows={2}
+            maxLength={1000}
+            aria-label="Escribe tu mensaje"
             placeholder="Escribe tu mensaje…"
             className="flex-1 resize-none rounded-xl border border-slate-300 px-3 py-2 text-xs focus:outline-none focus:border-[#14216B]"
           />

@@ -32,7 +32,7 @@ export const ResetPasswordScreen: React.FC<ResetPasswordScreenProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canSubmit) return;
+    if (!canSubmit || isLoading) return;
 
     setErrorMessage('');
     setIsLoading(true);
@@ -42,7 +42,7 @@ export const ResetPasswordScreen: React.FC<ResetPasswordScreenProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, newPassword: password })
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (data.success) {
         setDone(true);
       } else {
@@ -79,7 +79,7 @@ export const ResetPasswordScreen: React.FC<ResetPasswordScreenProps> = ({
             </button>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} noValidate className="space-y-4">
             <div className="flex flex-col items-center text-center mb-2">
               <div className="w-12 h-12 rounded-full border-2 border-[#002855] text-[#002855] flex items-center justify-center mb-3">
                 <KeyRound className="w-6 h-6" />
@@ -94,12 +94,19 @@ export const ResetPasswordScreen: React.FC<ResetPasswordScreenProps> = ({
                 <span>{errorMessage}</span>
               </div>
             )}
+            {/expir|utilizado|enlace/i.test(errorMessage) && (
+              <button type="button" onClick={onGoToLogin} className="w-full text-xs font-bold text-[#002855] underline cursor-pointer">
+                Solicitar un enlace nuevo
+              </button>
+            )}
 
             <div className="relative">
               <input
                 type={showPassword ? 'text' : 'password'}
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => setPassword(e.target.value.slice(0, 72))}
+                aria-label="Nueva contraseña"
+                maxLength={72}
                 placeholder="Nueva contraseña"
                 autoComplete="new-password"
                 className="w-full px-3.5 py-3 bg-white text-slate-800 placeholder-slate-400 rounded-lg text-sm border border-slate-300 focus:outline-none focus:border-[#002855] focus:ring-1 focus:ring-[#002855] pr-10"
@@ -108,6 +115,7 @@ export const ResetPasswordScreen: React.FC<ResetPasswordScreenProps> = ({
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -117,7 +125,9 @@ export const ResetPasswordScreen: React.FC<ResetPasswordScreenProps> = ({
             <input
               type={showPassword ? 'text' : 'password'}
               value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
+              onChange={(e) => setConfirm(e.target.value.slice(0, 72))}
+              aria-label="Confirmar contraseña"
+              maxLength={72}
               placeholder="Confirmar contraseña"
               autoComplete="new-password"
               className="w-full px-3.5 py-3 bg-white text-slate-800 placeholder-slate-400 rounded-lg text-sm border border-slate-300 focus:outline-none focus:border-[#002855] focus:ring-1 focus:ring-[#002855]"

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 export type ToolType = 'brocha' | 'rodillo' | 'cinta' | 'espatula' | 'bandeja' | 'extension';
 
@@ -17,6 +17,7 @@ export const ToolGraphic: React.FC<ToolGraphicProps> = ({
   sizeLabel = '3"',
   subType
 }) => {
+  const [failedPhoto, setFailedPhoto] = useState<string | null>(null);
   // Infer tool type from productName if not strictly provided
   // El nombre del producto manda; el tipo recibido solo se usa si el nombre no lo dice
   const normalized = (productName + ' ' + String(toolType)).toLowerCase();
@@ -47,7 +48,7 @@ export const ToolGraphic: React.FC<ToolGraphicProps> = ({
       default: return null;
     }
   })();
-  if (photo) {
+  if (photo && photo !== failedPhoto) {
     return (
       <div className={`relative flex items-center justify-center select-none ${className}`}>
         <div className="h-full max-w-full aspect-square bg-white rounded-2xl overflow-hidden">
@@ -58,6 +59,7 @@ export const ToolGraphic: React.FC<ToolGraphicProps> = ({
             alt={productName}
             loading="lazy"
             draggable={false}
+            onError={() => setFailedPhoto(photo)}
             className="w-full h-full object-contain"
           />
         </div>

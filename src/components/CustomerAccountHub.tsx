@@ -1,601 +1,541 @@
-import React, { useState } from 'react';
-import { 
-  Package, 
-  Lock, 
-  MapPin, 
-  Building2, 
-  CreditCard, 
-  Bookmark, 
-  Headphones, 
-  Layers, 
-  ChevronRight, 
-  User, 
-  Check, 
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  Package,
+  Lock,
+  Building2,
+  Headphones,
+  Layers,
+  User,
+  Check,
   X,
-  Phone,
-  Mail,
-  ShieldCheck,
-  FileText
+  Eye,
+  EyeOff,
+  CheckCircle2,
+  Circle,
+  ChevronRight
 } from 'lucide-react';
 import { UserProfile } from '../types';
 
 interface CustomerAccountHubProps {
   user: UserProfile;
+  /** Actualiza el usuario en la app (App vuelve a guardar en el servidor; el valor ya viene validado y guardado) */
   onUpdateUser: (updated: Partial<UserProfile>) => void;
+  /** Si se pasa, recibe el usuario que devolvió el servidor y se usa en lugar de onUpdateUser (evita un segundo PATCH) */
+  onProfileSaved?: (user: UserProfile) => void;
   onNavigateToOrders: () => void;
   onNavigateToProjects: () => void;
   onNavigateToStore: () => void;
+  onOpenSupport?: () => void;
 }
+
+// ---------- Reglas (las mismas del servidor: validateSignupFields / validatePasswordPolicy) ----------
+const SOLO_LETRAS = /^[A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+( [A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+)*$/;
+const limpiarNombre = (v: string) => v.replace(/[^A-Za-zÁÉÍÓÚÜáéíóúüÑñ ]/g, '').replace(/\s{2,}/g, ' ').slice(0, 40);
+const limpiarCelular = (v: string) => {
+  let d = v.replace(/\D/g, '');
+  if (d.length > 10 && d.startsWith('57')) d = d.slice(2);
+  return d.slice(0, 10);
+};
+const errorNombre = (v: string, campo: string) => {
+  const t = v.trim();
+  if (!t) return `Escribe tu ${campo}.`;
+  if (!SOLO_LETRAS.test(t) || t.length < 2 || t.length > 40) return `El ${campo} solo puede tener letras (2 a 40 caracteres).`;
+  return '';
+};
+const errorCelular = (v: string) => (!v ? 'Escribe tu celular.' : /^3\d{9}$/.test(v) ? '' : 'El celular debe tener 10 números y empezar por 3.');
+
+const REGLAS_CLAVE = [
+  { label: 'Mínimo 8 caracteres', ok: (p: string) => p.length >= 8 },
+  { label: 'Al menos una letra mayúscula', ok: (p: string) => /[A-Z]/.test(p) },
+  { label: 'Al menos un número', ok: (p: string) => /[0-9]/.test(p) },
+  { label: 'Al menos un carácter especial (! @ # $ % …)', ok: (p: string) => /[^A-Za-z0-9]/.test(p) }
+];
+
+const Modal: React.FC<{ titulo: string; icono: React.ReactNode; onClose: () => void; bloqueado?: boolean; children: React.ReactNode }> = ({ titulo, icono, onClose, bloqueado, children }) => {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !bloqueado) onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose, bloqueado]);
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 bg-slate-950/75 backdrop-blur-xs overflow-y-auto" onClick={() => !bloqueado && onClose()}>
+      <div role="dialog" aria-modal="true" aria-label={titulo} className="bg-white rounded-3xl w-full max-w-lg p-5 sm:p-6 space-y-4 shadow-2xl border border-slate-200 text-slate-900 my-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-slate-200 pb-3 gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            {icono}
+            <h3 className="text-base font-black text-slate-900">{titulo}</h3>
+          </div>
+          <button type="button" onClick={onClose} disabled={bloqueado} aria-label="Cerrar" className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 disabled:opacity-40 cursor-pointer">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+};
+
+const CampoError: React.FC<{ id: string; msg?: string }> = ({ id, msg }) =>
+  msg ? <p id={id} className="text-[11px] font-semibold text-red-600 mt-1">{msg}</p> : null;
+
+const inputClase = (err?: string) =>
+  `w-full px-3 py-2 bg-slate-50 border rounded-lg text-sm focus:outline-none focus:ring-1 ${err ? 'border-red-400 focus:border-red-500 focus:ring-red-500' : 'border-slate-300 focus:border-blue-900 focus:ring-blue-900'}`;
 
 export const CustomerAccountHub: React.FC<CustomerAccountHubProps> = ({
   user,
   onUpdateUser,
+  onProfileSaved,
   onNavigateToOrders,
   onNavigateToProjects,
-  onNavigateToStore
+  onNavigateToStore,
+  onOpenSupport
 }) => {
-  const [activeModal, setActiveModal] = useState<string | null>(null);
-
-  // Edit profile state
-  const [name, setName] = useState(user.name);
-  const [email, setEmail] = useState(user.email);
-  const [phone, setPhone] = useState(user.phone || '+57 312 450-8920');
-  const [company, setCompany] = useState(user.companyName || 'Constructora Horizonte S.A.S.');
-  const [nit, setNit] = useState(user.nit || '901.234.567-8');
-  const [city, setCity] = useState(user.city || 'Medellín');
-  const [address, setAddress] = useState(user.address || 'Cra 43A # 18 Sur-135, El Poblado');
-  const [saveSuccess, setSaveSuccess] = useState(false);
-
-  const handleSaveProfile = (e: React.FormEvent) => {
-    e.preventDefault();
-    onUpdateUser({
-      name,
-      email,
-      phone,
-      companyName: company,
-      nit,
-      city,
-      address
-    });
-    setSaveSuccess(true);
-    setTimeout(() => {
-      setSaveSuccess(false);
-      setActiveModal(null);
-    }, 1200);
+  const [activeModal, setActiveModal] = useState<'perfil' | 'clave' | 'facturacion' | null>(null);
+  const [aviso, setAviso] = useState('');
+  const avisoTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(avisoTimer.current), []);
+  const mostrarAviso = (t: string) => {
+    setAviso(t);
+    window.clearTimeout(avisoTimer.current);
+    avisoTimer.current = window.setTimeout(() => setAviso(''), 3500);
   };
 
-  const accountCards = [
+  // ---------- Datos personales ----------
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [perfilTocado, setPerfilTocado] = useState<Record<string, boolean>>({});
+  const [guardandoPerfil, setGuardandoPerfil] = useState(false);
+  const [errorPerfil, setErrorPerfil] = useState('');
+
+  const abrirPerfil = () => {
+    const partes = (user.name || '').trim().split(/\s+/);
+    setFirstName(limpiarNombre(user.firstName ?? partes[0] ?? ''));
+    setLastName(limpiarNombre(user.lastName ?? partes.slice(1).join(' ') ?? ''));
+    setPhone(limpiarCelular(user.phone || ''));
+    setPerfilTocado({});
+    setErrorPerfil('');
+    setActiveModal('perfil');
+  };
+
+  const erroresPerfil = {
+    firstName: errorNombre(firstName, 'nombre'),
+    lastName: errorNombre(lastName, 'apellido'),
+    phone: errorCelular(phone)
+  };
+  const perfilValido = !erroresPerfil.firstName && !erroresPerfil.lastName && !erroresPerfil.phone;
+  const perfilSinCambios =
+    firstName.trim() === (user.firstName || '').trim() &&
+    lastName.trim() === (user.lastName || '').trim() &&
+    phone === limpiarCelular(user.phone || '');
+
+  const guardarPerfil = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPerfilTocado({ firstName: true, lastName: true, phone: true });
+    if (!perfilValido || guardandoPerfil) return;
+    setGuardandoPerfil(true);
+    setErrorPerfil('');
+    const datos = { firstName: firstName.trim(), lastName: lastName.trim(), phone };
+    try {
+      const res = await fetch('/api/auth/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(datos)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        setErrorPerfil(data.error || 'No se pudo actualizar el perfil.');
+        return;
+      }
+      if (onProfileSaved && data.user) onProfileSaved(data.user);
+      else onUpdateUser({ ...datos, name: `${datos.firstName} ${datos.lastName}`.trim() });
+      setActiveModal(null);
+      mostrarAviso('Tus datos se actualizaron.');
+    } catch {
+      setErrorPerfil('No hay conexión con el servidor. Intenta de nuevo.');
+    } finally {
+      setGuardandoPerfil(false);
+    }
+  };
+
+  // ---------- Contraseña ----------
+  const [claveActual, setClaveActual] = useState('');
+  const [claveNueva, setClaveNueva] = useState('');
+  const [claveConfirm, setClaveConfirm] = useState('');
+  const [verClaves, setVerClaves] = useState(false);
+  const [claveTocado, setClaveTocado] = useState<Record<string, boolean>>({});
+  const [guardandoClave, setGuardandoClave] = useState(false);
+  const [errorClave, setErrorClave] = useState('');
+  const [errorClaveActual, setErrorClaveActual] = useState('');
+
+  const abrirClave = () => {
+    setClaveActual(''); setClaveNueva(''); setClaveConfirm('');
+    setVerClaves(false); setClaveTocado({}); setErrorClave(''); setErrorClaveActual('');
+    setActiveModal('clave');
+  };
+
+  const erroresClave = {
+    actual: errorClaveActual || (!claveActual ? 'Escribe tu contraseña actual.' : ''),
+    nueva: !claveNueva
+      ? 'Escribe la nueva contraseña.'
+      : REGLAS_CLAVE.every(r => r.ok(claveNueva))
+        ? (claveNueva === claveActual ? 'La nueva contraseña debe ser distinta a la actual.' : '')
+        : 'La contraseña no cumple los requisitos.',
+    confirm: claveConfirm !== claveNueva || !claveConfirm ? 'Las contraseñas no coinciden.' : ''
+  };
+  const claveValida = !erroresClave.actual && !erroresClave.nueva && !erroresClave.confirm;
+
+  const guardarClave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setClaveTocado({ actual: true, nueva: true, confirm: true });
+    if (!claveValida || guardandoClave) return;
+    setGuardandoClave(true);
+    setErrorClave('');
+    try {
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword: claveActual, newPassword: claveNueva })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        if (res.status === 401) setErrorClaveActual(data.error || 'La contraseña actual no es correcta.');
+        else setErrorClave(data.error || 'No se pudo cambiar la contraseña.');
+        return;
+      }
+      setActiveModal(null);
+      mostrarAviso('Tu contraseña se cambió correctamente.');
+    } catch {
+      setErrorClave('No hay conexión con el servidor. Intenta de nuevo.');
+    } finally {
+      setGuardandoClave(false);
+    }
+  };
+
+  const esEmpresa = !!user.company;
+  const iniciales = (user.name || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase() || <User className="w-7 h-7" />;
+
+  const accountCards: Array<{ id: string; title: string; description: string; icon: React.ReactNode; action: () => void }> = [
     {
       id: 'pedidos',
       title: 'Tus pedidos',
-      description: 'Rastrear, devolver, cancelar un pedido, descargar factura o comprar de nuevo.',
+      description: 'Rastrea, cancela, descarga el comprobante o compra de nuevo.',
       icon: <Package className="w-8 h-8 text-amber-600" />,
-      badge: null,
       action: onNavigateToOrders
     },
     {
-      id: 'seguridad',
-      title: 'Inicio de sesión y seguridad',
-      description: 'Editar nombre de usuario, contraseña, teléfono móvil y correo electrónico.',
-      icon: <Lock className="w-8 h-8 text-blue-600" />,
-      badge: 'Protegido',
-      action: () => setActiveModal('seguridad')
+      id: 'perfil',
+      title: 'Datos personales',
+      description: 'Edita tu nombre, apellido y celular de contacto.',
+      icon: <User className="w-8 h-8 text-blue-600" />,
+      action: abrirPerfil
     },
     {
-      id: 'direcciones',
-      title: 'Direcciones de entrega',
-      description: 'Editar, eliminar o establecer direcciones predeterminadas para envío a obra o domicilio.',
-      icon: <MapPin className="w-8 h-8 text-emerald-600" />,
-      badge: null,
-      action: () => setActiveModal('direcciones')
+      id: 'clave',
+      title: 'Contraseña y seguridad',
+      description: 'Cambia la contraseña con la que ingresas a tu cuenta.',
+      icon: <Lock className="w-8 h-8 text-slate-700" />,
+      action: abrirClave
     },
     {
-      id: 'empresa',
-      title: 'Tu cuenta empresarial / Facturación DIAN',
-      description: 'Configurar Razón Social, NIT y régimen tributario para la emisión de facturas electrónicas.',
+      id: 'facturacion',
+      title: 'Facturación y dirección',
+      description: 'Consulta tu documento, razón social, dirección y ciudad registrados.',
       icon: <Building2 className="w-8 h-8 text-indigo-600" />,
-      badge: user.personType === 'juridica' ? 'Empresa' : 'Persona Natural',
-      action: () => setActiveModal('empresa')
-    },
-    {
-      id: 'pagos',
-      title: 'Tus pagos y crédito de obra',
-      description: 'Administrar métodos de pago guardados (PSE, Tarjetas Débito/Crédito y Crédito Constructor).',
-      icon: <CreditCard className="w-8 h-8 text-purple-600" />,
-      badge: null,
-      action: () => setActiveModal('pagos')
-    },
-    {
-      id: 'listas',
-      title: 'Tus listas & cotizaciones guardadas',
-      description: 'Ver y modificar listas de materiales guardados para compras recurrentes de obra.',
-      icon: <Bookmark className="w-8 h-8 text-rose-600" />,
-      badge: null,
-      action: () => setActiveModal('listas')
-    },
-    {
-      id: 'soporte',
-      title: 'Servicio al Cliente & Asesor Técnico',
-      description: 'Contactar a tu asesor comercial asignado, WhatsApp directo o radicar consulta técnica.',
-      icon: <Headphones className="w-8 h-8 text-teal-600" />,
-      badge: 'Asesor 24/7',
-      action: () => setActiveModal('soporte')
+      action: () => setActiveModal('facturacion')
     },
     {
       id: 'proyectos',
-      title: 'Panel de Obras & Proyectos',
-      description: 'Acceder al módulo técnico de cubicaje por m², diagnóstico con IA y peritajes de calidad.',
-      icon: <Layers className="w-8 h-8 text-slate-800" />,
-      badge: 'Módulo PRO',
+      title: 'Proyectos y cotizaciones',
+      description: 'Tus proyectos de pintura, cotizaciones y mensajes con tu asesor.',
+      icon: <Layers className="w-8 h-8 text-emerald-700" />,
       action: onNavigateToProjects
-    }
+    },
+    ...(onOpenSupport ? [{
+      id: 'soporte',
+      title: 'Ayuda y soporte',
+      description: 'Resuelve dudas sobre productos, pedidos o tu cuenta.',
+      icon: <Headphones className="w-8 h-8 text-teal-600" />,
+      action: onOpenSupport
+    }] : [])
   ];
+
+  const Dato: React.FC<{ label: string; value?: string | null }> = ({ label, value }) => (
+    <div className="py-2 border-b border-slate-100 last:border-b-0 flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-0.5 sm:gap-4">
+      <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">{label}</span>
+      <span className="text-sm text-slate-900 font-semibold sm:text-right break-words">{value && String(value).trim() ? value : '—'}</span>
+    </div>
+  );
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 font-sans">
-      
-      {/* Breadcrumbs */}
-      <div className="flex items-center gap-2 text-xs text-slate-500 mb-6">
-        <button 
-          onClick={onNavigateToStore} 
-          className="hover:text-slate-900 transition-colors cursor-pointer"
-        >
+
+      <nav className="flex items-center gap-2 text-xs text-slate-500 mb-6" aria-label="Ruta">
+        <button type="button" onClick={onNavigateToStore} className="hover:text-slate-900 transition-colors cursor-pointer">
           Tienda ColorLink
         </button>
         <span>›</span>
         <span className="font-bold text-slate-800">Tu cuenta</span>
-      </div>
+      </nav>
 
-      {/* Header Profile Summary (Like Image 4) */}
-      <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm mb-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-slate-900 to-blue-900 text-white flex items-center justify-center font-black text-xl shadow-md">
-            {user.name ? user.name.slice(0, 2).toUpperCase() : 'CL'}
+      {/* Resumen del perfil */}
+      <div className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-8 shadow-sm mb-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="flex items-center gap-4 min-w-0">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-slate-900 to-blue-900 text-white flex items-center justify-center font-black text-xl shadow-md shrink-0">
+            {iniciales}
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                {user.name}
-              </h1>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300">
-                {user.role === 'cliente' ? 'Cliente VIP' : user.role}
-              </span>
-            </div>
-            <p className="text-xs text-slate-500 mt-0.5">
-              {user.email} • {user.companyName || 'Persona Natural'}
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight break-words">{user.name || 'Tu cuenta'}</h1>
+            <p className="text-xs text-slate-500 mt-0.5 break-all">{user.email || '—'}</p>
+            <p className="text-xs text-slate-600 mt-1.5">
+              {esEmpresa ? user.company : 'Persona natural'} · Documento: <strong className="font-mono text-slate-800">{user.documentId || '—'}</strong>
             </p>
-            <div className="flex items-center gap-3 text-xs text-slate-600 mt-2">
-              <span className="flex items-center gap-1 text-emerald-700 font-bold">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                <span>Cuenta Verificada</span>
-              </span>
-              <span>•</span>
-              <span>NIT / Doc: <strong className="font-mono text-slate-800">{user.nit || '1.020.304.506'}</strong></span>
-            </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-3 self-start md:self-auto">
+        <div className="flex flex-wrap items-center gap-3 self-start md:self-auto">
           <button
             type="button"
             onClick={onNavigateToOrders}
             className="px-5 py-2.5 bg-amber-400 hover:bg-amber-300 font-black text-xs text-slate-950 rounded-xl shadow-xs transition-all cursor-pointer"
           >
-            Ver Tus Pedidos
+            Ver tus pedidos
           </button>
           <button
             type="button"
-            onClick={() => setActiveModal('seguridad')}
+            onClick={abrirPerfil}
             className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 font-bold text-xs text-slate-700 rounded-xl transition-all cursor-pointer"
           >
-            Editar Perfil
+            Editar perfil
           </button>
         </div>
       </div>
 
-      {/* Grid of 8 Cards (Amazon style - Image 4) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {accountCards.map(card => (
-          <div
+          <button
             key={card.id}
+            type="button"
             onClick={card.action}
-            className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs hover:shadow-lg hover:border-amber-400/80 transition-all duration-200 cursor-pointer flex gap-4 items-start group"
+            className="text-left bg-white rounded-2xl border border-slate-200 p-5 shadow-xs hover:shadow-lg hover:border-amber-400/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 transition-all duration-200 cursor-pointer flex gap-4 items-start group"
           >
-            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 shrink-0 group-hover:scale-105 transition-transform">
-              {card.icon}
-            </div>
-
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between gap-1">
-                <h3 className="font-extrabold text-sm text-slate-900 group-hover:text-blue-900 transition-colors">
-                  {card.title}
-                </h3>
-                {card.badge && (
-                  <span className="text-[9px] font-black uppercase px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 border border-slate-200 shrink-0">
-                    {card.badge}
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-slate-500 mt-1 leading-relaxed line-clamp-2">
-                {card.description}
-              </p>
-            </div>
-          </div>
+            <span className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 shrink-0 group-hover:scale-105 transition-transform">{card.icon}</span>
+            <span className="flex-1 min-w-0">
+              <span className="flex items-center justify-between gap-1">
+                <span className="font-extrabold text-sm text-slate-900 group-hover:text-blue-900 transition-colors">{card.title}</span>
+                <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+              </span>
+              <span className="block text-xs text-slate-500 mt-1 leading-relaxed">{card.description}</span>
+            </span>
+          </button>
         ))}
       </div>
 
-      {/* =================================================================== */}
-      {/* MODAL: INICIO DE SESIÓN Y SEGURIDAD                                 */}
-      {/* =================================================================== */}
-      {activeModal === 'seguridad' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl w-full max-w-lg p-6 space-y-4 shadow-2xl border border-slate-200 text-slate-900 animate-in zoom-in-95">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-              <div className="flex items-center gap-2">
-                <Lock className="w-5 h-5 text-blue-600" />
-                <h3 className="text-base font-black text-slate-900">Inicio de Sesión y Seguridad</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveModal(null)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveProfile} className="space-y-3 text-xs">
+      {/* =========================== DATOS PERSONALES =========================== */}
+      {activeModal === 'perfil' && (
+        <Modal titulo="Datos personales" icono={<User className="w-5 h-5 text-blue-600" />} onClose={() => setActiveModal(null)} bloqueado={guardandoPerfil}>
+          <form onSubmit={guardarPerfil} noValidate className="space-y-3 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Nombre Completo</label>
+                <label htmlFor="perfil-nombre" className="font-bold text-slate-700 block mb-1">Nombres *</label>
                 <input
+                  id="perfil-nombre"
                   type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-900"
-                  required
+                  value={firstName}
+                  maxLength={40}
+                  autoComplete="given-name"
+                  onChange={(e) => setFirstName(limpiarNombre(e.target.value))}
+                  onBlur={() => setPerfilTocado(t => ({ ...t, firstName: true }))}
+                  aria-invalid={!!(perfilTocado.firstName && erroresPerfil.firstName)}
+                  aria-describedby="perfil-nombre-err"
+                  className={inputClase(perfilTocado.firstName ? erroresPerfil.firstName : '')}
                 />
+                <CampoError id="perfil-nombre-err" msg={perfilTocado.firstName ? erroresPerfil.firstName : ''} />
               </div>
-
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Correo Electrónico</label>
+                <label htmlFor="perfil-apellido" className="font-bold text-slate-700 block mb-1">Apellidos *</label>
                 <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-900"
-                  required
+                  id="perfil-apellido"
+                  type="text"
+                  value={lastName}
+                  maxLength={40}
+                  autoComplete="family-name"
+                  onChange={(e) => setLastName(limpiarNombre(e.target.value))}
+                  onBlur={() => setPerfilTocado(t => ({ ...t, lastName: true }))}
+                  aria-invalid={!!(perfilTocado.lastName && erroresPerfil.lastName)}
+                  aria-describedby="perfil-apellido-err"
+                  className={inputClase(perfilTocado.lastName ? erroresPerfil.lastName : '')}
                 />
+                <CampoError id="perfil-apellido-err" msg={perfilTocado.lastName ? erroresPerfil.lastName : ''} />
               </div>
+            </div>
 
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Teléfono Móvil / WhatsApp</label>
-                <input
-                  type="tel"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-900"
-                  required
-                />
-              </div>
+            <div>
+              <label htmlFor="perfil-correo" className="font-bold text-slate-700 block mb-1">Correo electrónico</label>
+              <input id="perfil-correo" type="email" value={user.email || ''} readOnly className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-sm text-slate-500 cursor-not-allowed" />
+              <p className="text-[11px] text-slate-500 mt-1">El correo es tu usuario de acceso y no se puede cambiar desde aquí.</p>
+            </div>
 
-              {saveSuccess && (
-                <div className="p-2.5 rounded-lg bg-emerald-100 text-emerald-800 font-bold flex items-center gap-2">
-                  <Check className="w-4 h-4" />
-                  <span>¡Datos actualizados correctamente!</span>
-                </div>
-              )}
+            <div>
+              <label htmlFor="perfil-celular" className="font-bold text-slate-700 block mb-1">Celular / WhatsApp *</label>
+              <input
+                id="perfil-celular"
+                type="tel"
+                inputMode="numeric"
+                autoComplete="tel-national"
+                placeholder="3001234567"
+                value={phone}
+                onChange={(e) => setPhone(limpiarCelular(e.target.value))}
+                onBlur={() => setPerfilTocado(t => ({ ...t, phone: true }))}
+                aria-invalid={!!(perfilTocado.phone && erroresPerfil.phone)}
+                aria-describedby="perfil-celular-err"
+                className={inputClase(perfilTocado.phone ? erroresPerfil.phone : '')}
+              />
+              <CampoError id="perfil-celular-err" msg={perfilTocado.phone ? erroresPerfil.phone : ''} />
+            </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setActiveModal(null)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-[#002855] hover:bg-[#001D3D] text-white font-black rounded-lg shadow-sm cursor-pointer"
-                >
-                  Guardar Cambios
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+            {errorPerfil && <p role="alert" className="p-2.5 rounded-lg bg-red-50 border border-red-200 text-red-700 font-semibold">{errorPerfil}</p>}
 
-      {/* =================================================================== */}
-      {/* MODAL: CUENTA EMPRESARIAL / FACTURACIÓN DIAN                         */}
-      {/* =================================================================== */}
-      {activeModal === 'empresa' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl w-full max-w-lg p-6 space-y-4 shadow-2xl border border-slate-200 text-slate-900 animate-in zoom-in-95">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-              <div className="flex items-center gap-2">
-                <Building2 className="w-5 h-5 text-indigo-600" />
-                <h3 className="text-base font-black text-slate-900">Datos Fiscales y Facturación DIAN</h3>
-              </div>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button type="button" onClick={() => setActiveModal(null)} disabled={guardandoPerfil} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 font-bold rounded-lg cursor-pointer">
+                Cancelar
+              </button>
               <button
-                type="button"
-                onClick={() => setActiveModal(null)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer"
+                type="submit"
+                disabled={guardandoPerfil || !perfilValido || perfilSinCambios}
+                className="px-5 py-2 bg-[#002855] hover:bg-[#001D3D] disabled:opacity-50 disabled:cursor-not-allowed text-white font-black rounded-lg shadow-sm cursor-pointer"
               >
-                <X className="w-5 h-5" />
+                {guardandoPerfil ? 'Guardando…' : 'Guardar cambios'}
               </button>
             </div>
-
-            <form onSubmit={handleSaveProfile} className="space-y-3 text-xs">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Razón Social</label>
-                  <input
-                    type="text"
-                    value={company}
-                    onChange={(e) => setCompany(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:border-indigo-600"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">NIT con Dígito</label>
-                  <input
-                    type="text"
-                    value={nit}
-                    onChange={(e) => setNit(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:border-indigo-600"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Ciudad Fiscal</label>
-                  <input
-                    type="text"
-                    value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:border-indigo-600"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Dirección Fiscal / Obra</label>
-                  <input
-                    type="text"
-                    value={address}
-                    onChange={(e) => setAddress(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:border-indigo-600"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-[11px] text-blue-900 leading-relaxed">
-                Todas las compras facturadas electrónicamente serán enviadas a la DIAN y a tu correo con el XML y PDF oficial correspondiente.
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setActiveModal(null)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg cursor-pointer"
-                >
-                  Cerrar
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-lg shadow-sm cursor-pointer"
-                >
-                  Guardar Datos Fiscales
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+          </form>
+        </Modal>
       )}
 
-      {/* =================================================================== */}
-      {/* MODAL: DIRECCIONES                                                  */}
-      {/* =================================================================== */}
-      {activeModal === 'direcciones' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl w-full max-w-lg p-6 space-y-4 shadow-2xl border border-slate-200 text-slate-900 animate-in zoom-in-95">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-              <div className="flex items-center gap-2">
-                <MapPin className="w-5 h-5 text-emerald-600" />
-                <h3 className="text-base font-black text-slate-900">Direcciones de Entrega Guardadas</h3>
+      {/* =========================== CONTRASEÑA =========================== */}
+      {activeModal === 'clave' && (
+        <Modal titulo="Cambiar contraseña" icono={<Lock className="w-5 h-5 text-slate-700" />} onClose={() => setActiveModal(null)} bloqueado={guardandoClave}>
+          <form onSubmit={guardarClave} noValidate className="space-y-3 text-xs">
+            <div>
+              <label htmlFor="clave-actual" className="font-bold text-slate-700 block mb-1">Contraseña actual *</label>
+              <input
+                id="clave-actual"
+                type={verClaves ? 'text' : 'password'}
+                value={claveActual}
+                maxLength={72}
+                autoComplete="current-password"
+                onChange={(e) => { setClaveActual(e.target.value); setErrorClaveActual(''); }}
+                onBlur={() => setClaveTocado(t => ({ ...t, actual: true }))}
+                aria-invalid={!!(claveTocado.actual && erroresClave.actual)}
+                aria-describedby="clave-actual-err"
+                className={inputClase(claveTocado.actual ? erroresClave.actual : '')}
+              />
+              <CampoError id="clave-actual-err" msg={claveTocado.actual ? erroresClave.actual : ''} />
+            </div>
+            <div>
+              <label htmlFor="clave-nueva" className="font-bold text-slate-700 block mb-1">Nueva contraseña *</label>
+              <div className="relative">
+                <input
+                  id="clave-nueva"
+                  type={verClaves ? 'text' : 'password'}
+                  value={claveNueva}
+                  maxLength={72}
+                  autoComplete="new-password"
+                  onChange={(e) => setClaveNueva(e.target.value)}
+                  onBlur={() => setClaveTocado(t => ({ ...t, nueva: true }))}
+                  aria-invalid={!!(claveTocado.nueva && erroresClave.nueva)}
+                  aria-describedby="clave-nueva-err"
+                  className={`${inputClase(claveTocado.nueva ? erroresClave.nueva : '')} pr-10`}
+                />
+                <button type="button" onClick={() => setVerClaves(v => !v)} aria-label={verClaves ? 'Ocultar contraseñas' : 'Mostrar contraseñas'} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 cursor-pointer">
+                  {verClaves ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setActiveModal(null)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <CampoError id="clave-nueva-err" msg={claveTocado.nueva ? erroresClave.nueva : ''} />
+            </div>
+            <ul className="space-y-1 bg-slate-50 border border-slate-200 rounded-xl p-3">
+              {REGLAS_CLAVE.map(r => {
+                const ok = r.ok(claveNueva);
+                return (
+                  <li key={r.label} className={`flex items-center gap-2 font-semibold ${ok ? 'text-emerald-700' : 'text-slate-500'}`}>
+                    {ok ? <CheckCircle2 className="w-3.5 h-3.5 shrink-0" /> : <Circle className="w-3.5 h-3.5 shrink-0 text-slate-300" />}
+                    {r.label}
+                  </li>
+                );
+              })}
+            </ul>
+            <div>
+              <label htmlFor="clave-confirm" className="font-bold text-slate-700 block mb-1">Confirmar nueva contraseña *</label>
+              <input
+                id="clave-confirm"
+                type={verClaves ? 'text' : 'password'}
+                value={claveConfirm}
+                maxLength={72}
+                autoComplete="new-password"
+                onChange={(e) => setClaveConfirm(e.target.value)}
+                onBlur={() => setClaveTocado(t => ({ ...t, confirm: true }))}
+                aria-invalid={!!(claveTocado.confirm && erroresClave.confirm)}
+                aria-describedby="clave-confirm-err"
+                className={inputClase(claveTocado.confirm ? erroresClave.confirm : '')}
+              />
+              <CampoError id="clave-confirm-err" msg={claveTocado.confirm ? erroresClave.confirm : ''} />
             </div>
 
-            <div className="space-y-3 text-xs">
-              <div className="p-4 rounded-xl border-2 border-emerald-500 bg-emerald-50/50 space-y-1 relative">
-                <span className="absolute top-3 right-3 px-2 py-0.5 rounded-full bg-emerald-600 text-white font-black text-[9px] uppercase">
-                  Predeterminada
-                </span>
-                <strong className="text-slate-900 block font-bold text-sm">Obra Principal - El Poblado</strong>
-                <p className="text-slate-600">{address}</p>
-                <p className="text-slate-500">{city}, Colombia</p>
-                <p className="text-[11px] text-slate-500 mt-1">Receptor: Carlos Mendoza • +57 312 450-8920</p>
-              </div>
-
-              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-1">
-                <strong className="text-slate-900 block font-bold text-sm">Bodega Norte - Guarne</strong>
-                <p className="text-slate-600">Parque Industrial Celta Park, Km 7 Vía Medellín - Bogotá</p>
-                <p className="text-slate-500">Antioquia, Colombia</p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setActiveModal(null)}
-              className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl cursor-pointer"
-            >
-              Listo
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* =================================================================== */}
-      {/* MODAL: SOPORTE Y ASESORÍA TÉCNICA                                  */}
-      {/* =================================================================== */}
-      {activeModal === 'soporte' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl w-full max-w-md p-6 space-y-4 shadow-2xl border border-slate-200 text-slate-900 animate-in zoom-in-95 text-center">
-            <div className="w-14 h-14 rounded-2xl bg-teal-100 text-teal-700 flex items-center justify-center mx-auto">
-              <Headphones className="w-7 h-7" />
-            </div>
-
-            <div className="space-y-1">
-              <h3 className="text-lg font-black text-slate-900">Asesoría Comercial & Técnica</h3>
-              <p className="text-xs text-slate-500">
-                Atención directa para cotizaciones por volumen, cuñetes de obra y especificaciones técnicas.
+            {user.authMethod && user.authMethod !== 'credentials' && (
+              <p className="text-[11px] text-slate-500">
+                Si te registraste con Google o con código por correo y nunca creaste una contraseña, usa “Olvidé mi contraseña” al iniciar sesión para crear una.
               </p>
-            </div>
+            )}
 
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-left space-y-2 text-xs">
-              <div className="flex items-center gap-2 text-slate-800 font-bold">
-                <Phone className="w-4 h-4 text-emerald-600" />
-                <span>WhatsApp Obras: +57 314 789-2045</span>
-              </div>
-              <div className="flex items-center gap-2 text-slate-800 font-bold">
-                <Mail className="w-4 h-4 text-blue-600" />
-                <span>ventas@colorlink.com.co</span>
-              </div>
-              <div className="flex items-center gap-2 text-slate-800 font-bold">
-                <Building2 className="w-4 h-4 text-purple-600" />
-                <span>PBX Medellín: (604) 448-9000</span>
-              </div>
-            </div>
+            {errorClave && <p role="alert" className="p-2.5 rounded-lg bg-red-50 border border-red-200 text-red-700 font-semibold">{errorClave}</p>}
 
-            <div className="grid grid-cols-2 gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setActiveModal(null)}
-                className="py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl cursor-pointer"
-              >
-                Cerrar
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button type="button" onClick={() => setActiveModal(null)} disabled={guardandoClave} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 font-bold rounded-lg cursor-pointer">
+                Cancelar
               </button>
-              <a
-                href="https://wa.me/573147892045?text=Hola%20ColorLink,%20necesito%20asesoría%20sobre%20mi%20cuenta%20y%20pedidos"
-                target="_blank"
-                rel="noreferrer"
-                className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl cursor-pointer flex items-center justify-center gap-1.5 shadow-md"
+              <button
+                type="submit"
+                disabled={guardandoClave || !claveValida}
+                className="px-5 py-2 bg-[#002855] hover:bg-[#001D3D] disabled:opacity-50 disabled:cursor-not-allowed text-white font-black rounded-lg shadow-sm cursor-pointer"
               >
-                <span>Chatear por WhatsApp</span>
-              </a>
+                {guardandoClave ? 'Guardando…' : 'Cambiar contraseña'}
+              </button>
             </div>
-          </div>
-        </div>
+          </form>
+        </Modal>
       )}
 
-      {/* =================================================================== */}
-      {/* MODAL: MÉTODOS DE PAGO                                              */}
-      {/* =================================================================== */}
-      {activeModal === 'pagos' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl w-full max-w-md p-6 space-y-4 shadow-2xl border border-slate-200 text-slate-900 animate-in zoom-in-95">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-              <div className="flex items-center gap-2">
-                <CreditCard className="w-5 h-5 text-purple-600" />
-                <h3 className="text-base font-black text-slate-900">Métodos de Pago & Crédito</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveModal(null)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between">
-                <div>
-                  <strong className="block text-slate-900 font-bold">PSE Bancolombia</strong>
-                  <span className="text-slate-500 text-[11px]">Cuenta Ahorros vinculada •• 9102</span>
-                </div>
-                <span className="text-emerald-600 font-bold text-[10px] bg-emerald-100 px-2 py-0.5 rounded-full">Activo</span>
-              </div>
-
-              <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between">
-                <div>
-                  <strong className="block text-slate-900 font-bold">Crédito Obras ColorLink 30 días</strong>
-                  <span className="text-slate-500 text-[11px]">Cupo aprobado: $25.000.000 COP</span>
-                </div>
-                <span className="text-indigo-600 font-bold text-[10px] bg-indigo-100 px-2 py-0.5 rounded-full">Empresarial</span>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setActiveModal(null)}
-              className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl cursor-pointer"
-            >
-              Listo
-            </button>
+      {/* =========================== FACTURACIÓN =========================== */}
+      {activeModal === 'facturacion' && (
+        <Modal titulo="Facturación y dirección" icono={<Building2 className="w-5 h-5 text-indigo-600" />} onClose={() => setActiveModal(null)}>
+          <div className="text-xs">
+            <Dato label="Tipo de cliente" value={esEmpresa ? 'Persona jurídica' : 'Persona natural'} />
+            {esEmpresa && <Dato label="Razón social" value={user.company} />}
+            <Dato label={esEmpresa ? 'NIT' : 'Documento'} value={user.documentId} />
+            <Dato label="Dirección" value={user.address} />
+            <Dato label="Ciudad" value={user.city} />
           </div>
-        </div>
-      )}
-
-      {/* =================================================================== */}
-      {/* MODAL: TUS LISTAS                                                   */}
-      {/* =================================================================== */}
-      {activeModal === 'listas' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl w-full max-w-md p-6 space-y-4 shadow-2xl border border-slate-200 text-slate-900 animate-in zoom-in-95">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-              <div className="flex items-center gap-2">
-                <Bookmark className="w-5 h-5 text-rose-600" />
-                <h3 className="text-base font-black text-slate-900">Listas & Cotizaciones Guardadas</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveModal(null)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
+          <p className="text-[11px] text-slate-500 leading-relaxed">
+            Estos datos se usan para tus comprobantes. Si necesitas corregirlos, escríbenos{onOpenSupport ? ' desde Ayuda y soporte' : ''}.
+          </p>
+          <div className="flex flex-wrap justify-end gap-2">
+            {onOpenSupport && (
+              <button type="button" onClick={() => { setActiveModal(null); onOpenSupport(); }} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg cursor-pointer">
+                Pedir un cambio
               </button>
-            </div>
-
-            <div className="space-y-2 text-xs">
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                <div className="flex justify-between font-bold text-slate-900">
-                  <span>Lista Torre B - Acabados Interiores</span>
-                  <span className="text-slate-500">6 artículos</span>
-                </div>
-                <p className="text-[11px] text-slate-500 mt-1">Viniltex Ultralavable (3 cuñetes), Rodillos 9", Masilla</p>
-              </div>
-
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                <div className="flex justify-between font-bold text-slate-900">
-                  <span>Impermeabilización Fachada Norte</span>
-                  <span className="text-slate-500">2 artículos</span>
-                </div>
-                <p className="text-[11px] text-slate-500 mt-1">Koraza Sol & Lluvia Verde Betula (5 cuñetes)</p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setActiveModal(null)}
-              className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl cursor-pointer"
-            >
+            )}
+            <button type="button" onClick={() => setActiveModal(null)} className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-lg cursor-pointer">
               Cerrar
             </button>
           </div>
-        </div>
+        </Modal>
       )}
 
+      {aviso && (
+        <div role="status" className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[80] max-w-[calc(100vw-2rem)] bg-slate-900 text-white text-sm font-semibold px-4 py-3 rounded-xl shadow-xl inline-flex items-center gap-2">
+          <Check className="w-4 h-4 text-emerald-400 shrink-0" /> <span>{aviso}</span>
+        </div>
+      )}
     </div>
   );
 };

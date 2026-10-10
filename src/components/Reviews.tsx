@@ -5,7 +5,7 @@ import { Star, X, Camera, Trash2, BadgeCheck, MessageSquareText } from 'lucide-r
 // ------------------------------------------------------------------ Estrellas
 
 export const Stars: React.FC<{ value: number; size?: string; className?: string }> = ({ value, size = 'w-4 h-4', className = '' }) => (
-  <span className={`inline-flex items-center gap-0.5 ${className}`} aria-label={`${value.toFixed(1)} de 5 estrellas`}>
+  <span className={`inline-flex items-center gap-0.5 ${className}`} role="img" aria-label={`${(Number(value) || 0).toFixed(1)} de 5 estrellas`}>
     {[1, 2, 3, 4, 5].map(i => {
       const lleno = Math.max(0, Math.min(1, value - (i - 1)));
       return (
@@ -123,17 +123,25 @@ export const ProductReviewModal: React.FC<{
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const enviando = useRef(false);
 
   const elegirFoto = async (file?: File) => {
     if (!file) return;
     setError('');
     if (!TIPOS.includes(file.type)) { setError('La foto debe ser PNG, JPG o WEBP.'); return; }
     if (file.size > 15 * 1024 * 1024) { setError('La foto es muy pesada (máximo 15 MB).'); return; }
-    try { setFoto(await comprimirImagen(file)); } catch { setError('No se pudo leer la foto. Prueba con otra.'); }
+    try {
+      const comprimida = await comprimirImagen(file);
+      // El servidor acepta fotos de máximo 4 MB
+      if (comprimida.length * 0.75 > 4 * 1024 * 1024) { setError('La foto sigue siendo muy pesada (máximo 4 MB). Prueba con otra.'); return; }
+      setFoto(comprimida);
+    } catch { setError('No se pudo leer la foto. Prueba con otra.'); }
   };
 
   const guardar = async () => {
-    if (!calificacion) { setError('Elige cuántas estrellas le das al producto.'); return; }
+    if (enviando.current) return;
+    if (!Number.isInteger(calificacion) || calificacion < 1 || calificacion > 5) { setError('Elige cuántas estrellas le das al producto.'); return; }
+    enviando.current = true;
     setGuardando(true);
     setError('');
     try {
@@ -142,7 +150,7 @@ export const ProductReviewModal: React.FC<{
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           calificacion,
-          comentario,
+          comentario: comentario.trim().slice(0, 1500),
           productoKey: item.productId,
           ...(foto ? { imageBase64: foto } : {}),
           ...(!foto && item.review?.tieneFoto && !fotoExistente ? { quitarFoto: true } : {})
@@ -154,6 +162,7 @@ export const ProductReviewModal: React.FC<{
     } catch {
       setError('No hay conexión con el servidor. Intenta de nuevo.');
     } finally {
+      enviando.current = false;
       setGuardando(false);
     }
   };
@@ -236,7 +245,7 @@ export const ProductReviewModal: React.FC<{
           <button
             type="button"
             onClick={guardar}
-            disabled={guardando}
+            disabled={guardando || !calificacion}
             className="flex-1 py-3 rounded-xl bg-amber-400 hover:bg-amber-300 disabled:opacity-60 text-slate-950 text-sm font-black cursor-pointer"
           >
             {guardando ? 'Publicando…' : item.review ? 'Guardar cambios' : 'Publicar opinión'}
@@ -285,19 +294,22 @@ export const SellerRatingModal: React.FC<{
   const [comentario, setComentario] = useState(actual?.comentario || '');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState('');
+  const enviando = useRef(false);
 
   const agregarAspecto = (a: string) =>
     setComentario(c => (c.includes(a) ? c : `${c.trim()}${c.trim() ? '. ' : ''}${a}`).slice(0, 1500));
 
   const guardar = async () => {
-    if (!calificacion) { setError('Elige cuántas estrellas le das al servicio.'); return; }
+    if (enviando.current) return;
+    if (!Number.isInteger(calificacion) || calificacion < 1 || calificacion > 5) { setError('Elige cuántas estrellas le das al servicio.'); return; }
+    enviando.current = true;
     setGuardando(true);
     setError('');
     try {
       const r = await fetch(`/api/orders/${orderId}/seller-rating`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ calificacion, comentario })
+        body: JSON.stringify({ calificacion, comentario: comentario.trim().slice(0, 1500) })
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok || !data.success) { setError(data.error || 'No se pudo guardar tu evaluación.'); return; }
@@ -305,6 +317,7 @@ export const SellerRatingModal: React.FC<{
     } catch {
       setError('No hay conexión con el servidor. Intenta de nuevo.');
     } finally {
+      enviando.current = false;
       setGuardando(false);
     }
   };
@@ -337,7 +350,7 @@ export const SellerRatingModal: React.FC<{
         {error && <p role="alert" className="text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">{error}</p>}
         <div className="flex gap-2">
           <button type="button" onClick={onClose} className="flex-1 py-3 rounded-xl border border-slate-300 text-sm font-bold text-slate-700 hover:bg-slate-50 cursor-pointer">Cancelar</button>
-          <button type="button" onClick={guardar} disabled={guardando} className="flex-1 py-3 rounded-xl bg-amber-400 hover:bg-amber-300 disabled:opacity-60 text-slate-950 text-sm font-black cursor-pointer">
+          <button type="button" onClick={guardar} disabled={guardando || !calificacion} className="flex-1 py-3 rounded-xl bg-amber-400 hover:bg-amber-300 disabled:opacity-60 text-slate-950 text-sm font-black cursor-pointer">
             {guardando ? 'Enviando…' : actual ? 'Guardar cambios' : 'Enviar evaluación'}
           </button>
         </div>
@@ -377,6 +390,12 @@ export const ProductReviewsSection: React.FC<{ data: ResumenOpiniones | null; pr
   const [filtro, setFiltro] = useState<number | 'foto' | null>(null);
   const [verTodas, setVerTodas] = useState(false);
   const [fotoGrande, setFotoGrande] = useState<string | null>(null);
+  useEffect(() => {
+    if (!fotoGrande) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFotoGrande(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fotoGrande]);
 
   const lista = (data?.resenas || []).filter(r => (filtro === 'foto' ? r.tieneFoto : filtro ? r.calificacion === filtro : true));
   const visibles = verTodas ? lista : lista.slice(0, 5);
@@ -489,8 +508,8 @@ export const ProductReviewsSection: React.FC<{ data: ResumenOpiniones | null; pr
       )}
 
       {fotoGrande && (
-        <div className="fixed inset-0 z-[70] bg-black/85 flex items-center justify-center p-4" onClick={() => setFotoGrande(null)}>
-          <button type="button" className="absolute top-4 right-4 text-white/80 hover:text-white cursor-pointer" aria-label="Cerrar"><X className="w-7 h-7" /></button>
+        <div role="dialog" aria-modal="true" aria-label="Foto de cliente" className="fixed inset-0 z-[70] bg-black/85 flex items-center justify-center p-4" onClick={() => setFotoGrande(null)}>
+          <button type="button" onClick={() => setFotoGrande(null)} className="absolute top-4 right-4 text-white/80 hover:text-white cursor-pointer" aria-label="Cerrar"><X className="w-7 h-7" /></button>
           <img src={fotoGrande} alt="Foto de cliente" className="max-w-full max-h-[85vh] rounded-xl" />
         </div>
       )}

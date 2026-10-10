@@ -208,9 +208,9 @@ export const STORE_PRODUCTS: StoreProduct[] = [
     subtitle: 'Látex interior mate con Tecnología Ultra Protect Resist que repele líquidos y manchas',
     category: 'hogar',
     categoryLabel: 'Pintura Interior',
-    rating: 4.9,
-    reviewsCount: 342,
-    badge: 'Más Vendido',
+    rating: 0, // la calificación real viene de /api/products/:key/reviews
+    reviewsCount: 0,
+    badge: 'Ultralavable',
     description: 'Pintura vinil acrílica premium tipo 1 con tecnología Ultra Protect Resist que genera una película hidrofóbica capaz de repeler manchas difíciles como salsas, café, grasa y crayones. Permite lavado constante con trapo húmedo y detergente suave sin desgastar el acabado mate aterciopelado ni alterar la intensidad del tono.',
     features: [
       'Máxima lavabilidad: repele líquidos y manchas antes de que penetren',
@@ -239,14 +239,16 @@ export const STORE_PRODUCTS: StoreProduct[] = [
       { id: 'negro-onix', name: 'Negro Mate Grafito', hex: '#1F2937', code: 'CL-9005', inStock: true }
     ],
     sizes: [
-      { id: 'cuarto', name: '1/4 Galón', price: 38500, originalPrice: 42000, inStock: true, capacityLiters: 0.95 },
-      { id: 'galon', name: '1 Galón', price: 115000, originalPrice: 129000, inStock: true, capacityLiters: 3.785 },
-      { id: 'canete', name: '2.5 Galones', price: 268000, originalPrice: 295000, inStock: false },
-      { id: 'cunete', name: '5 Galones (Cuñete)', price: 485000, originalPrice: 535000, inStock: true, capacityLiters: 18.92 }
+      { id: 'cuarto', name: '1/4 Galón', price: 38500, inStock: true, capacityLiters: 0.95 },
+      { id: 'galon', name: '1 Galón', price: 115000, inStock: true, capacityLiters: 3.785 },
+      { id: 'canete', name: '2.5 Galones', price: 268000, inStock: false },
+      { id: 'cunete', name: '5 Galones (Cuñete)', price: 485000, inStock: true, capacityLiters: 18.92 }
     ],
     defaultColorId: 'blanco-nieve',
     defaultSizeId: 'galon',
-    image: 'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?w=800&auto=format&fit=crop&q=80'
+    image: '/products/viniltex-galon.webp',
+    coverageM2PerGallon: 50,
+    defaultCoats: 2
   },
 
   // 2. KORAZA PROTECCIÓN SOL & LLUVIA (Construcción / Fachadas)
@@ -258,8 +260,8 @@ export const STORE_PRODUCTS: StoreProduct[] = [
     subtitle: 'Pintura impermeabilizante elastomérica de máxima duración ante intemperie y rayos UV',
     category: 'construccion',
     categoryLabel: 'Fachadas & Exterior',
-    rating: 4.95,
-    reviewsCount: 512,
+    rating: 0, // la calificación real viene de /api/products/:key/reviews
+    reviewsCount: 0,
     badge: 'Máxima Duración',
     description: 'Pintura exterior 100% acrílica base agua de alta tecnología hidrorrepelente y elastomérica. Sella microfisuras vivas de hasta 1 mm gracias a su polímero flexible que acompaña los movimientos térmicos de contracción y dilatación del revoque sin agrietarse ni desprenderse. Diseñada con pigmentos UV-Shield que no decoloran bajo radiación solar intensa ni climas costeros salinos.',
     features: [
@@ -287,13 +289,15 @@ export const STORE_PRODUCTS: StoreProduct[] = [
       { id: 'azul-marino', name: 'Azul Colonial Costa', hex: '#1E3A5F', code: 'CL-5011', inStock: true }
     ],
     sizes: [
-      { id: 'cuarto', name: '1/4 Galón', price: 44500, originalPrice: 48000, inStock: true, capacityLiters: 0.95 },
-      { id: 'galon', name: '1 Galón', price: 142000, originalPrice: 156000, inStock: true, capacityLiters: 3.785 },
-      { id: 'cunete', name: '5 Galones (Cuñete)', price: 595000, originalPrice: 650000, inStock: true, capacityLiters: 18.92 }
+      { id: 'cuarto', name: '1/4 Galón', price: 44500, inStock: true, capacityLiters: 0.95 },
+      { id: 'galon', name: '1 Galón', price: 142000, inStock: true, capacityLiters: 3.785 },
+      { id: 'cunete', name: '5 Galones (Cuñete)', price: 595000, inStock: true, capacityLiters: 18.92 }
     ],
     defaultColorId: 'blanco-puro',
     defaultSizeId: 'galon',
-    image: 'https://images.unsplash.com/photo-1590381105924-c72589b9ef3f?w=800&auto=format&fit=crop&q=80'
+    image: '/products/koraza-galon.webp',
+    coverageM2PerGallon: 60,
+    defaultCoats: 2
   },
 
   // 3. PINTULUX ESMALTE SINTÉTICO (Metal y Madera)
@@ -305,8 +309,8 @@ export const STORE_PRODUCTS: StoreProduct[] = [
     subtitle: 'Esmalte alquídico de máxima adherencia anticorrosiva para puertas, ventanas y rejas metálicas',
     category: 'hogar',
     categoryLabel: 'Esmalte & Metales',
-    rating: 4.88,
-    reviewsCount: 198,
+    rating: 0, // la calificación real viene de /api/products/:key/reviews
+    reviewsCount: 0,
     badge: 'Brillo Espejo',
     description: 'Esmalte sintético brillante a base de resinas alquídicas modificadas que ofrecen una nivelación impecable sin marcas de brocha y un brillo tipo espejo de altísima retención. Protege estructuras metálicas contra la oxidación y embellece maderas interiores y exteriores.',
     features: [
@@ -332,13 +336,15 @@ export const STORE_PRODUCTS: StoreProduct[] = [
       { id: 'amarillo-transito', name: 'Amarillo Cromo', hex: '#FACC15', code: 'PX-07', inStock: true }
     ],
     sizes: [
-      { id: 'cuarto', name: '1/4 Galón', price: 34900, originalPrice: 38000, inStock: true, capacityLiters: 0.95 },
-      { id: 'galon', name: '1 Galón', price: 108000, originalPrice: 119000, inStock: true, capacityLiters: 3.785 },
-      { id: 'cunete', name: '5 Galones (Cuñete)', price: 475000, originalPrice: 520000, inStock: true, capacityLiters: 18.92 }
+      { id: 'cuarto', name: '1/4 Galón', price: 34900, inStock: true, capacityLiters: 0.95 },
+      { id: 'galon', name: '1 Galón', price: 108000, inStock: true, capacityLiters: 3.785 },
+      { id: 'cunete', name: '5 Galones (Cuñete)', price: 475000, inStock: true, capacityLiters: 18.92 }
     ],
     defaultColorId: 'blanco-brillante',
     defaultSizeId: 'galon',
-    image: 'https://images.unsplash.com/photo-1541888946425-d0fbb186c5f7?w=800&auto=format&fit=crop&q=80'
+    image: '/products/pintulux-galon.webp',
+    coverageM2PerGallon: 45,
+    defaultCoats: 2
   },
 
   // 4. POLIURETANO AUTOMOTRIZ 2K (Automotriz)
@@ -350,8 +356,8 @@ export const STORE_PRODUCTS: StoreProduct[] = [
     subtitle: 'Esmalte poliuretano bicomponente para repintado automotriz, motos y flotas de transporte',
     category: 'automotriz',
     categoryLabel: 'Línea Automotriz 2K',
-    rating: 4.96,
-    reviewsCount: 145,
+    rating: 0, // la calificación real viene de /api/products/:key/reviews
+    reviewsCount: 0,
     badge: 'Calidad OEM',
     description: 'Sistema de acabado poliuretano acrílico bicomponente (2K) formulado para el repintado profesional de vehículos particulares, comerciales y maquinaria pesada. Ofrece resistencia superior a la gasolina, químicos de lavado a presión, lluvia ácida y rayones superficiales.',
     features: [
@@ -377,14 +383,16 @@ export const STORE_PRODUCTS: StoreProduct[] = [
       { id: 'amarillo-gt', name: 'Amarillo Cónsul Racing GT', hex: '#FACC15', code: 'AUT-1021', inStock: true }
     ],
     sizes: [
-      { id: 'aerosol-400ml', name: 'Aerosol Automotriz 400ml (Retoque Express 2K)', price: 38500, originalPrice: 44000, inStock: true, capacityLiters: 0.4 },
-      { id: 'octavo', name: '1/8 Galón Kit (Pinta 473ml + Catalizador 120ml)', price: 49000, originalPrice: 55000, inStock: true, capacityLiters: 0.473 },
-      { id: 'cuarto', name: '1/4 Galón Kit (Poliuretano + Endurecedor 250ml)', price: 79000, originalPrice: 88000, inStock: true, capacityLiters: 0.95 },
-      { id: 'galon', name: '1 Galón Kit (Poliuretano + Endurecedor 1L)', price: 245000, originalPrice: 275000, inStock: true, capacityLiters: 3.785 }
+      { id: 'aerosol-400ml', name: 'Aerosol Automotriz 400ml (Retoque Express 2K)', price: 38500, inStock: true, capacityLiters: 0.4 },
+      { id: 'octavo', name: '1/8 Galón Kit (Pinta 473ml + Catalizador 120ml)', price: 49000, inStock: true, capacityLiters: 0.473 },
+      { id: 'cuarto', name: '1/4 Galón Kit (Poliuretano + Endurecedor 250ml)', price: 79000, inStock: true, capacityLiters: 0.95 },
+      { id: 'galon', name: '1 Galón Kit (Poliuretano + Endurecedor 1L)', price: 245000, inStock: true, capacityLiters: 3.785 }
     ],
     defaultColorId: 'negro-ebano',
     defaultSizeId: 'cuarto',
-    image: 'https://images.unsplash.com/photo-1617814076367-b759c7d7e738?w=800&auto=format&fit=crop&q=80'
+    image: '/products/poliuretano-cuarto.webp',
+    coverageM2PerGallon: 70,
+    defaultCoats: 2
   },
 
   // 5. EPÓXICO ALTOS SÓLIDOS PISOS (Industrial)
@@ -396,8 +404,8 @@ export const STORE_PRODUCTS: StoreProduct[] = [
     subtitle: 'Recubrimiento epoxi poliamida 100% sólidos para bodegas, clínicas y tráfico pesado',
     category: 'industrial',
     categoryLabel: 'Línea Industrial & Pisos',
-    rating: 4.93,
-    reviewsCount: 220,
+    rating: 0, // la calificación real viene de /api/products/:key/reviews
+    reviewsCount: 0,
     badge: 'Tráfico Pesado',
     description: 'Sistema epóxico bicomponente de altos sólidos diseñado para pisos de concreto en plantas industriales, talleres automotrices, bodegas logísticas y zonas limpias hospitalarias. Forma una superficie monolítica sin juntas, antipolvo, impermeable y resistente a montacargas y derrames químicos continuos.',
     features: [
@@ -420,13 +428,15 @@ export const STORE_PRODUCTS: StoreProduct[] = [
       { id: 'azul-operativo', name: 'Azul Pasillo Peatonal', hex: '#2563EB', code: 'RAL-5015', inStock: true }
     ],
     sizes: [
-      { id: 'cuarto', name: '1/4 Galón Kit A+B', price: 68000, originalPrice: 75000, inStock: true, capacityLiters: 0.95 },
-      { id: 'galon', name: '1 Galón Kit (Parte A + B)', price: 185000, originalPrice: 205000, inStock: true, capacityLiters: 3.785 },
-      { id: 'cunete', name: '5 Galones Kit Industrial', price: 790000, originalPrice: 860000, inStock: true, capacityLiters: 18.92 }
+      { id: 'cuarto', name: '1/4 Galón Kit A+B', price: 68000, inStock: true, capacityLiters: 0.95 },
+      { id: 'galon', name: '1 Galón Kit (Parte A + B)', price: 185000, inStock: true, capacityLiters: 3.785 },
+      { id: 'cunete', name: '5 Galones Kit Industrial', price: 790000, inStock: true, capacityLiters: 18.92 }
     ],
     defaultColorId: 'gris-maquina',
     defaultSizeId: 'galon',
-    image: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=800&auto=format&fit=crop&q=80'
+    image: '/products/epoxico-galon.webp',
+    coverageM2PerGallon: 18,
+    defaultCoats: 2
   },
 
   // 6. IMPERMEABILIZANTE PINTUCO FILL 7 AÑOS (Construcción)
@@ -438,8 +448,8 @@ export const STORE_PRODUCTS: StoreProduct[] = [
     subtitle: 'Impermeabilizante elastomérico con fibras incorporadas que no requiere tela de refuerzo',
     category: 'construccion',
     categoryLabel: 'Impermeabilizantes',
-    rating: 4.97,
-    reviewsCount: 380,
+    rating: 0, // la calificación real viene de /api/products/:key/reviews
+    reviewsCount: 0,
     badge: 'Con Fibras Activas',
     description: 'Impermeabilizante acrílico líquido formulado con microfibras de polipropileno entrelazadas que forman una membrana elástica continua sobre cubiertas, terrazas, losas de concreto y tejas de asbesto o zinc. Elimina la necesidad de tender telas de poliéster en superficies transitables.',
     features: [
@@ -461,13 +471,15 @@ export const STORE_PRODUCTS: StoreProduct[] = [
       { id: 'gris-terraza', name: 'Gris Placa', hex: '#64748B', code: 'PF-03', inStock: true }
     ],
     sizes: [
-      { id: 'cuarto', name: '1/4 Galón', price: 46000, originalPrice: 51000, inStock: true, capacityLiters: 0.95 },
-      { id: 'galon', name: '1 Galón', price: 148000, originalPrice: 165000, inStock: true, capacityLiters: 3.785 },
-      { id: 'cunete', name: '5 Galones (Cuñete)', price: 620000, originalPrice: 680000, inStock: true, capacityLiters: 18.92 }
+      { id: 'cuarto', name: '1/4 Galón', price: 46000, inStock: true, capacityLiters: 0.95 },
+      { id: 'galon', name: '1 Galón', price: 148000, inStock: true, capacityLiters: 3.785 },
+      { id: 'cunete', name: '5 Galones (Cuñete)', price: 620000, inStock: true, capacityLiters: 18.92 }
     ],
     defaultColorId: 'blanco-termico',
     defaultSizeId: 'galon',
-    image: 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800&auto=format&fit=crop&q=80'
+    image: '/products/pintucofill-galon.webp',
+    coverageM2PerGallon: 8.4,
+    defaultCoats: 3
   },
 
   // -------------------------------------------------------------
@@ -483,8 +495,8 @@ export const STORE_PRODUCTS: StoreProduct[] = [
     subtitle: 'Brocha clásica de cerda rubia natural vulcanizada y mango de madera para recortar paredes, esquinas y molduras',
     category: 'herramientas',
     categoryLabel: 'Brochas & Rodillos',
-    rating: 4.88,
-    reviewsCount: 310,
+    rating: 0, // la calificación real viene de /api/products/:key/reviews
+    reviewsCount: 0,
     badge: 'Cero Desprendimiento',
     description: 'Brocha profesional para pintar paredes y techos, fabricada con cerdas rubias naturales seleccionadas, tratadas y vulcanizadas con resina epóxica en virola de acero inoxidable remachada. Diseñada para recortes limpios en uniones de pared y techo, marcos y zócalos con pinturas vinílicas, esmaltes y barnices.',
     features: [
@@ -504,10 +516,10 @@ export const STORE_PRODUCTS: StoreProduct[] = [
       { id: 'natural', name: 'Cerda Rubia Natural', hex: '#D4AF37', code: 'STD', inStock: true }
     ],
     sizes: [
-      { id: 'unidad-3in', name: '3 Pulgadas (76 mm)', price: 16500, originalPrice: 19000, inStock: true }
+      { id: 'unidad-3in', name: '3 Pulgadas (76 mm)', price: 16500, inStock: true }
     ],
     defaultSizeId: 'unidad-3in',
-    image: 'https://images.unsplash.com/photo-1595428774223-ef52624120d2?w=800&auto=format&fit=crop&q=80',
+    image: '/products/tool-brocha-3.webp',
     isTool: true
   },
 
@@ -520,8 +532,8 @@ export const STORE_PRODUCTS: StoreProduct[] = [
     subtitle: 'Brocha de corte en ángulo para filetear esquinas de zócalos, molduras y marcos',
     category: 'herramientas',
     categoryLabel: 'Brochas & Rodillos',
-    rating: 4.82,
-    reviewsCount: 140,
+    rating: 0, // la calificación real viene de /api/products/:key/reviews
+    reviewsCount: 0,
     badge: 'Alta Precisión',
     description: 'Brocha de corte biselado de 1.5 pulgadas para trabajos de precisión milimétrica en paredes. Sus cerdas elásticas permiten pintar líneas de unión entre techo y pared con pulso limpio sin manchar superficies contiguas.',
     features: [
@@ -540,10 +552,10 @@ export const STORE_PRODUCTS: StoreProduct[] = [
       { id: 'natural', name: 'Cerda Fina', hex: '#E5D3B3', code: 'ANG', inStock: true }
     ],
     sizes: [
-      { id: 'unidad-15in', name: '1.5 Pulgadas (38 mm)', price: 11200, originalPrice: 13000, inStock: true }
+      { id: 'unidad-15in', name: '1.5 Pulgadas (38 mm)', price: 11200, inStock: true }
     ],
     defaultSizeId: 'unidad-15in',
-    image: 'https://images.unsplash.com/photo-1595428774223-ef52624120d2?w=800&auto=format&fit=crop&q=80',
+    image: '/products/tool-brocha-angular.webp',
     isTool: true
   },
 
@@ -556,8 +568,8 @@ export const STORE_PRODUCTS: StoreProduct[] = [
     subtitle: 'Brocha ancha de alta carga de pintura para revoques rústicos, ladrillo, muros y fachadas',
     category: 'herramientas',
     categoryLabel: 'Brochas & Rodillos',
-    rating: 4.9,
-    reviewsCount: 205,
+    rating: 0, // la calificación real viene de /api/products/:key/reviews
+    reviewsCount: 0,
     badge: 'Carga Pesada',
     description: 'Brocha de 4 pulgadas de espesor reforzado con cerdas densas de gran retención para pintura arquitectónica. Diseñada especialmente para penetrar en las porosidades de muros exteriores, ladrillos a la vista y texturas de revoque sin desgastar las puntas rápidamente.',
     features: [
@@ -576,10 +588,10 @@ export const STORE_PRODUCTS: StoreProduct[] = [
       { id: 'negra', name: 'Cerda Negra Extra Fuerte', hex: '#262626', code: 'HD-40', inStock: true }
     ],
     sizes: [
-      { id: 'unidad-4in', name: '4 Pulgadas (100 mm)', price: 23500, originalPrice: 26500, inStock: true }
+      { id: 'unidad-4in', name: '4 Pulgadas (100 mm)', price: 23500, inStock: true }
     ],
     defaultSizeId: 'unidad-4in',
-    image: 'https://images.unsplash.com/photo-1572981779307-38b8cabb2407?w=800&auto=format&fit=crop&q=80',
+    image: '/products/tool-brocha-4.webp',
     isTool: true
   },
 
@@ -592,8 +604,8 @@ export const STORE_PRODUCTS: StoreProduct[] = [
     subtitle: 'Tubo de polipropileno indeformable con felpa de microfibra de alta densidad y cero salpique',
     category: 'herramientas',
     categoryLabel: 'Rodillos & Felpas',
-    rating: 4.95,
-    reviewsCount: 430,
+    rating: 0, // la calificación real viene de /api/products/:key/reviews
+    reviewsCount: 0,
     badge: 'Cero Salpique',
     description: 'Rodillo profesional de 9 pulgadas (23 cm) confeccionado con tejido de microfibra de filamento continuo térmicamente fusionado al tubo interior. Garantiza máxima absorción de pintura, descarga pareja y una reducción del 90% del salpique en techos y muros altos comparado con rodillos convencionales de poliéster.',
     features: [
@@ -613,11 +625,11 @@ export const STORE_PRODUCTS: StoreProduct[] = [
       { id: 'microfibra', name: 'Microfibra Rayas Azul/Blanco', hex: '#3B82F6', code: 'MF-09', inStock: true }
     ],
     sizes: [
-      { id: 'kit-rodillo-9', name: 'Rodillo Completo 9" (Manilar + Felpa)', price: 24500, originalPrice: 28000, inStock: true },
-      { id: 'repuesto-felpa-9', name: 'Repuesto Felpa 9" (2 Unidades)', price: 18900, originalPrice: 22000, inStock: true }
+      { id: 'kit-rodillo-9', name: 'Rodillo Completo 9" (Manilar + Felpa)', price: 24500, inStock: true },
+      { id: 'repuesto-felpa-9', name: 'Repuesto Felpa 9" (2 Unidades)', price: 18900, inStock: true }
     ],
     defaultSizeId: 'kit-rodillo-9',
-    image: 'https://images.unsplash.com/photo-1562259949-e8e7689d7828?w=800&auto=format&fit=crop&q=80',
+    image: '/products/tool-rodillo-9.webp',
     isTool: true
   },
 
@@ -630,8 +642,8 @@ export const STORE_PRODUCTS: StoreProduct[] = [
     subtitle: 'Rodillo de poro cerrado para puertas tamboradas, muebles y rejas sin burbujas',
     category: 'herramientas',
     categoryLabel: 'Rodillos & Felpas',
-    rating: 4.84,
-    reviewsCount: 165,
+    rating: 0, // la calificación real viene de /api/products/:key/reviews
+    reviewsCount: 0,
     badge: 'Acabado Lacado',
     description: 'Mini rodillo de espuma de poliuretano de celda cerrada y alta densidad. Aplica capas ultra delgadas y uniformes de esmaltes brillantes, barnices y poliuretanos sin dejar burbujas ni marcas de textura.',
     features: [
@@ -650,11 +662,11 @@ export const STORE_PRODUCTS: StoreProduct[] = [
       { id: 'espuma-blanca', name: 'Espuma Poro Fino', hex: '#E2E8F0', code: 'F-04', inStock: true }
     ],
     sizes: [
-      { id: 'kit-mini-4', name: 'Kit Completo (Manilar + 2 Rodillos)', price: 15500, originalPrice: 17800, inStock: true },
-      { id: 'pack-repuestos-4', name: 'Pack x 4 Rodillos Repuesto', price: 14000, originalPrice: 16000, inStock: true }
+      { id: 'kit-mini-4', name: 'Kit Completo (Manilar + 2 Rodillos)', price: 15500, inStock: true },
+      { id: 'pack-repuestos-4', name: 'Pack x 4 Rodillos Repuesto', price: 14000, inStock: true }
     ],
     defaultSizeId: 'kit-mini-4',
-    image: 'https://images.unsplash.com/photo-1562259949-e8e7689d7828?w=800&auto=format&fit=crop&q=80',
+    image: '/products/tool-mini-rodillo.webp',
     isTool: true
   },
 
@@ -667,8 +679,8 @@ export const STORE_PRODUCTS: StoreProduct[] = [
     subtitle: 'Bandeja resistente con escurridor acanalado de alta tracción y pico vertedor antigoteo',
     category: 'herramientas',
     categoryLabel: 'Bandejas & Cubetas',
-    rating: 4.78,
-    reviewsCount: 125,
+    rating: 0, // la calificación real viene de /api/products/:key/reviews
+    reviewsCount: 0,
     badge: 'Uso Rudo',
     description: 'Bandeja moldeada en polipropileno virgen de alto impacto que no se deforma bajo el peso de galones llenos. Cuenta con una rampa escurridora estriada con ángulo óptimo para dosificar la cantidad de pintura en el rodillo sin derrames.',
     features: [
@@ -687,10 +699,10 @@ export const STORE_PRODUCTS: StoreProduct[] = [
       { id: 'azul-colorlink', name: 'Azul Marino ColorLink', hex: '#0B1528', code: 'BD-BL', inStock: true }
     ],
     sizes: [
-      { id: 'unidad-bandeja', name: 'Bandeja 9" (Capacidad 2.5L)', price: 12900, originalPrice: 15000, inStock: true }
+      { id: 'unidad-bandeja', name: 'Bandeja 9" (Capacidad 2.5L)', price: 12900, inStock: true }
     ],
     defaultSizeId: 'unidad-bandeja',
-    image: 'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?w=800&auto=format&fit=crop&q=80',
+    image: '/products/tool-bandeja.webp',
     isTool: true
   },
 
@@ -703,8 +715,8 @@ export const STORE_PRODUCTS: StoreProduct[] = [
     subtitle: 'Remoción limpia hasta por 14 días sin dejar residuos de adhesivo ni levantar pintura',
     category: 'herramientas',
     categoryLabel: 'Cintas & Protección',
-    rating: 4.92,
-    reviewsCount: 350,
+    rating: 0, // la calificación real viene de /api/products/:key/reviews
+    reviewsCount: 0,
     badge: 'Remoción Limpia 14 Días',
     description: 'Cinta de papel crepé azul con tratamiento UV y adhesivo acrílico de adherencia media controlada. Desarrollada para enmascarar zócalos, marcos de puertas, aluminio, vidrio y pisos sin filtrar pintura por debajo del borde.',
     features: [
@@ -723,11 +735,11 @@ export const STORE_PRODUCTS: StoreProduct[] = [
       { id: 'azul-cinta', name: 'Azul Pintor UV', hex: '#2563EB', code: 'CT-UV', inStock: true }
     ],
     sizes: [
-      { id: 'rollo-individual', name: 'Rollo 1" (24 mm x 50 m)', price: 11200, originalPrice: 13000, inStock: true },
-      { id: 'pack-3-rollos', name: 'Pack Económico x 3 Rollos', price: 29500, originalPrice: 34000, inStock: true }
+      { id: 'rollo-individual', name: 'Rollo 1" (24 mm x 50 m)', price: 11200, inStock: true },
+      { id: 'pack-3-rollos', name: 'Pack Económico x 3 Rollos', price: 29500, inStock: true }
     ],
     defaultSizeId: 'rollo-individual',
-    image: 'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?w=800&auto=format&fit=crop&q=80',
+    image: '/products/tool-cinta.webp',
     isTool: true
   },
 
@@ -740,8 +752,8 @@ export const STORE_PRODUCTS: StoreProduct[] = [
     subtitle: 'Hoja espejo pulida con flexión calibrada para estuco, masilla de drywall y resanes',
     category: 'herramientas',
     categoryLabel: 'Preparación de Superficies',
-    rating: 4.87,
-    reviewsCount: 190,
+    rating: 0, // la calificación real viene de /api/products/:key/reviews
+    reviewsCount: 0,
     badge: 'Acero Inoxidable',
     description: 'Espátula profesional con hoja de acero inoxidable templado con acabado brillante espejo que evita la oxidación al contacto con estucos acuosos y masillas. Hoja biselada para aplicar y nivelar empastes con gran suavidad.',
     features: [
@@ -760,11 +772,11 @@ export const STORE_PRODUCTS: StoreProduct[] = [
       { id: 'acero', name: 'Acero Inox Brillante', hex: '#CBD5E1', code: 'SS-04', inStock: true }
     ],
     sizes: [
-      { id: 'unidad-4in', name: '4 Pulgadas (10 cm)', price: 14800, originalPrice: 17000, inStock: true },
-      { id: 'unidad-6in', name: '6 Pulgadas (15 cm)', price: 18900, originalPrice: 21500, inStock: true }
+      { id: 'unidad-4in', name: '4 Pulgadas (10 cm)', price: 14800, inStock: true },
+      { id: 'unidad-6in', name: '6 Pulgadas (15 cm)', price: 18900, inStock: true }
     ],
     defaultSizeId: 'unidad-4in',
-    image: 'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?w=800&auto=format&fit=crop&q=80',
+    image: '/products/tool-espatula.webp',
     isTool: true
   },
 
@@ -777,8 +789,8 @@ export const STORE_PRODUCTS: StoreProduct[] = [
     subtitle: 'Vástago telescópico de bloqueo giratorio para pintar techos y muros altos sin escaleras',
     category: 'herramientas',
     categoryLabel: 'Accesorios & Extensiones',
-    rating: 4.93,
-    reviewsCount: 180,
+    rating: 0, // la calificación real viene de /api/products/:key/reviews
+    reviewsCount: 0,
     badge: 'Liviana & Rígida',
     description: 'Varilla telescópica de 2 tramos fabricada en aleación de aluminio aeroespacial que ofrece máxima rigidez sin pandeo con un peso inferior a 450 gramos. Sistema de bloqueo de rosca rápida que fija cualquier longitud intermedia entre 1.10 m y 2.00 m.',
     features: [
@@ -797,10 +809,95 @@ export const STORE_PRODUCTS: StoreProduct[] = [
       { id: 'aluminio', name: 'Aluminio & Naranja', hex: '#EA580C', code: 'EXT-AL', inStock: true }
     ],
     sizes: [
-      { id: 'extension-2m', name: 'Ajustable 1.10 m a 2.00 m', price: 32000, originalPrice: 36000, inStock: true }
+      { id: 'extension-2m', name: 'Ajustable 1.10 m a 2.00 m', price: 32000, inStock: true }
     ],
     defaultSizeId: 'extension-2m',
-    image: 'https://images.unsplash.com/photo-1562259949-e8e7689d7828?w=800&auto=format&fit=crop&q=80',
+    image: '/products/tool-extension.webp',
     isTool: true
   }
 ];
+
+// ---------------------------------------------------------------------------
+// Utilidades compartidas de la tienda (formato, límites y enlaces externos)
+// ---------------------------------------------------------------------------
+
+/** Cantidad máxima por línea del carrito / selector de cantidad. */
+export const MAX_ITEM_QTY = 99;
+
+/** Limita una cantidad a un entero entre 1 y MAX_ITEM_QTY (NaN -> 1). */
+export const clampQty = (n: number): number => {
+  const v = Math.floor(Number(n));
+  if (!Number.isFinite(v) || v < 1) return 1;
+  return Math.min(MAX_ITEM_QTY, v);
+};
+
+const COP_FORMAT = new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 });
+
+/** "$ 115.000" con formato colombiano; nunca muestra NaN. */
+export const formatCOP = (value: number): string => {
+  const n = Number(value);
+  return `$${COP_FORMAT.format(Number.isFinite(n) ? Math.round(n) : 0)}`;
+};
+
+/** Enlace de WhatsApp solo para celulares colombianos (3xx xxx xxxx). */
+export const whatsappUrl = (phone: string, text?: string): string | null => {
+  let digits = String(phone || '').replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('57')) digits = digits.slice(2);
+  if (!/^3\d{9}$/.test(digits)) return null;
+  return `https://wa.me/57${digits}${text ? `?text=${encodeURIComponent(text)}` : ''}`;
+};
+
+/** Enlace tel: con indicativo de Colombia. */
+export const telUrl = (phone: string): string => {
+  const digits = String(phone || '').replace(/\D/g, '');
+  return `tel:+57${digits.startsWith('57') && digits.length > 10 ? digits.slice(2) : digits}`;
+};
+
+/** Ruta de Google Maps hasta la sede (coordenadas si existen, si no la dirección). */
+export const mapsDirectionsUrl = (branch: StoreBranch): string => {
+  const dest = branch.lat != null && branch.lng != null
+    ? `${branch.lat},${branch.lng}`
+    : `${branch.name}, ${branch.address}, ${branch.city}, Colombia`;
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}`;
+};
+
+/** Mapa embebible (sin API key) centrado en la sede. */
+export const mapsEmbedUrl = (branch: StoreBranch): string => {
+  const q = branch.lat != null && branch.lng != null
+    ? `${branch.lat},${branch.lng}`
+    : `${branch.address}, ${branch.city}, Colombia`;
+  return `https://maps.google.com/maps?q=${encodeURIComponent(q)}&z=16&output=embed`;
+};
+
+/** Tipo de herramienta a partir del nombre del producto. */
+export const toolTypeFor = (name: string): 'rodillo' | 'cinta' | 'espatula' | 'bandeja' | 'extension' | 'brocha' => {
+  const n = (name || '').toLowerCase();
+  if (n.includes('rodillo')) return 'rodillo';
+  if (n.includes('cinta')) return 'cinta';
+  if (/esp[aá]tula/.test(n)) return 'espatula';
+  if (n.includes('bandeja')) return 'bandeja';
+  if (/extensi[oó]n/.test(n)) return 'extension';
+  return 'brocha';
+};
+
+/** Rendimiento (m²/galón a una mano) y manos por defecto para las calculadoras. */
+export const coverageFor = (product?: StoreProduct | null): { perCoat: number; coats: number } => ({
+  perCoat: product?.coverageM2PerGallon && product.coverageM2PerGallon > 0 ? product.coverageM2PerGallon : 50,
+  coats: product?.defaultCoats && product.defaultCoats > 0 ? product.defaultCoats : 2
+});
+
+/**
+ * Plan de compra para N galones: usa cuñetes solo cuando conviene
+ * (múltiplo de 5 o sobran 3+ galones), si no galones sueltos.
+ */
+export const purchasePlan = (product: StoreProduct | null | undefined, gallons: number): { sizeId: string; count: number; label: string } => {
+  const g = Math.max(1, Math.ceil(gallons));
+  const hasCunete = Boolean(product?.sizes.some(s => s.id === 'cunete' && s.inStock));
+  const hasGalon = Boolean(product?.sizes.some(s => s.id === 'galon' && s.inStock));
+  const rem = g % 5;
+  if (hasCunete && g >= 5 && (rem === 0 || rem >= 3 || !hasGalon)) {
+    const n = Math.ceil(g / 5);
+    return { sizeId: 'cunete', count: n, label: `${n} cuñete${n > 1 ? 's' : ''} de 5 galones` };
+  }
+  return { sizeId: 'galon', count: g, label: `${g} galón${g > 1 ? 'es' : ''}` };
+};

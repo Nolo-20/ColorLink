@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   MapPin, 
   Phone, 
@@ -16,7 +16,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { StoreBranch } from '../types';
-import { STORE_BRANCHES } from '../data/storeProducts';
+import { STORE_BRANCHES, mapsDirectionsUrl, mapsEmbedUrl, telUrl, whatsappUrl } from '../data/storeProducts';
 
 interface TiendasViewProps {
   onSelectBranchForPickup?: (branch: StoreBranch) => void;
@@ -80,22 +80,34 @@ export const TiendasView: React.FC<TiendasViewProps> = ({
     return filteredBranches.slice(start, start + itemsPerPage);
   }, [filteredBranches, currentPage]);
 
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showToast = (msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToastMessage(null), 3500);
   };
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+
+  // La página nunca queda en una página vacía si cambian los filtros
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   const handleSelectBranch = (branch: StoreBranch) => {
-    if (onSelectBranchForPickup) {
-      onSelectBranchForPickup(branch);
-    }
-    showToast(`¡${branch.name} seleccionada para retiro express!`);
+    if (!onSelectBranchForPickup) return;
+    onSelectBranchForPickup(branch);
+    showToast(`${branch.name} seleccionada para retiro`);
   };
 
-  const openGoogleMaps = (branch: StoreBranch) => {
-    const query = encodeURIComponent(`${branch.name} ${branch.address} ${branch.city} Colombia`);
-    window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
+  const resetFilters = () => {
+    setSelectedDepartment('todos');
+    setSelectedCity('todas');
+    setSearchQuery('');
+    setCurrentPage(1);
   };
+
+  const cityCount = new Set(STORE_BRANCHES.map(b => b.city)).size;
+  const activeBranch = filteredBranches.find(b => b.id === activePinBranchId) || filteredBranches[0];
 
   return (
     <div className="min-h-screen bg-white">
@@ -111,15 +123,20 @@ export const TiendasView: React.FC<TiendasViewProps> = ({
       <div className="relative w-full bg-[#0A1A3A] overflow-hidden">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between min-h-[190px] sm:min-h-[220px] lg:min-h-[260px] relative">
           
-          {/* Left: Decorative Storefront & Paint Cans Shelf Visual */}
-          <div className="w-full md:w-7/12 h-44 sm:h-56 md:h-full relative overflow-hidden flex items-center">
-            <img 
-              src="https://images.unsplash.com/photo-1589939705384-5185137a7f0f?w=1200&auto=format&fit=crop&q=80" 
-              alt="Tienda ColorLink - Todo para pintar" 
-              className="w-full h-full object-cover object-center opacity-85 brightness-95 contrast-105"
-              referrerPolicy="no-referrer"
-            />
-            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#0A1A3A]/40 to-[#0A1A3A]" />
+          {/* Ilustración de marca (sin foto de stock): estantería de latas ColorLink */}
+          <div className="w-full md:w-7/12 h-40 sm:h-56 md:h-full md:min-h-[260px] relative overflow-hidden flex items-end justify-center gap-2 sm:gap-3 px-6 pt-8 bg-gradient-to-br from-[#0B1E48] via-[#0A1A3A] to-[#06112A]" aria-hidden="true">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(16,185,129,0.25),transparent_55%)]" />
+            <div className="absolute bottom-0 inset-x-0 h-3 bg-[#13306E]" />
+            {['#E6A892', '#2D6A4F', '#1E3A8A', '#F2C417', '#C2593F', '#D1D5DB', '#0B1528'].map((hex, i) => (
+              <div key={hex} className="relative flex flex-col items-center" style={{ height: `${55 + ((i * 37) % 35)}%` }}>
+                <div className="w-8 sm:w-12 h-2 rounded-t-md bg-slate-300" />
+                <div className="w-8 sm:w-12 flex-1 rounded-b-md bg-slate-200 overflow-hidden flex flex-col">
+                  <div className="h-1/3 bg-[#13306E]" />
+                  <div className="flex-1" style={{ backgroundColor: hex }} />
+                </div>
+              </div>
+            ))}
+            <img src="/brand/logo-on-dark.svg" alt="" className="absolute top-4 left-5 h-7 sm:h-8 opacity-90" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
           </div>
 
           {/* Right: Big Typography (Exact Image 1 wording) */}
@@ -131,7 +148,7 @@ export const TiendasView: React.FC<TiendasViewProps> = ({
               Todo para pintar
             </span>
             <p className="text-xs text-blue-200/90 font-medium mt-2 max-w-sm ml-auto hidden sm:block">
-              Más de 35 puntos de atención, centros tintométricos computarizados y asesoría técnica especializada en Colombia.
+              {STORE_BRANCHES.length} tiendas en {cityCount} ciudades de Colombia, con tintometría y asesoría técnica.
             </p>
           </div>
 
@@ -206,10 +223,12 @@ export const TiendasView: React.FC<TiendasViewProps> = ({
               <div className="relative">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                 <input
-                  type="text"
+                  type="search"
                   value={searchQuery}
+                  maxLength={60}
+                  aria-label="Buscar tienda por barrio o nombre"
                   onChange={(e) => {
-                    setSearchQuery(e.target.value);
+                    setSearchQuery(e.target.value.replace(/[<>]/g, '').slice(0, 60));
                     setCurrentPage(1);
                   }}
                   placeholder="Ej: Galerías, Guayabal, Cra 48..."
@@ -262,11 +281,7 @@ export const TiendasView: React.FC<TiendasViewProps> = ({
                 <p className="text-sm font-bold text-slate-700">No encontramos tiendas con esos filtros.</p>
                 <button
                   type="button"
-                  onClick={() => {
-                    setSelectedDepartment('todos');
-                    setSelectedCity('todas');
-                    setSearchQuery('');
-                  }}
+                  onClick={resetFilters}
                   className="mt-3 text-xs font-extrabold text-emerald-600 hover:underline cursor-pointer"
                 >
                   Restablecer todos los filtros
@@ -293,7 +308,7 @@ export const TiendasView: React.FC<TiendasViewProps> = ({
                             <MapPin className="w-4 h-4 text-blue-600" />
                           </div>
                           <div>
-                            <h3 className="text-sm sm:text-base font-black text-[#0B2545] tracking-tight lowercase">
+                            <h3 className="text-sm sm:text-base font-black text-[#0B2545] tracking-tight">
                               {branch.name}
                             </h3>
                             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
@@ -310,19 +325,29 @@ export const TiendasView: React.FC<TiendasViewProps> = ({
                           
                           {/* Dirección */}
                           <div>
-                            <strong className="text-slate-900 font-extrabold">Dirección : </strong>
+                            <strong className="text-slate-900 font-extrabold">Dirección: </strong>
                             <span className="text-slate-600 font-medium">{branch.address}</span>
                           </div>
 
                           {/* Celular / Teléfono */}
                           <div>
-                            <strong className="text-slate-900 font-extrabold">Celular : </strong>
-                            <a 
-                              href={`tel:${branch.phone.replace(/[^0-9]/g, '')}`} 
+                            <strong className="text-slate-900 font-extrabold">Teléfono: </strong>
+                            <a
+                              href={telUrl(branch.phone)}
                               className="text-slate-700 hover:text-emerald-600 font-medium hover:underline"
                             >
                               {branch.phone}
                             </a>
+                            {whatsappUrl(branch.phone) && (
+                              <a
+                                href={whatsappUrl(branch.phone, `Hola, quiero información de ${branch.name}`)!}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="ml-2 text-emerald-700 font-bold hover:underline"
+                              >
+                                WhatsApp
+                              </a>
+                            )}
                           </div>
 
                           {/* Correo Electrónico */}
@@ -349,35 +374,43 @@ export const TiendasView: React.FC<TiendasViewProps> = ({
                           {/* Ready in Hours indicator */}
                           <div className="pt-2 flex items-center gap-1.5 text-[11px] font-bold text-emerald-700">
                             <Clock className="w-3.5 h-3.5" />
-                            <span>Retiro Express disponible en {branch.readyInHours} horas hábiles</span>
+                            <span>Pedidos listos para retiro en {branch.readyInHours} horas hábiles</span>
                           </div>
 
                         </div>
                       </div>
 
-                      {/* Card Action Buttons */}
+                      {/* Acciones */}
                       <div className="mt-5 pt-4 border-t border-slate-100 flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => openGoogleMaps(branch)}
-                          className="flex-1 py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                        <a
+                          href={mapsDirectionsUrl(branch)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex-1 py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-colors"
                         >
                           <Navigation className="w-3.5 h-3.5 text-blue-600" />
                           <span>Cómo llegar</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleSelectBranch(branch)}
-                          className={`flex-1 py-2 px-3 font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
-                            isSelectedForPickup
-                              ? 'bg-emerald-700 text-white'
-                              : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs'
-                          }`}
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>{isSelectedForPickup ? 'Sede Activa' : 'Recoger aquí'}</span>
-                        </button>
+                        </a>
+                        {onSelectBranchForPickup ? (
+                          <button
+                            type="button"
+                            onClick={() => handleSelectBranch(branch)}
+                            className={`flex-1 py-2 px-3 font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                              isSelectedForPickup ? 'bg-emerald-700 text-white' : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs'
+                            }`}
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>{isSelectedForPickup ? 'Tienda elegida' : 'Recoger aquí'}</span>
+                          </button>
+                        ) : (
+                          <a
+                            href={telUrl(branch.phone)}
+                            className="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-colors shadow-xs"
+                          >
+                            <Phone className="w-3.5 h-3.5" />
+                            <span>Llamar</span>
+                          </a>
+                        )}
                       </div>
 
                     </div>
@@ -425,125 +458,96 @@ export const TiendasView: React.FC<TiendasViewProps> = ({
             )}
           </div>
         ) : (
-          /* 4. INTERACTIVE MAP VIEW */
-          <div className="bg-slate-900 rounded-3xl border border-slate-800 p-6 overflow-hidden relative">
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              
-              {/* Left Column: Interactive Store Locator Pins Map */}
-              <div className="lg:col-span-8 bg-slate-950 rounded-2xl border border-slate-800 p-6 relative min-h-[420px] flex flex-col justify-between overflow-hidden">
-                <div className="flex items-center justify-between text-xs text-slate-400 mb-4 z-10">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
-                    <span className="font-bold text-white">Cobertura Nacional Colombia</span>
-                  </div>
-                  <span>{filteredBranches.length} Tiendas Localizadas</span>
-                </div>
-
-                {/* Stylized Interactive Map Canvas with Branch Markers */}
-                <div className="relative w-full h-80 sm:h-96 rounded-xl bg-gradient-to-b from-[#0B1A3A] via-[#07132B] to-[#040C1D] border border-blue-900/40 flex items-center justify-center overflow-hidden">
-                  
-                  {/* Subtle Grid Lines */}
-                  <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b22_1px,transparent_1px),linear-gradient(to_bottom,#1e293b22_1px,transparent_1px)] bg-[size:28px_28px]" />
-
-                  {/* Colombia Map Silhouette & Pins */}
-                  <div className="relative w-full max-w-lg h-full p-4 flex flex-wrap items-center justify-center gap-6 z-10">
-                    {filteredBranches.map(branch => {
-                      const isActive = activePinBranchId === branch.id;
-                      return (
-                        <button
-                          key={branch.id}
-                          type="button"
-                          onClick={() => setActivePinBranchId(branch.id)}
-                          className={`p-2.5 rounded-xl border text-left transition-all duration-200 cursor-pointer flex items-center gap-2 ${
-                            isActive
-                              ? 'bg-emerald-500 text-slate-950 border-emerald-300 scale-105 shadow-lg shadow-emerald-500/25 ring-2 ring-white'
-                              : 'bg-slate-800/80 hover:bg-slate-700 text-white border-slate-700/80 hover:border-slate-500'
-                          }`}
-                        >
-                          <MapPin className={`w-4 h-4 ${isActive ? 'text-slate-950' : 'text-emerald-400'}`} />
-                          <div>
-                            <span className="block text-xs font-black leading-tight">{branch.city}</span>
-                            <span className="text-[10px] opacity-80 block truncate max-w-[130px]">{branch.name.replace('Tienda ColorLink ', '')}</span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Map Footer Helper */}
-                  <div className="absolute bottom-3 left-4 text-[11px] text-slate-400 font-medium">
-                    Haz clic en una sede para ver su ficha y horario extendido.
-                  </div>
-                </div>
-
+          /* 4. MAPA REAL (Google Maps embebido) */
+          <div className="bg-slate-900 rounded-3xl border border-slate-800 p-3 sm:p-6 overflow-hidden">
+            {!activeBranch ? (
+              <div className="py-16 text-center text-slate-300 text-sm">
+                No encontramos tiendas con esos filtros.{' '}
+                <button type="button" onClick={resetFilters} className="font-bold text-emerald-400 hover:underline cursor-pointer">Restablecer filtros</button>
               </div>
-
-              {/* Right Column: Selected Pin Details */}
-              <div className="lg:col-span-4 bg-slate-800/90 rounded-2xl border border-slate-700 p-6 flex flex-col justify-between text-white">
-                {(() => {
-                  const activeBranch = filteredBranches.find(b => b.id === activePinBranchId) || filteredBranches[0];
-                  if (!activeBranch) return <p className="text-xs text-slate-400">Selecciona una tienda</p>;
-
-                  return (
-                    <div className="space-y-4">
-                      <div>
-                        <span className="px-2.5 py-1 rounded-md bg-emerald-500/20 text-emerald-300 font-extrabold text-[10px] uppercase tracking-wider border border-emerald-500/30">
-                          {activeBranch.city} • {activeBranch.department}
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6">
+                <div className="lg:col-span-4 order-2 lg:order-1 space-y-2 max-h-[460px] overflow-y-auto pr-1">
+                  <div className="text-xs text-slate-400 mb-1">{filteredBranches.length} {filteredBranches.length === 1 ? 'tienda' : 'tiendas'}</div>
+                  {filteredBranches.map(branch => {
+                    const isActive = activeBranch.id === branch.id;
+                    return (
+                      <button
+                        key={branch.id}
+                        type="button"
+                        onClick={() => setActivePinBranchId(branch.id)}
+                        aria-pressed={isActive}
+                        className={`w-full p-3 rounded-xl border text-left transition-all cursor-pointer flex items-start gap-2 ${
+                          isActive ? 'bg-emerald-500 text-slate-950 border-emerald-300' : 'bg-slate-800/80 hover:bg-slate-700 text-white border-slate-700/80'
+                        }`}
+                      >
+                        <MapPin className={`w-4 h-4 mt-0.5 shrink-0 ${isActive ? 'text-slate-950' : 'text-emerald-400'}`} />
+                        <span className="min-w-0">
+                          <span className="block text-xs font-black leading-tight">{branch.name}</span>
+                          <span className="block text-[11px] opacity-80 truncate">{branch.address} · {branch.city}</span>
                         </span>
-                        <h3 className="text-xl font-black text-white mt-2 leading-tight">
-                          {activeBranch.name}
-                        </h3>
-                      </div>
+                      </button>
+                    );
+                  })}
+                </div>
 
-                      <div className="space-y-2.5 text-xs text-slate-300">
-                        <div className="flex items-start gap-2">
-                          <MapPin className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                          <span>{activeBranch.address}</span>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <Phone className="w-4 h-4 text-emerald-400 shrink-0" />
-                          <span>{activeBranch.phone}</span>
-                        </div>
-
-                        {activeBranch.email && (
-                          <div className="flex items-center gap-2">
-                            <Mail className="w-4 h-4 text-emerald-400 shrink-0" />
-                            <span className="break-all">{activeBranch.email}</span>
-                          </div>
-                        )}
-
-                        <div className="flex items-start gap-2 pt-1">
-                          <Clock className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                          <span className="text-slate-300">{activeBranch.schedule}</span>
-                        </div>
-                      </div>
-
-                      <div className="pt-4 border-t border-slate-700 space-y-2">
+                <div className="lg:col-span-8 order-1 lg:order-2 space-y-3">
+                  <div className="rounded-2xl overflow-hidden border border-slate-700 bg-slate-800 aspect-[4/3] sm:aspect-[16/9]">
+                    <iframe
+                      key={activeBranch.id}
+                      title={`Mapa de ${activeBranch.name}`}
+                      src={mapsEmbedUrl(activeBranch)}
+                      className="w-full h-full border-0"
+                      loading="lazy"
+                      referrerPolicy="no-referrer-when-downgrade"
+                    />
+                  </div>
+                  <div className="bg-slate-800/90 rounded-2xl border border-slate-700 p-4 text-white space-y-2">
+                    <h3 className="text-base font-black leading-tight">{activeBranch.name}</h3>
+                    <div className="text-xs text-slate-300 space-y-1.5">
+                      <p className="flex items-start gap-2"><MapPin className="w-4 h-4 text-emerald-400 shrink-0" /><span>{activeBranch.address}, {activeBranch.city}</span></p>
+                      <p className="flex items-center gap-2"><Phone className="w-4 h-4 text-emerald-400 shrink-0" /><a href={telUrl(activeBranch.phone)} className="hover:underline">{activeBranch.phone}</a></p>
+                      {activeBranch.email && (
+                        <p className="flex items-center gap-2 min-w-0"><Mail className="w-4 h-4 text-emerald-400 shrink-0" /><a href={`mailto:${activeBranch.email}`} className="hover:underline break-all">{activeBranch.email}</a></p>
+                      )}
+                      <p className="flex items-start gap-2"><Clock className="w-4 h-4 text-amber-400 shrink-0" /><span>{activeBranch.schedule}</span></p>
+                    </div>
+                    <div className="pt-2 flex flex-col sm:flex-row gap-2">
+                      <a
+                        href={mapsDirectionsUrl(activeBranch)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl flex items-center justify-center gap-2"
+                      >
+                        <Navigation className="w-4 h-4" />
+                        <span>Cómo llegar</span>
+                      </a>
+                      {whatsappUrl(activeBranch.phone) && (
+                        <a
+                          href={whatsappUrl(activeBranch.phone, `Hola, quiero información de ${activeBranch.name}`)!}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex-1 py-2.5 bg-slate-700 hover:bg-slate-600 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>WhatsApp</span>
+                        </a>
+                      )}
+                      {onSelectBranchForPickup && (
                         <button
                           type="button"
                           onClick={() => handleSelectBranch(activeBranch)}
-                          className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-slate-950 font-black text-xs rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md"
+                          className="flex-1 py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer"
                         >
                           <CheckCircle2 className="w-4 h-4" />
-                          <span>Seleccionar para Retiro Express</span>
+                          <span>Recoger aquí</span>
                         </button>
-
-                        <button
-                          type="button"
-                          onClick={() => openGoogleMaps(activeBranch)}
-                          className="w-full py-2.5 bg-slate-700 hover:bg-slate-600 text-white font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                          <span>Abrir en Google Maps</span>
-                        </button>
-                      </div>
+                      )}
                     </div>
-                  );
-                })()}
+                  </div>
+                </div>
               </div>
-
-            </div>
+            )}
           </div>
         )}
 

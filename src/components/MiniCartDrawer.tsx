@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { ProductThumb } from './ProductThumb';
 import { 
   X, 
@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CartItem } from '../types';
+import { MAX_ITEM_QTY, clampQty, formatCOP } from '../data/storeProducts';
 
 interface MiniCartDrawerProps {
   isOpen: boolean;
@@ -39,6 +40,14 @@ export const MiniCartDrawer: React.FC<MiniCartDrawerProps> = ({
   const totalItemsCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
   const amountNeededForFreeShipping = Math.max(0, FREE_SHIPPING_THRESHOLD - totalAmount);
   const progressPct = Math.min(100, Math.round((totalAmount / FREE_SHIPPING_THRESHOLD) * 100));
+
+  // Cerrar con Escape
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
 
   return (
     <AnimatePresence>
@@ -82,6 +91,7 @@ export const MiniCartDrawer: React.FC<MiniCartDrawerProps> = ({
                   <h2 className="font-extrabold text-base tracking-tight">Tu Carrito</h2>
                 </div>
                 <button
+                  type="button"
                   onClick={onClose}
                   className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
                   aria-label="Cerrar carrito"
@@ -95,7 +105,7 @@ export const MiniCartDrawer: React.FC<MiniCartDrawerProps> = ({
                 <div className="flex items-baseline justify-between mb-2">
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Subtotal:</span>
                   <span className="text-xl font-black text-rose-600">
-                    ${totalAmount.toLocaleString('es-CO')} <span className="text-xs font-bold text-slate-600">COP</span>
+                    {formatCOP(totalAmount)} <span className="text-xs font-bold text-slate-600">COP</span>
                   </span>
                 </div>
 
@@ -112,7 +122,7 @@ export const MiniCartDrawer: React.FC<MiniCartDrawerProps> = ({
 
                   {amountNeededForFreeShipping > 0 ? (
                     <p className="text-[11px] text-slate-600 leading-tight">
-                      Agrega <strong className="text-rose-600">${amountNeededForFreeShipping.toLocaleString('es-CO')} COP</strong> productos a tu pedido para <strong className="text-slate-900">envío gratis</strong> a Medellín y Área Metropolitana.
+                      Agrega <strong className="text-rose-600">{formatCOP(amountNeededForFreeShipping)} COP</strong> en productos para tener <strong className="text-slate-900">envío gratis</strong> a domicilio.
                     </p>
                   ) : (
                     <p className="text-[11px] text-emerald-700 font-bold flex items-center gap-1">
@@ -141,7 +151,8 @@ export const MiniCartDrawer: React.FC<MiniCartDrawerProps> = ({
                       onNavigateToCheckout();
                       onClose();
                     }}
-                    disabled={cartItems.length === 0}
+                    disabled={!cartItems.some(i => i.selectedForCheckout)}
+                    title={cartItems.length > 0 && !cartItems.some(i => i.selectedForCheckout) ? 'Selecciona productos en el carrito para pagar' : undefined}
                     className="w-full py-2.5 px-3 bg-amber-400 hover:bg-amber-300 active:scale-98 active:bg-amber-500 text-slate-950 font-black text-xs rounded-xl shadow-xs transition-all text-center cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Proceder al Pago
@@ -180,17 +191,14 @@ export const MiniCartDrawer: React.FC<MiniCartDrawerProps> = ({
 
                         {/* Info */}
                         <div className="flex-1 min-w-0 space-y-1">
-                          <span className="inline-block px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase bg-rose-100 text-rose-700">
-                            Oferta ColorLink
-                          </span>
                           <h4 className="font-extrabold text-xs text-slate-900 leading-snug line-clamp-2">
                             {item.name}
                           </h4>
                           <p className="text-[11px] text-slate-500 font-medium">
-                            {item.sizeName} {item.colorName && `• ${item.colorName}`}
+                            {item.sizeName}{item.colorName ? ` • ${item.colorName}` : ''}
                           </p>
                           <div className="text-sm font-black text-slate-900">
-                            ${(item.price * item.quantity).toLocaleString('es-CO')} <span className="text-[10px] text-slate-500">COP</span>
+                            {formatCOP(item.price * item.quantity)} <span className="text-[10px] text-slate-500">COP</span>
                           </div>
 
                           {/* Quantity Selector (Like Image 2 & 3: yellow rounded box with trash / - / +) */}
@@ -207,6 +215,7 @@ export const MiniCartDrawer: React.FC<MiniCartDrawerProps> = ({
                                 }}
                                 className="p-1 text-slate-800 hover:text-slate-950 transition-transform active:scale-80 cursor-pointer"
                                 title={item.quantity <= 1 ? "Eliminar" : "Restar"}
+                                aria-label={item.quantity <= 1 ? 'Eliminar producto' : 'Restar cantidad'}
                               >
                                 {item.quantity <= 1 ? <Trash2 className="w-3.5 h-3.5" /> : <Minus className="w-3.5 h-3.5" />}
                               </button>
@@ -215,9 +224,11 @@ export const MiniCartDrawer: React.FC<MiniCartDrawerProps> = ({
                               </span>
                               <button
                                 type="button"
-                                onClick={() => onUpdateQuantity(item.id, item.quantity + 1)}
-                                className="p-1 text-slate-800 hover:text-slate-950 transition-transform active:scale-80 cursor-pointer"
-                                title="Aumentar"
+                                onClick={() => onUpdateQuantity(item.id, clampQty(item.quantity + 1))}
+                                disabled={item.quantity >= MAX_ITEM_QTY}
+                                className="p-1 text-slate-800 hover:text-slate-950 transition-transform active:scale-80 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                                title={item.quantity >= MAX_ITEM_QTY ? `Máximo ${MAX_ITEM_QTY} unidades` : 'Aumentar'}
+                                aria-label="Aumentar cantidad"
                               >
                                 <Plus className="w-3.5 h-3.5" />
                               </button>
@@ -246,6 +257,7 @@ export const MiniCartDrawer: React.FC<MiniCartDrawerProps> = ({
                   <span>Garantía de fábrica ColorLink</span>
                 </span>
                 <button
+                  type="button"
                   onClick={onClose}
                   className="text-xs font-bold text-slate-700 hover:text-slate-900 cursor-pointer"
                 >

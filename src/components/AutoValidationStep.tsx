@@ -1,24 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { ProjectFormData, ValidationResult } from '../types';
-import {
-  CheckCircle2,
-  AlertCircle,
-  ShieldCheck,
-  Sparkles,
-  ArrowRight,
-  FileSearch,
-  Database,
-  Cpu,
-  Layers,
-  Clock,
-  Fingerprint
-} from 'lucide-react';
+import { ProjectFormData } from '../types';
+import { CheckCircle2, AlertCircle, ShieldCheck, ArrowRight, XCircle } from 'lucide-react';
+import { errorNombreProyecto, errorArea, SUPERFICIE_LABEL, AMBIENTE_LABEL } from './ClientProjectsManager';
 
 interface AutoValidationStepProps {
   formData: ProjectFormData;
   onProceedToAi: () => void;
   onBackToCapture: () => void;
 }
+
+type Nivel = 'ok' | 'aviso' | 'error' | 'cargando';
 
 export const AutoValidationStep: React.FC<AutoValidationStepProps> = ({
   formData,
@@ -27,176 +18,153 @@ export const AutoValidationStep: React.FC<AutoValidationStepProps> = ({
 }) => {
   const [duplicateFound, setDuplicateFound] = useState(false);
   const [checkingDuplicates, setCheckingDuplicates] = useState(true);
+  const [duplicadosError, setDuplicadosError] = useState(false);
 
   useEffect(() => {
+    let cancel = false;
+    const nombre = (formData.proyecto || '').toLowerCase().trim();
     fetch('/api/projects')
       .then(res => res.json())
       .then(data => {
-        if (data.success) {
-          const posibleDuplicado = data.projects.some((p: any) =>
-            p.nombreProyecto?.toLowerCase().trim() === formData.proyecto?.toLowerCase().trim()
-          );
-          setDuplicateFound(posibleDuplicado);
-        }
+        if (cancel) return;
+        if (data.success && Array.isArray(data.projects)) {
+          setDuplicateFound(data.projects.some((p: any) => String(p.nombreProyecto || '').toLowerCase().trim() === nombre));
+        } else setDuplicadosError(true);
       })
-      .finally(() => setCheckingDuplicates(false));
-  }, []);
+      .catch(() => { if (!cancel) setDuplicadosError(true); })
+      .finally(() => { if (!cancel) setCheckingDuplicates(false); });
+    return () => { cancel = true; };
+  }, [formData.proyecto]);
 
-  const emailValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.emailContacto || '');
-  const areaCoherente = formData.areaM2 > 0 && formData.areaM2 <= 10000;
-  const fechaCoherente = formData.fechaRequeridaDias > 0 && formData.fechaRequeridaDias <= 365;
+  const errNombre = errorNombreProyecto(formData.proyecto);
+  const errArea = errorArea(formData.areaM2);
+  const faltantes = [
+    !(formData.cliente || '').trim() && 'cliente',
+    !formData.ciudad && 'ciudad',
+    errNombre && 'nombre del proyecto',
+    errArea && 'área',
+    !formData.superficie && 'superficie',
+    !formData.color && 'color'
+  ].filter(Boolean) as string[];
 
-  const checks = [
+  const checks: Array<{ id: string; title: string; desc: string; nivel: Nivel }> = [
     {
       id: 'completitud',
-      title: 'Completitud',
-      desc: '¿Faltan campos obligatorios? Cliente, ciudad, área, superficie y color deben estar definidos.',
-      passed: Boolean(formData.cliente && formData.ciudad && formData.areaM2 > 0 && formData.superficie && formData.color),
-      severity: 'success'
-    },
-    {
-      id: 'formato',
-      title: 'Formato',
-      desc: `Correo de contacto ${emailValido ? 'con formato válido' : 'con formato INVÁLIDO'}, área numérica, fecha requerida numérica.`,
-      passed: emailValido && typeof formData.areaM2 === 'number' && typeof formData.fechaRequeridaDias === 'number',
-      severity: emailValido ? 'success' : 'warning'
+      title: 'Datos completos',
+      desc: faltantes.length ? `Falta: ${faltantes.join(', ')}.` : 'Cliente, ciudad, proyecto, área, superficie y color están definidos.',
+      nivel: faltantes.length ? 'error' : 'ok'
     },
     {
       id: 'coherencia',
-      title: 'Coherencia',
-      desc: `Área (${formData.areaM2} m²) y plazo (${formData.fechaRequeridaDias} días) dentro de rangos lógicos de obra.`,
-      passed: areaCoherente && fechaCoherente,
-      severity: (areaCoherente && fechaCoherente) ? 'success' : 'warning'
+      title: 'Valores coherentes',
+      desc: errArea
+        ? errArea
+        : `Área de ${formData.areaM2.toLocaleString('es-CO')} m² y plazo de ${formData.fechaRequeridaDias} días.`,
+      nivel: errArea ? 'error' : 'ok'
+    },
+    {
+      id: 'foto',
+      title: 'Foto de la superficie',
+      desc: formData.fotos.length
+        ? `${formData.fotos.length} foto(s) adjunta(s). La principal se usará en el diagnóstico.`
+        : 'Sin fotos: el diagnóstico será menos preciso. Puedes continuar o volver a agregar una.',
+      nivel: formData.fotos.length ? 'ok' : 'aviso'
     },
     {
       id: 'duplicidad',
-      title: 'Duplicidad',
+      title: 'Proyectos repetidos',
       desc: checkingDuplicates
-        ? 'Verificando contra tus proyectos existentes...'
-        : duplicateFound
-          ? 'Ya existe un proyecto con este mismo nombre en tu cuenta.'
-          : 'No se encontraron proyectos duplicados con el mismo nombre.',
-      passed: !checkingDuplicates && !duplicateFound,
-      severity: duplicateFound ? 'warning' : 'success'
+        ? 'Revisando tus proyectos…'
+        : duplicadosError
+          ? 'No pudimos revisar tus proyectos anteriores. Puedes continuar.'
+          : duplicateFound
+            ? 'Ya tienes un proyecto con este mismo nombre. Puedes continuar o cambiarle el nombre.'
+            : 'No tienes otro proyecto con este nombre.',
+      nivel: checkingDuplicates ? 'cargando' : duplicateFound || duplicadosError ? 'aviso' : 'ok'
     },
     {
-      id: 'trazabilidad',
-      title: 'Trazabilidad',
-      desc: `Origen: ${formData.canalOrigen || 'web_portal'} • Capturado: ${new Date().toLocaleString('es-CO')}`,
-      passed: formData.consentimientoDatos,
-      severity: 'success'
+      id: 'consentimiento',
+      title: 'Autorización de datos',
+      desc: formData.consentimientoDatos ? 'Autorizaste el tratamiento de datos.' : 'Debes autorizar el tratamiento de datos.',
+      nivel: formData.consentimientoDatos ? 'ok' : 'error'
     }
   ];
 
-  const passedCount = checks.filter(c => c.passed).length;
-  const validationScore = Math.round((passedCount / checks.length) * 1000) / 10;
-  const isValidating = checkingDuplicates;
+  const bloqueado = checks.some(c => c.nivel === 'error');
+  const okCount = checks.filter(c => c.nivel === 'ok').length;
+
+  const estilo: Record<Nivel, { icono: React.ReactNode; badge: string; texto: string }> = {
+    ok: { icono: <CheckCircle2 className="w-4 h-4" />, badge: 'text-emerald-700 bg-emerald-100', texto: 'Correcto' },
+    aviso: { icono: <AlertCircle className="w-4 h-4" />, badge: 'text-amber-700 bg-amber-100', texto: 'Revisar' },
+    error: { icono: <XCircle className="w-4 h-4" />, badge: 'text-red-700 bg-red-100', texto: 'Falta' },
+    cargando: { icono: <AlertCircle className="w-4 h-4 animate-pulse" />, badge: 'text-slate-600 bg-slate-100', texto: 'Revisando' }
+  };
 
   return (
     <div className="max-w-4xl mx-auto py-6 px-4 sm:px-6 space-y-8">
-      {/* Header Banner */}
-      <div className="bg-gradient-to-r from-blue-900 via-slate-900 to-cyan-950 rounded-2xl p-6 sm:p-8 text-white shadow-xl">
+      <div className="bg-gradient-to-r from-blue-900 via-slate-900 to-cyan-950 rounded-2xl p-5 sm:p-8 text-white shadow-xl">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 border border-blue-400/30 text-blue-300 text-xs font-semibold mb-2">
               <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Entregable 2 del MVP — Validación Automática</span>
+              <span>Paso 2 de 4 · Revisión de datos</span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-              Control de Calidad & Reglas de Integridad
-            </h1>
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Revisamos tu información</h1>
             <p className="text-slate-300 text-sm mt-1 max-w-xl">
-              Filtro automático para asegurar que el dato sea veraz, completo y consistente antes de alimentar la IA y el motor técnico.
+              Antes del diagnóstico confirmamos que los datos estén completos y sean coherentes.
             </p>
           </div>
-
           <div className="bg-slate-800/80 border border-slate-700/80 rounded-xl p-4 text-center min-w-[140px]">
-            <span className="text-[10px] uppercase font-bold text-slate-400 block">Score de Calidad</span>
-            <span className="text-2xl font-extrabold text-cyan-400 font-mono">
-              {isValidating ? '...' : `${validationScore}%`}
+            <span className="text-[10px] uppercase font-bold text-slate-400 block">Revisiones correctas</span>
+            <span className="text-2xl font-extrabold text-cyan-400 font-mono">{okCount}/{checks.length}</span>
+            <span className={`text-[10px] font-semibold block mt-0.5 ${bloqueado ? 'text-red-300' : 'text-emerald-400'}`}>
+              {bloqueado ? 'Corrige lo marcado' : 'Listo para continuar'}
             </span>
-            <span className="text-[10px] text-emerald-400 font-semibold block mt-0.5">● Apto para IA</span>
           </div>
         </div>
       </div>
 
-      {/* Regla de Oro Callout Card */}
-      <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-300/80 rounded-2xl p-5 shadow-sm flex items-start gap-4">
-        <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-amber-500/30 font-black text-lg">
-          🏆
-        </div>
-        <div>
-          <h3 className="text-sm font-bold text-amber-950">
-            Regla de Oro de ColorLink
-          </h3>
-          <p className="text-xs text-amber-900/90 mt-0.5 leading-relaxed">
-            "Primero capturar datos confiables, luego validar automáticamente, y solo después usar IA para interpretar información no estructurada."
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 shadow-sm">
+        <div className="pb-4 border-b border-slate-100 text-xs text-slate-600 space-y-1">
+          <p className="text-sm font-bold text-slate-900 break-words">{formData.proyecto || 'Proyecto sin nombre'}</p>
+          <p>
+            {[formData.cliente, formData.ciudad, SUPERFICIE_LABEL[formData.superficie], AMBIENTE_LABEL[formData.ambiente], formData.color].filter(Boolean).join(' · ') || '—'}
           </p>
-        </div>
-      </div>
-
-      {/* Trazabilidad ID Card */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
-          <div>
-            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block">ID Único de Proyecto Asignado</span>
-            <div className="flex items-center gap-2 mt-1">
-              <Fingerprint className="w-5 h-5 text-cyan-600" />
-              <span className="text-lg font-mono font-extrabold text-slate-900 tracking-wide">
-                {formData.id || 'CLK-PRJ-2026-MED-085'}
-              </span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-              Estructura Validada en Memoria
-            </span>
-          </div>
+          <p className="text-[11px] text-slate-400">El código del proyecto se asigna al guardarlo.</p>
         </div>
 
-        {/* Checks Table */}
-        {/* Checks Table */}
-        <div className="mt-5 space-y-3">
+        <ul className="mt-5 space-y-3">
           {checks.map((c) => (
-            <div
-              key={c.id}
-              className="p-3.5 rounded-xl border border-slate-200/80 bg-slate-50/60 flex items-start justify-between gap-4"
-            >
-              <div className="flex items-start gap-3">
-                <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${c.passed ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                  {c.passed ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-                </div>
-                <div>
+            <li key={c.id} className="p-3.5 rounded-xl border border-slate-200/80 bg-slate-50/60 flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3 min-w-0">
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${estilo[c.nivel].badge}`}>{estilo[c.nivel].icono}</div>
+                <div className="min-w-0">
                   <h4 className="text-xs font-bold text-slate-900">{c.title}</h4>
-                  <p className="text-[11px] text-slate-500 mt-0.5">{c.desc}</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5 break-words">{c.desc}</p>
                 </div>
               </div>
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${c.passed ? 'text-emerald-700 bg-emerald-100' : 'text-amber-700 bg-amber-100'}`}>
-                {c.passed ? 'Aprobado' : 'Atención'}
-              </span>
-            </div>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${estilo[c.nivel].badge}`}>{estilo[c.nivel].texto}</span>
+            </li>
           ))}
-        </div>
+        </ul>
       </div>
 
-      {/* Action Buttons */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-3">
         <button
           type="button"
           onClick={onBackToCapture}
-          className="px-5 py-3 border border-slate-300 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+          className="px-5 py-3 border border-slate-300 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
         >
-          Editar Captura
+          Editar datos
         </button>
-
         <button
           id="btn-proceed-to-ai"
           type="button"
           onClick={onProceedToAi}
-          className="px-6 py-3.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-sm rounded-xl shadow-lg shadow-purple-600/30 flex items-center gap-2 cursor-pointer transition-all"
+          disabled={bloqueado || checkingDuplicates}
+          className="px-6 py-3.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-sm rounded-xl shadow-lg shadow-purple-600/30 flex items-center justify-center gap-2 cursor-pointer transition-all"
         >
-          <span>Avanzar a Clasificación con IA (Gemini)</span>
+          <span>Continuar al diagnóstico</span>
           <ArrowRight className="w-4 h-4" />
         </button>
       </div>

@@ -24,6 +24,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { StoreProduct, StoreProductColor, StoreProductSize } from '../types';
+import { MAX_ITEM_QTY, clampQty, formatCOP, toolTypeFor, STORE_BRANCHES } from '../data/storeProducts';
 import { PaintCalculatorModal } from './PaintCalculatorModal';
 import { BranchLocatorModal } from './BranchLocatorModal';
 import { AmbientWallVisualizer, isLightColor } from './AmbientWallVisualizer';
@@ -83,9 +84,13 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
     }
 
     if (product.sizes && product.sizes.length > 0) {
-      const defaultS = product.sizes.find(s => s.id === product.defaultSizeId && s.inStock);
+      const defaultS = product.sizes.find(s => s.id === product.defaultSizeId && s.inStock) || product.sizes.find(s => s.inStock);
       setSelectedSizeId(defaultS ? defaultS.id : product.sizes[0].id);
     }
+    // Producto nuevo: cantidad y vista vuelven a su estado inicial
+    setQuantity(1);
+    setIsVisualizerOpen(false);
+    setIsDescriptionExpanded(false);
   }, [product.id, initialColorId]);
 
   const [quantity, setQuantity] = useState<number>(1);
@@ -101,21 +106,33 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
 
   const isCurrentSelectionInStock = (selectedColor ? selectedColor.inStock : true) && (selectedSize ? selectedSize.inStock : true);
 
+  const toastTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const showToast = (msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToastMessage(null), 3000);
   };
+  React.useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
 
-  const handleShare = (platform: 'whatsapp' | 'facebook' | 'x') => {
-    const text = encodeURIComponent(`Mira este producto en ColorLink: ${product.name} - ${window.location.href}`);
-    if (platform === 'whatsapp') {
-      window.open(`https://api.whatsapp.com/send?text=${text}`, '_blank');
-    } else if (platform === 'facebook') {
-      window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(window.location.href)}`, '_blank');
-    } else {
-      window.open(`https://twitter.com/intent/tweet?text=${text}`, '_blank');
+  // La tienda aún no tiene URL por producto: se comparte el sitio con el nombre del producto
+  const shareUrl = typeof window !== 'undefined' ? window.location.origin + '/' : '';
+  const shareText = `Mira este producto en ColorLink: ${product.name}${!product.isTool && selectedColor ? ` (${selectedColor.name})` : ''}`;
+  const shareLinks = {
+    whatsapp: `https://api.whatsapp.com/send?text=${encodeURIComponent(`${shareText} ${shareUrl}`)}`,
+    facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`,
+    x: `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}`
+  };
+  const handleCopyShare = async () => {
+    try {
+      await navigator.clipboard.writeText(`${shareText} ${shareUrl}`);
+      showToast('Enlace copiado al portapapeles');
+    } catch {
+      showToast('No se pudo copiar el enlace');
     }
   };
+
+  const setQty = (n: number) => setQuantity(clampQty(n));
+  const minReadyHours = Math.min(...STORE_BRANCHES.map(b => b.readyInHours));
 
   const opiniones = useProductReviews(product.id);
 
@@ -154,7 +171,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
             ) : (
               <span className="text-[11px] font-bold text-[#0B1E48] bg-blue-50 px-3 py-1 rounded-full border border-blue-200 inline-flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-[#0B1E48] animate-pulse" />
-                Vista de Presentación Oficial 3D
+                Foto del producto
               </span>
             )}
           </div>
@@ -331,13 +348,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
               {/* Main Tool Display Area: Solo la visual de la herramienta */}
               <div className="w-full flex items-center justify-center min-h-[300px] sm:min-h-[360px] py-2">
                 <ToolGraphic
-                  toolType={
-                    product.name.toLowerCase().includes('rodillo') ? 'rodillo' :
-                    product.name.toLowerCase().includes('cinta') ? 'cinta' :
-                    product.name.toLowerCase().includes('espatula') ? 'espatula' :
-                    product.name.toLowerCase().includes('bandeja') ? 'bandeja' :
-                    product.name.toLowerCase().includes('extension') || product.name.toLowerCase().includes('extensión') ? 'extension' : 'brocha'
-                  }
+                  toolType={toolTypeFor(product.name)}
                   productName={product.name}
                   sizeLabel={selectedSize?.name || '3"'}
                   className="w-56 h-68 sm:w-64 sm:h-80"
@@ -384,7 +395,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
             <div className="flex flex-wrap items-center gap-3 mt-2.5">
               <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-xs font-black px-2.5 py-1 rounded-full border border-emerald-200">
                 <Zap className="w-3.5 h-3.5 fill-emerald-600 text-emerald-600" />
-                <span>Retira hoy*</span>
+                <span>Retiro en tienda en {minReadyHours} h</span>
               </span>
 
               <a
@@ -567,31 +578,49 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
           )}
 
           {/* Price & Quantity Block */}
-          <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-            <div>
-              <span className="text-xs text-slate-500 font-medium block">Precio unitario:</span>
+          <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <span className="text-xs text-slate-500 font-medium block">
+                {quantity > 1 ? `Total (${quantity} × ${formatCOP(selectedSize.price)}):` : 'Precio:'}
+              </span>
               <div className="text-2xl sm:text-3xl font-black text-slate-950">
-                ${(selectedSize.price * quantity).toLocaleString('es-CO')}
+                {formatCOP(selectedSize.price * quantity)}
                 <span className="text-xs text-slate-500 font-bold ml-1.5">COP</span>
               </div>
+              <span className="text-[11px] text-slate-400">IVA incluido</span>
             </div>
 
-            {/* Quantity Selector */}
-            <div className="flex items-center bg-slate-100 border border-slate-200 rounded-xl p-1">
+            {/* Selector de cantidad (1 a MAX_ITEM_QTY) */}
+            <div className="flex items-center bg-slate-100 border border-slate-200 rounded-xl p-1" role="group" aria-label="Cantidad">
               <button
                 type="button"
-                onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                className="w-8 h-8 rounded-lg hover:bg-white flex items-center justify-center font-bold text-slate-700 cursor-pointer"
+                onClick={() => setQty(quantity - 1)}
+                disabled={quantity <= 1}
+                aria-label="Restar una unidad"
+                className="w-8 h-8 rounded-lg hover:bg-white flex items-center justify-center font-bold text-slate-700 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 -
               </button>
-              <span className="w-9 text-center font-black text-sm text-slate-900">
-                {quantity}
-              </span>
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={2}
+                value={quantity}
+                aria-label="Cantidad"
+                onChange={(e) => {
+                  const digits = e.target.value.replace(/\D/g, '').slice(0, 2);
+                  setQty(digits === '' ? 1 : Number(digits));
+                }}
+                onFocus={(e) => e.target.select()}
+                className="w-10 text-center font-black text-sm text-slate-900 bg-transparent focus:outline-hidden focus:ring-2 focus:ring-[#0B1E48] rounded-md"
+              />
               <button
                 type="button"
-                onClick={() => setQuantity(quantity + 1)}
-                className="w-8 h-8 rounded-lg hover:bg-white flex items-center justify-center font-bold text-slate-700 cursor-pointer"
+                onClick={() => setQty(quantity + 1)}
+                disabled={quantity >= MAX_ITEM_QTY}
+                aria-label="Sumar una unidad"
+                className="w-8 h-8 rounded-lg hover:bg-white flex items-center justify-center font-bold text-slate-700 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 +
               </button>
@@ -606,7 +635,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
               type="button"
               onClick={() => {
                 if (isCurrentSelectionInStock) {
-                  onBuyNow(product, selectedSize, selectedColor, quantity);
+                  onBuyNow(product, selectedSize, selectedColor, clampQty(quantity));
                 }
               }}
               disabled={!isCurrentSelectionInStock}
@@ -619,8 +648,8 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
               type="button"
               onClick={() => {
                 if (isCurrentSelectionInStock) {
-                  onAddToCart(product, selectedSize, selectedColor, quantity);
-                  showToast(`¡${product.name} (${selectedSize.name}) añadido al carrito!`);
+                  onAddToCart(product, selectedSize, selectedColor, clampQty(quantity));
+                  showToast(`${quantity} × ${product.name} (${selectedSize.name}) añadido al carrito`);
                 }
               }}
               disabled={!isCurrentSelectionInStock}
@@ -651,33 +680,48 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
             </button>
           </div>
 
-          {/* Social Sharing */}
-          <div className="pt-3 border-t border-slate-100 flex items-center gap-3 text-xs text-slate-500 font-bold uppercase tracking-wider">
+          {/* Compartir */}
+          <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center gap-3 text-xs text-slate-500 font-bold uppercase tracking-wider">
             <span>Compartir:</span>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => handleShare('facebook')}
-                className="w-7 h-7 rounded-full bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-600 flex items-center justify-center text-xs font-black cursor-pointer"
+              <a
+                href={shareLinks.facebook}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-600 flex items-center justify-center text-xs font-black"
                 title="Compartir en Facebook"
+                aria-label="Compartir en Facebook"
               >
                 f
-              </button>
-              <button
-                type="button"
-                onClick={() => handleShare('whatsapp')}
-                className="w-7 h-7 rounded-full bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-600 flex items-center justify-center text-xs font-black cursor-pointer"
-                title="Compartir en WhatsApp"
+              </a>
+              <a
+                href={shareLinks.whatsapp}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-600 flex items-center justify-center text-[10px] font-black"
+                title="Compartir por WhatsApp"
+                aria-label="Compartir por WhatsApp"
               >
-                W
-              </button>
-              <button
-                type="button"
-                onClick={() => handleShare('x')}
-                className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-950 flex items-center justify-center text-xs font-black cursor-pointer"
+                WA
+              </a>
+              <a
+                href={shareLinks.x}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-950 flex items-center justify-center text-xs font-black"
                 title="Compartir en X"
+                aria-label="Compartir en X"
               >
                 𝕏
+              </a>
+              <button
+                type="button"
+                onClick={handleCopyShare}
+                className="h-8 px-3 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center gap-1.5 text-[11px] font-black normal-case tracking-normal cursor-pointer"
+                title="Copiar enlace"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                Copiar
               </button>
             </div>
           </div>
@@ -724,12 +768,13 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
         onClose={() => setIsCalculatorOpen(false)}
         product={product}
         onApplyQuantity={(galCount, sizeId) => {
-          setQuantity(galCount);
-          if (sizeId) {
-            const matchingSize = product.sizes.find(s => s.id === sizeId && s.inStock);
-            if (matchingSize) setSelectedSizeId(matchingSize.id);
-          }
-          showToast(`¡Calculadora aplicada! ${galCount} galones configurados.`);
+          // galCount viene en galones: si se recomienda cuñete, se convierte a cuñetes de 5 galones
+          const matchingSize = product.sizes.find(s => s.id === sizeId && s.inStock)
+            || product.sizes.find(s => s.id === 'galon' && s.inStock);
+          const units = matchingSize?.id === 'cunete' ? Math.ceil(galCount / 5) : galCount;
+          if (matchingSize) setSelectedSizeId(matchingSize.id);
+          setQty(units);
+          showToast(`Cantidad aplicada: ${clampQty(units)} × ${matchingSize?.name || selectedSize.name}`);
         }}
       />
 

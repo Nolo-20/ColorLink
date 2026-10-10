@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ProductThumb } from './ProductThumb';
 import { 
   ShoppingCart, 
@@ -16,6 +16,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { CartItem } from '../types';
+import { MAX_ITEM_QTY, clampQty, formatCOP } from '../data/storeProducts';
 
 interface FullCartPageProps {
   cartItems: CartItem[];
@@ -36,7 +37,6 @@ export const FullCartPage: React.FC<FullCartPageProps> = ({
   onNavigateToStore,
   onProceedToCheckout
 }) => {
-  const [hasNitInvoice, setHasNitInvoice] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const FREE_SHIPPING_THRESHOLD = 150000;
@@ -50,10 +50,13 @@ export const FullCartPage: React.FC<FullCartPageProps> = ({
   const amountNeededForFreeShipping = Math.max(0, FREE_SHIPPING_THRESHOLD - selectedSubtotal);
   const progressPct = Math.min(100, Math.round((selectedSubtotal / FREE_SHIPPING_THRESHOLD) * 100));
 
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showToast = (msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToastMessage(null), 3000);
   };
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -130,7 +133,7 @@ export const FullCartPage: React.FC<FullCartPageProps> = ({
             {/* Items list */}
             <div className="divide-y divide-slate-100 space-y-6">
               {cartItems.map((item) => (
-                <div key={item.id} className="pt-6 first:pt-0 flex flex-col sm:flex-row gap-4 items-start">
+                <div key={item.id} className={`pt-6 first:pt-0 flex flex-col sm:flex-row gap-4 items-start ${item.selectedForCheckout ? '' : 'opacity-70'}`}>
                   
                   {/* Checkbox for selection */}
                   <div className="pt-1 flex items-center">
@@ -139,6 +142,8 @@ export const FullCartPage: React.FC<FullCartPageProps> = ({
                       onClick={() => onToggleSelectItem(item.id)}
                       className="text-slate-700 hover:text-emerald-600 transition-colors cursor-pointer"
                       title={item.selectedForCheckout ? 'Desmarcar para compra' : 'Marcar para compra'}
+                      aria-pressed={item.selectedForCheckout}
+                      aria-label={item.selectedForCheckout ? `Quitar ${item.name} de esta compra` : `Incluir ${item.name} en esta compra`}
                     >
                       {item.selectedForCheckout ? (
                         <CheckSquare className="w-5 h-5 text-emerald-600 fill-emerald-100" />
@@ -156,42 +161,32 @@ export const FullCartPage: React.FC<FullCartPageProps> = ({
                   {/* Details */}
                   <div className="flex-1 min-w-0 space-y-2">
                     <div className="flex items-start justify-between gap-4">
-                      <div>
+                      <div className="min-w-0">
                         <h3 className="text-sm sm:text-base font-extrabold text-slate-900 leading-snug">
                           {item.name}
                         </h3>
                         <p className="text-xs text-slate-500 font-medium mt-0.5">
                           Presentación: <strong className="text-slate-800">{item.sizeName}</strong>
                           {item.colorName && (
-                            <span> • Color: <strong className="text-slate-800">{item.colorName} ({item.colorCode})</strong></span>
+                            <span> • Color: <strong className="text-slate-800">{item.colorName}{item.colorCode ? ` (${item.colorCode})` : ''}</strong></span>
                           )}
                         </p>
                       </div>
 
                       {/* Item Price */}
                       <div className="text-right shrink-0">
-                        {item.originalPrice && item.originalPrice > item.price && (
-                          <div className="text-[10px] text-slate-400 line-through">
-                            ${(item.originalPrice * item.quantity).toLocaleString('es-CO')}
-                          </div>
-                        )}
-                        <div className="text-base font-black text-slate-900">
-                          ${(item.price * item.quantity).toLocaleString('es-CO')} <span className="text-[10px] font-bold text-slate-500">COP</span>
+                        <div className="text-base font-black text-slate-900 whitespace-nowrap">
+                          {formatCOP(item.price * item.quantity)} <span className="text-[10px] font-bold text-slate-500">COP</span>
                         </div>
+                        {item.quantity > 1 && (
+                          <div className="text-[10px] text-slate-400 whitespace-nowrap">{formatCOP(item.price)} c/u</div>
+                        )}
                       </div>
                     </div>
 
-                    {/* Stock & Delivery badges */}
-                    <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                      <span className="text-emerald-700 font-bold flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>Disponible en bodega central</span>
-                      </span>
-                      <span className="text-slate-300">•</span>
-                      <span className="text-slate-600">
-                        Envío GRATIS en pedidos superiores a $150.000 COP
-                      </span>
-                    </div>
+                    {!item.selectedForCheckout && (
+                      <p className="text-[11px] font-semibold text-amber-700">Guardado para más tarde: no se incluirá en este pago.</p>
+                    )}
 
                     {/* Quantity Selector and Action Links (Like Image 3) */}
                     <div className="flex flex-wrap items-center gap-3 pt-2">
@@ -209,6 +204,7 @@ export const FullCartPage: React.FC<FullCartPageProps> = ({
                           }}
                           className="p-1 text-slate-900 hover:text-slate-950 transition-colors cursor-pointer"
                           title={item.quantity <= 1 ? "Eliminar artículo" : "Restar cantidad"}
+                          aria-label={item.quantity <= 1 ? 'Eliminar artículo' : 'Restar cantidad'}
                         >
                           {item.quantity <= 1 ? <Trash2 className="w-4 h-4 text-slate-700" /> : <Minus className="w-4 h-4 text-slate-700" />}
                         </button>
@@ -217,9 +213,11 @@ export const FullCartPage: React.FC<FullCartPageProps> = ({
                         </span>
                         <button
                           type="button"
-                          onClick={() => onUpdateQuantity(item.id, item.quantity + 1)}
-                          className="p-1 text-slate-900 hover:text-slate-950 transition-colors cursor-pointer"
-                          title="Aumentar cantidad"
+                          onClick={() => onUpdateQuantity(item.id, clampQty(item.quantity + 1))}
+                          disabled={item.quantity >= MAX_ITEM_QTY}
+                          className="p-1 text-slate-900 hover:text-slate-950 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                          title={item.quantity >= MAX_ITEM_QTY ? `Máximo ${MAX_ITEM_QTY} unidades` : 'Aumentar cantidad'}
+                          aria-label="Aumentar cantidad"
                         >
                           <Plus className="w-4 h-4 text-slate-700" />
                         </button>
@@ -241,25 +239,13 @@ export const FullCartPage: React.FC<FullCartPageProps> = ({
 
                       <button
                         type="button"
-                        onClick={() => showToast('Producto guardado en tu lista de deseos')}
+                        onClick={() => {
+                          onToggleSelectItem(item.id);
+                          showToast(item.selectedForCheckout ? 'Guardado para más tarde: no se cobrará en este pago' : 'Producto incluido de nuevo en la compra');
+                        }}
                         className="text-xs font-semibold text-slate-500 hover:text-emerald-700 transition-colors cursor-pointer"
                       >
-                        Guardar para más tarde
-                      </button>
-
-                      <span className="text-slate-300">|</span>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (navigator.clipboard) {
-                            navigator.clipboard.writeText(window.location.href);
-                            showToast('Enlace de producto copiado al portapapeles');
-                          }
-                        }}
-                        className="text-xs font-semibold text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
-                      >
-                        Compartir
+                        {item.selectedForCheckout ? 'Guardar para más tarde' : 'Mover a la compra'}
                       </button>
                     </div>
 
@@ -275,7 +261,7 @@ export const FullCartPage: React.FC<FullCartPageProps> = ({
                 Subtotal ({selectedCount} {selectedCount === 1 ? 'producto' : 'productos'} seleccionados):
               </span>
               <span className="text-xl sm:text-2xl font-black text-slate-900">
-                ${selectedSubtotal.toLocaleString('es-CO')} <span className="text-xs font-bold text-slate-500">COP</span>
+                {formatCOP(selectedSubtotal)} <span className="text-xs font-bold text-slate-500">COP</span>
               </span>
             </div>
 
@@ -295,7 +281,7 @@ export const FullCartPage: React.FC<FullCartPageProps> = ({
 
               {amountNeededForFreeShipping > 0 ? (
                 <p className="text-xs text-slate-600 leading-relaxed">
-                  Agrega <strong className="text-rose-600">${amountNeededForFreeShipping.toLocaleString('es-CO')} COP</strong> de productos elegibles para <strong className="text-slate-900">envío gratis</strong> a tu dirección.
+                  Agrega <strong className="text-rose-600">{formatCOP(amountNeededForFreeShipping)} COP</strong> de productos elegibles para <strong className="text-slate-900">envío gratis</strong> a tu dirección.
                 </p>
               ) : (
                 <div className="flex items-center gap-1.5 text-xs text-emerald-700 font-bold bg-emerald-50 p-2.5 rounded-xl border border-emerald-200">
@@ -311,22 +297,10 @@ export const FullCartPage: React.FC<FullCartPageProps> = ({
                 Subtotal ({selectedCount} {selectedCount === 1 ? 'producto' : 'productos'}):
               </div>
               <div className="text-2xl sm:text-3xl font-black text-slate-900 mt-1">
-                ${selectedSubtotal.toLocaleString('es-CO')} <span className="text-xs font-bold text-slate-500">COP</span>
+                {formatCOP(selectedSubtotal)} <span className="text-xs font-bold text-slate-500">COP</span>
               </div>
+              <span className="text-[11px] text-slate-400">IVA incluido. El envío se calcula en el pago.</span>
             </div>
-
-            {/* Checkbox NIT / Factura Electrónica */}
-            <label className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer hover:bg-slate-100 transition-colors">
-              <input
-                type="checkbox"
-                checked={hasNitInvoice}
-                onChange={(e) => setHasNitInvoice(e.target.checked)}
-                className="mt-0.5 w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300"
-              />
-              <span className="text-xs text-slate-700 leading-snug">
-                Este pedido requiere <strong>factura electrónica con NIT</strong> para constructora o empresa
-              </span>
-            </label>
 
             {/* Yellow Primary Button: Proceder al Pago (Like Image 3) */}
             <button
@@ -348,11 +322,11 @@ export const FullCartPage: React.FC<FullCartPageProps> = ({
             <div className="pt-3 border-t border-slate-100 space-y-2 text-xs text-slate-500">
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>Compra protegida con certificado SSL y pasarela segura</span>
+                <span>Puedes pedir factura electrónica con NIT en el siguiente paso</span>
               </div>
               <div className="flex items-center gap-2">
                 <Truck className="w-4 h-4 text-indigo-600 shrink-0" />
-                <span>Despacho express a Medellín, Bogotá y principales ciudades</span>
+                <span>Entrega a domicilio en 24–48 h o retiro gratis en tienda</span>
               </div>
             </div>
 

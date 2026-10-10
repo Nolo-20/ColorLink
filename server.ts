@@ -1,3 +1,4 @@
+import { STORE_PRODUCTS } from './src/data/storeProducts';
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
@@ -29,6 +30,9 @@ const cookieOptions = {
 
 // Roles internos (empleados) y estados válidos de un proyecto
 const STAFF_ROLES = ['asesor', 'calidad', 'despachos', 'administrador'];
+// Límites de negocio compartidos con el ERP
+const MAX_AREA_M2 = 100000;
+const MAX_DESCUENTO_ASESOR = 15;
 const ESTADOS_PROYECTO = [
   'en_revision', 'imagen_por_corregir', 'en_peritaje', 'cotizado',
   'aprobado_calidad', 'rechazado', 'despachado', 'cancelado'
@@ -135,6 +139,32 @@ function textoHistorialCliente(
   }
   return { titulo: 'Tu proyecto tuvo una actualización', detalle: nombre };
 }
+
+/** Valida los datos de un empleado (crear: todos; editar: solo los que llegan). Devuelve el error o null. */
+function errorDatosEmpleado(d: { nombre?: any; apellido?: any; email?: any; telefono?: any; documentId?: any }, parcial: boolean): string | null {
+  const LETRAS = /^[A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+( [A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+)*$/;
+  const texto = (v: any) => String(v ?? '').trim().replace(/\s+/g, ' ');
+  for (const [campo, etiqueta] of [['nombre', 'El nombre'], ['apellido', 'El apellido']] as const) {
+    if (parcial && d[campo] === undefined) continue;
+    const v = texto(d[campo]);
+    if (v.length < 2 || v.length > 40 || !LETRAS.test(v)) return `${etiqueta} debe tener solo letras (2 a 40).`;
+  }
+  if (!(parcial && d.email === undefined)) {
+    const e = texto(d.email).toLowerCase();
+    if (e.length > 100 || !/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(e)) return 'El correo no es válido.';
+  }
+  if (d.telefono !== undefined && d.telefono !== null && texto(d.telefono) !== '') {
+    const dig = texto(d.telefono).replace(/\D/g, '').replace(/^57(?=3\d{9}$)/, '');
+    if (!/^3\d{9}$/.test(dig) && !/^60\d{8}$/.test(dig)) return 'El celular debe tener 10 números y empezar por 3.';
+  }
+  if (d.documentId !== undefined && d.documentId !== null && texto(d.documentId) !== '') {
+    if (!/^[A-Z0-9]{5,12}$/i.test(texto(d.documentId).replace(/[.\s-]/g, ''))) return 'El documento debe tener entre 5 y 12 letras o números.';
+  }
+  return null;
+}
+
+/** JSON seguro dentro de un <script> (evita que un "</script>" en los datos cierre la etiqueta) */
+const jsonParaScript = (v: any) => JSON.stringify(v).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
 
 const escapeHtml = (s: any) =>
   String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
@@ -790,8 +820,8 @@ async function startServer() {
     <p style="color:#94a3b8;font-size:13px;">${success ? 'Cerrando ventana...' : errorMsg}</p>
     </div><script>
     ${success
-        ? `if (window.opener) { window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', user: ${JSON.stringify(user)} }, '*'); setTimeout(() => window.close(), 250); }`
-        : `if (window.opener) { window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: ${JSON.stringify(errorMsg)} }, '*'); setTimeout(() => window.close(), 1500); }`
+        ? `if (window.opener) { window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', user: ${jsonParaScript(user)} }, window.location.origin); setTimeout(() => window.close(), 250); }`
+        : `if (window.opener) { window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: ${jsonParaScript(errorMsg)} }, window.location.origin); setTimeout(() => window.close(), 1500); }`
       }
     </script></body></html>`;
   }
@@ -816,14 +846,39 @@ async function startServer() {
 
   app.patch('/api/auth/profile', requireAuth, async (req: any, res) => {
     try {
-      const { firstName, lastName, phone, avatarUrl } = req.body;
+      const { firstName, lastName, phone, avatarUrl } = req.body || {};
+      const NOMBRE = /^[A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+( [A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+)*$/;
+      const nombre = firstName != null ? String(firstName).trim().replace(/\s+/g, ' ') : undefined;
+      const apellido = lastName != null ? String(lastName).trim().replace(/\s+/g, ' ') : undefined;
+      if (nombre !== undefined && (nombre.length < 2 || nombre.length > 40 || !NOMBRE.test(nombre))) {
+        return res.status(400).json({ success: false, error: 'El nombre debe tener solo letras (2 a 40).' });
+      }
+      if (apellido !== undefined && apellido !== '' && (apellido.length < 2 || apellido.length > 40 || !NOMBRE.test(apellido))) {
+        return res.status(400).json({ success: false, error: 'El apellido debe tener solo letras (2 a 40).' });
+      }
+      let telefono: string | null | undefined = undefined;
+      if (phone != null) {
+        const digitos = String(phone).replace(/\D/g, '').replace(/^57(?=3\d{9}$)/, '');
+        if (digitos === '') telefono = null;
+        else if (/^3\d{9}$/.test(digitos) || /^60\d{8}$/.test(digitos)) telefono = String(phone).trim().slice(0, 20);
+        else return res.status(400).json({ success: false, error: 'El celular debe tener 10 números y empezar por 3.' });
+      }
+      let avatar: string | null | undefined = undefined;
+      if (avatarUrl != null) {
+        const a = String(avatarUrl);
+        if (a === '') avatar = null;
+        else if (a.length > 4_500_000) return res.status(400).json({ success: false, error: 'La foto supera 3 MB.' });
+        else if (!/^https:\/\/\S+$/.test(a) && !/^data:image\/(png|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/.test(a)) {
+          return res.status(400).json({ success: false, error: 'La foto no es válida (PNG, JPG o WEBP).' });
+        } else avatar = a;
+      }
       const updated = await prisma.usuario.update({
         where: { usuarioId: req.user.id },
         data: {
-          nombre: firstName || undefined,
-          apellido: lastName ?? undefined,
-          telefono: phone ?? undefined,
-          avatarUrl: avatarUrl ?? undefined
+          nombre: nombre || undefined,
+          apellido: apellido,
+          telefono,
+          avatarUrl: avatar
         },
         include: { rol: true }
       });
@@ -846,7 +901,7 @@ async function startServer() {
         return res.status(400).json({ success: false, error: 'Esta cuenta no usa contraseña.' });
       }
       if (!(await bcrypt.compare(String(currentPassword), user.passwordHash))) {
-        return res.status(401).json({ success: false, error: 'La contraseña actual no es correcta.' });
+        return res.status(400).json({ success: false, error: 'La contraseña actual no es correcta.' });
       }
       const policyError = validatePasswordPolicy(String(newPassword));
       if (policyError) return res.status(400).json({ success: false, error: policyError });
@@ -1264,6 +1319,14 @@ async function startServer() {
   app.patch('/api/projects/:id', requireAuth, requireRole('asesor', 'administrador'), async (req: any, res) => {
     try {
       const { area, acabado, descuentoAsesorPct, observacionesAsesor, estadoPipeline, comentario: nota } = req.body;
+      if (area != null && (!Number.isFinite(Number(area)) || Number(area) <= 0 || Number(area) > MAX_AREA_M2)) {
+        return res.status(400).json({ success: false, error: 'El área debe ser mayor a 0 y máximo 100.000 m².' });
+      }
+      if (descuentoAsesorPct != null && (!Number.isFinite(Number(descuentoAsesorPct)) || Number(descuentoAsesorPct) < 0 || Number(descuentoAsesorPct) > MAX_DESCUENTO_ASESOR)) {
+        return res.status(400).json({ success: false, error: `El descuento debe estar entre 0 y ${MAX_DESCUENTO_ASESOR} %.` });
+      }
+      if (nota != null && String(nota).length > 500) return res.status(400).json({ success: false, error: 'La nota puede tener máximo 500 caracteres.' });
+      if (observacionesAsesor != null && String(observacionesAsesor).length > 1000) return res.status(400).json({ success: false, error: 'Las observaciones pueden tener máximo 1000 caracteres.' });
 
       if (estadoPipeline) {
         if (!ESTADOS_PROYECTO.includes(estadoPipeline)) {
@@ -1741,6 +1804,8 @@ async function startServer() {
       if (!STAFF_ROLES.includes(rol)) {
         return res.status(400).json({ success: false, error: `Rol inválido. Usa uno de: ${STAFF_ROLES.join(', ')}` });
       }
+      const datosError = errorDatosEmpleado({ nombre, apellido, email, telefono, documentId }, false);
+      if (datosError) return res.status(400).json({ success: false, error: datosError });
       const policyError = validatePasswordPolicy(String(password));
       if (policyError) return res.status(400).json({ success: false, error: policyError });
 
@@ -1756,12 +1821,12 @@ async function startServer() {
       const empleado = await prisma.usuario.create({
         data: {
           email: cleanEmail,
-          nombre: String(nombre).trim(),
-          apellido: String(apellido).trim(),
-          telefono: telefono ? String(telefono).trim() : null,
-          documentId: documentId ? String(documentId).trim() : null,
-          company: company ? String(company).trim() : null,
-          ...(city ? { city: String(city).trim() } : {}),
+          nombre: String(nombre).trim().replace(/\s+/g, ' '),
+          apellido: String(apellido).trim().replace(/\s+/g, ' '),
+          telefono: telefono ? String(telefono).trim().slice(0, 20) : null,
+          documentId: documentId ? String(documentId).trim().toUpperCase().slice(0, 20) : null,
+          company: company ? String(company).trim().slice(0, 100) : null,
+          ...(city ? { city: String(city).trim().slice(0, 60) } : {}),
           rolId: rolRow.rolId,
           passwordHash: await bcrypt.hash(String(password), 10),
           authProvider: 'credentials'
@@ -1779,6 +1844,9 @@ async function startServer() {
   app.patch('/api/admin/employees/:id', requireAuth, requireRole('administrador'), async (req: any, res) => {
     try {
       const { nombre, apellido, telefono, rol, activo, password } = req.body;
+      const datosError = errorDatosEmpleado({ nombre, apellido, telefono }, true);
+      if (datosError) return res.status(400).json({ success: false, error: datosError });
+      if (activo !== undefined && typeof activo !== 'boolean') return res.status(400).json({ success: false, error: 'Estado inválido.' });
 
       const target = await prisma.usuario.findUnique({ where: { usuarioId: req.params.id }, include: { rol: true } });
       if (!target || !STAFF_ROLES.includes(target.rol.rol)) {
@@ -1916,10 +1984,16 @@ async function startServer() {
       }
 
       const areaNum = Number(area ?? proyecto.area);
-      const manosNum = Math.max(1, Math.round(Number(manos || 2)));
-      const descNum = Math.min(100, Math.max(0, Number(descuentoPct || 0)));
-      if (!(areaNum > 0)) {
-        return res.status(400).json({ success: false, error: 'Indica el área en m² (mayor a 0).' });
+      const manosNum = Number(manos ?? 2);
+      const descNum = Number(descuentoPct ?? 0);
+      if (!Number.isFinite(areaNum) || areaNum <= 0 || areaNum > MAX_AREA_M2) {
+        return res.status(400).json({ success: false, error: 'El área debe ser mayor a 0 y máximo 100.000 m².' });
+      }
+      if (!Number.isInteger(manosNum) || manosNum < 1 || manosNum > 5) {
+        return res.status(400).json({ success: false, error: 'El número de manos debe estar entre 1 y 5.' });
+      }
+      if (!Number.isFinite(descNum) || descNum < 0 || descNum > MAX_DESCUENTO_ASESOR) {
+        return res.status(400).json({ success: false, error: `El descuento debe estar entre 0 y ${MAX_DESCUENTO_ASESOR} %.` });
       }
 
       const base = productoId ? await prisma.producto.findUnique({ where: { productoId } }) : null;
@@ -2004,10 +2078,20 @@ async function startServer() {
       }
 
       const b = req.body || {};
-      const txt = (v: any) => (v == null || String(v).trim() === '' ? null : String(v).trim());
-      const numeroGuia = txt(b.numeroGuia) || `CL-DSP-${Math.floor(100000 + Math.random() * 900000)}`;
-      const horas = txt(b.tiempoEstimadoHoras) != null ? Math.max(0, Math.round(Number(b.tiempoEstimadoHoras))) : null;
-      const placa = txt(b.placaVehiculo)?.toUpperCase() ?? null;
+      const txt = (v: any, max = 120) => (v == null || String(v).trim() === '' ? null : String(v).replace(/[\r\n]+/g, ' ').trim().slice(0, max));
+      const malo = (error: string) => res.status(400).json({ success: false, error });
+      const guiaTxt = txt(b.numeroGuia, 30);
+      if (guiaTxt && !/^[A-Z0-9][A-Z0-9-]{2,28}[A-Z0-9]$/i.test(guiaTxt)) return malo('Número de guía no válido (4 a 30 letras, números o guiones).');
+      const numeroGuia = guiaTxt || `CL-DSP-${Math.floor(100000 + Math.random() * 900000)}`;
+      const horasTxt = txt(b.tiempoEstimadoHoras, 10);
+      const horas = horasTxt != null ? Number(horasTxt) : null;
+      if (horas != null && (!Number.isInteger(horas) || horas < 1 || horas > 240)) return malo('El tiempo estimado debe estar entre 1 y 240 horas.');
+      const placa = txt(b.placaVehiculo, 10)?.toUpperCase().replace(/[\s-]/g, '') ?? null;
+      if (placa && !/^[A-Z]{3}(\d{3}|\d{2}[A-Z])$/.test(placa)) return malo('Placa no válida (ABC123 o ABC12D).');
+      const telConductor = txt(b.conductorTelefono, 20)?.replace(/\D/g, '').replace(/^57(?=3\d{9}$)/, '') ?? null;
+      if (telConductor && !/^3\d{9}$/.test(telConductor)) return malo('El celular del conductor debe tener 10 números y empezar por 3.');
+      const conductor = txt(b.conductorNombre, 60);
+      if (conductor && !/^[A-Za-zÁÉÍÓÚÜáéíóúüÑñ ]{3,60}$/.test(conductor)) return malo('El nombre del conductor debe tener solo letras.');
       const direccion = txt(b.direccionEntrega) || proyecto.empresa?.direccionDespacho || null;
       const ciudad = txt(b.ciudadEntrega) || proyecto.empresa?.ciudad?.ciudad || null;
       const actor = await actorSnapshot(req.user);
@@ -2021,8 +2105,8 @@ async function startServer() {
               numeroGuia,
               transportador: txt(b.transportador),
               placaVehiculo: placa,
-              conductorNombre: txt(b.conductorNombre),
-              conductorTelefono: txt(b.conductorTelefono),
+              conductorNombre: conductor,
+              conductorTelefono: telConductor,
               bodegaOrigen: txt(b.bodegaOrigen),
               direccionEntrega: direccion,
               ciudadEntrega: ciudad,
@@ -2052,10 +2136,16 @@ async function startServer() {
   // Confirma que el material llegó a obra y quién lo recibió (despachos / administrador)
   app.patch('/api/projects/:id/delivery', requireAuth, requireRole('administrador', 'despachos'), async (req: any, res) => {
     try {
-      const recibidoPor = String(req.body.recibidoPor || '').trim();
-      const documentoRecibe = String(req.body.documentoRecibe || '').trim();
+      const recibidoPor = String(req.body.recibidoPor || '').replace(/\s+/g, ' ').trim();
+      const documentoRecibe = String(req.body.documentoRecibe || '').replace(/[.\s-]/g, '').trim();
       if (!recibidoPor) {
         return res.status(400).json({ success: false, error: 'Indica quién recibió el material en obra.' });
+      }
+      if (!/^[A-Za-zÁÉÍÓÚÜáéíóúüÑñ ]{3,80}$/.test(recibidoPor)) {
+        return res.status(400).json({ success: false, error: 'El nombre de quien recibe debe tener solo letras (3 a 80).' });
+      }
+      if (documentoRecibe && !/^\d{6,12}$/.test(documentoRecibe)) {
+        return res.status(400).json({ success: false, error: 'El documento de quien recibe debe tener de 6 a 12 números.' });
       }
 
       const proyecto = await prisma.proyecto.findUnique({ where: { proyectoId: req.params.id }, include: { despacho: true } });
@@ -2314,21 +2404,44 @@ async function startServer() {
         return res.status(400).json({ success: false, error: 'Método de entrega inválido' });
       }
 
-      // Ya no se valida contra la tabla Producto: se confía en lo que manda el carrito
-      // (precio y nombre quedan congelados en la orden, como una factura real).
-      const corto = (v: any, max: number) => (v == null || v === '' ? null : String(v).replace(/[\r\n]/g, ' ').trim().slice(0, max) || null);
-      const itemsConPrecio = items.map((i: any) => ({
-        productoId: null, // el catálogo de la tienda es independiente del catálogo B2B de cotizaciones por ahora
-        codigoProductoExterno: corto(i.productId, 80), // id del producto en la tienda (lo usan las opiniones)
-        presentacion: corto(i.sizeName, 60),
-        color: corto(i.colorName, 60),
-        nombreProducto: i.name,
-        cantidad: Number(i.cantidad || i.quantity),
-        precioUnitario: Number(i.price),
-        subtotal: Number(i.price) * Number(i.cantidad || i.quantity)
-      }));
+      if (items.length > 50) return res.status(400).json({ success: false, error: 'El pedido tiene demasiados productos.' });
+      const direccion = String(direccionEntrega ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, 400);
+      if (metodoEntrega === 'domicilio' && direccion.length < 5) {
+        return res.status(400).json({ success: false, error: 'Escribe la dirección de entrega.' });
+      }
 
-      const total = itemsConPrecio.reduce((sum, i) => sum + i.subtotal, 0);
+      // El precio sale del catálogo de la tienda (nunca del navegador); la cantidad se valida
+      const corto = (v: any, max: number) => (v == null || v === '' ? null : String(v).replace(/[\r\n]/g, ' ').trim().slice(0, max) || null);
+      const itemsConPrecio: any[] = [];
+      for (const i of items) {
+        const producto = STORE_PRODUCTS.find(p => p.id === i.productId);
+        if (!producto) return res.status(400).json({ success: false, error: `El producto "${String(i.name || '').slice(0, 60)}" ya no está disponible.` });
+        const talla = producto.sizes.find(sz => sz.name === i.sizeName || sz.id === i.sizeId) || (producto.sizes.length === 1 ? producto.sizes[0] : undefined);
+        if (!talla) return res.status(400).json({ success: false, error: `Elige una presentación válida para ${producto.name}.` });
+        if (talla.inStock === false) return res.status(400).json({ success: false, error: `${producto.name} (${talla.name}) está agotado.` });
+        const cantidad = Math.floor(Number(i.cantidad ?? i.quantity));
+        if (!Number.isInteger(cantidad) || cantidad < 1 || cantidad > 99) {
+          return res.status(400).json({ success: false, error: `Cantidad inválida para ${producto.name} (de 1 a 99).` });
+        }
+        const color = i.colorName ? producto.colors?.find(c => c.name === i.colorName) : undefined;
+        if (i.colorName && !color) return res.status(400).json({ success: false, error: `El color elegido no existe para ${producto.name}.` });
+        itemsConPrecio.push({
+          productoId: null, // el catálogo de la tienda es independiente del catálogo B2B de cotizaciones
+          codigoProductoExterno: producto.id,
+          presentacion: corto(talla.name, 60),
+          color: corto(color?.name, 60),
+          nombreProducto: producto.name.slice(0, 120),
+          cantidad,
+          precioUnitario: talla.price,
+          subtotal: talla.price * cantidad
+        });
+      }
+
+      const subtotalProductos = itemsConPrecio.reduce((sum, i) => sum + i.subtotal, 0);
+      // Envío a domicilio: gratis desde $150.000; recogida en tienda siempre gratis (igual que en el checkout)
+      const costoEnvio = metodoEntrega === 'domicilio' && subtotalProductos < 150000 ? 15000 : 0;
+      const total = subtotalProductos + costoEnvio;
+      const direccionEntregaFinal = direccion || null;
 
       const orden = await prisma.orden.create({
         data: {
@@ -2336,9 +2449,13 @@ async function startServer() {
           total,
           estado: 'confirmado',
           metodoEntrega,
-          direccionEntrega: direccionEntrega || null,
+          direccionEntrega: direccionEntregaFinal,
           items: { create: itemsConPrecio },
-          historial: { create: { estado: 'confirmado', comentario: 'Pago simulado confirmado automáticamente', usuarioId: req.user.id } }
+          historial: { create: {
+            estado: 'confirmado',
+            comentario: `Pedido confirmado. Pago ${metodoEntrega === 'domicilio' ? 'contra entrega' : 'en la tienda'}${costoEnvio ? `; incluye envío $${costoEnvio.toLocaleString('es-CO')}` : ''}.`,
+            usuarioId: req.user.id
+          } }
         },
         include: { items: true }
       });
@@ -2348,7 +2465,7 @@ async function startServer() {
       res.json({ success: true, order: orden });
     } catch (error: any) {
       console.error('[create-order]', error);
-      res.status(400).json({ success: false, error: error.message || 'No se pudo crear la orden' });
+      res.status(400).json({ success: false, error: 'No se pudo crear el pedido. Intenta de nuevo.' });
     }
   });
 

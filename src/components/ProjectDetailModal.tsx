@@ -1,5 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ProjectChat, AsesorContacto } from './ProjectChat';
+import { SUPERFICIE_LABEL, AMBIENTE_LABEL } from './ClientProjectsManager';
 import { X, Printer, MapPin, Ruler, Palette, Layers, Truck, Clock } from 'lucide-react';
 
 interface ProjectDetailModalProps {
@@ -15,7 +16,11 @@ interface ProjectDetailModalProps {
 }
 
 const money = (n?: number | null) => `$${Math.round(n || 0).toLocaleString('es-CO')}`;
-const fecha = (d?: string | Date | null) => (d ? new Date(d).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }) : '');
+const fecha = (d?: string | Date | null) => {
+  if (!d) return '';
+  const f = new Date(d);
+  return isNaN(f.getTime()) ? '' : f.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' });
+};
 const esc = (v: any) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 
 const ESTADO_TXT: Record<string, string> = {
@@ -26,6 +31,9 @@ const ESTADO_TXT: Record<string, string> = {
 /** Detalle del proyecto del cliente, con su cotización real y descarga en PDF (impresión del navegador). */
 export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({ project: p, estado, clienteNombre, clienteEmail, onClose, focusChat, onMessagesRead }) => {
   const chatRef = useRef<HTMLDivElement>(null);
+  const [errorPdf, setErrorPdf] = useState('');
+  const superficie = SUPERFICIE_LABEL[p.tipoSuperficie] || p.tipoSuperficie || '';
+  const ambiente = AMBIENTE_LABEL[p.ambiente] || p.ambiente || '';
   useEffect(() => {
     if (focusChat) setTimeout(() => chatRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
   }, [focusChat, p.proyectoId]);
@@ -42,7 +50,7 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({ project:
     try { return p.diagnostico?.sistemaRecomendado ? JSON.parse(p.diagnostico.sistemaRecomendado) : null; } catch { return null; }
   })();
   const pasos: string[] = sistema ? Object.values(sistema).filter(Boolean).map(String) : [];
-  const hayCotizacion = !!cot && (cot.total || items.length);
+  const hayCotizacion = !!cot && (!!cot.total || items.length > 0);
 
   const imprimir = () => {
     const filas = items.length
@@ -67,7 +75,7 @@ ol{margin:0;padding-left:18px} .foot{margin-top:28px;color:#64748b;font-size:11p
 <div class="box">
 <div><b>Cliente:</b> ${esc(clienteNombre || '')}</div><div><b>Proyecto:</b> ${esc(p.nombreProyecto)}</div>
 <div><b>Correo:</b> ${esc(clienteEmail || '')}</div><div><b>Ciudad:</b> ${esc(ciudad)}</div>
-<div><b>Área:</b> ${esc(p.area ?? 0)} m²</div><div><b>Superficie:</b> ${esc(p.tipoSuperficie || '')}${p.ambiente ? ' · ' + esc(p.ambiente) : ''}</div>
+<div><b>Área:</b> ${p.area ? esc(Number(p.area).toLocaleString('es-CO')) + ' m²' : '—'}</div><div><b>Superficie:</b> ${esc(superficie || '—')}${ambiente ? ' · ' + esc(ambiente) : ''}</div>
 <div><b>Color:</b> ${esc(p.color || 'Por definir')}</div>
 </div>
 ${pasos.length ? `<h2>Sistema recomendado</h2><ol>${pasos.map(x => `<li>${esc(x)}</li>`).join('')}</ol>` : ''}
@@ -78,31 +86,32 @@ ${pasos.length ? `<h2>Sistema recomendado</h2><ol>${pasos.map(x => `<li>${esc(x)
 <script>window.onload=()=>{setTimeout(()=>window.print(),300)}</script>
 </body></html>`;
     const w = window.open('', '_blank');
-    if (!w) return;
+    if (!w) { setErrorPdf('Tu navegador bloqueó la ventana del PDF. Permite las ventanas emergentes e intenta de nuevo.'); return; }
+    setErrorPdf('');
     w.document.open(); w.document.write(html); w.document.close();
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
-        <div className="sticky top-0 bg-white/95 backdrop-blur border-b border-slate-100 px-6 py-4 flex items-start justify-between gap-3">
+    <div className="fixed inset-0 z-[60] bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4" onClick={onClose}>
+      <div role="dialog" aria-modal="true" aria-label={`Proyecto ${p.nombreProyecto || codigo}`} className="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="sticky top-0 z-10 bg-white/95 backdrop-blur border-b border-slate-100 px-4 sm:px-6 py-4 flex items-start justify-between gap-3">
           <div className="min-w-0">
             <span className="text-[11px] font-mono font-bold text-slate-500">{codigo}</span>
-            <h2 className="text-lg font-black text-slate-900 leading-tight">{p.nombreProyecto}</h2>
+            <h2 className="text-lg font-black text-slate-900 leading-tight break-words">{p.nombreProyecto || 'Proyecto'}</h2>
             <span className={`inline-block mt-1 text-[11px] font-bold px-2 py-0.5 rounded-full border ${estado.clase}`}>{estado.label}</span>
           </div>
-          <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 text-slate-500 cursor-pointer" aria-label="Cerrar"><X className="w-5 h-5" /></button>
+          <button type="button" onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 text-slate-500 cursor-pointer" aria-label="Cerrar"><X className="w-5 h-5" /></button>
         </div>
 
-        <div className="p-6 space-y-5">
+        <div className="p-4 sm:p-6 space-y-5">
           <p className="text-sm text-slate-600">{estado.detalle}</p>
 
-          <div className="grid grid-cols-2 gap-3 text-xs">
-            <div className="flex items-center gap-2 text-slate-600"><MapPin className="w-4 h-4 text-slate-400" />{ciudad || 'Sin ciudad'}</div>
-            <div className="flex items-center gap-2 text-slate-600"><Ruler className="w-4 h-4 text-slate-400" />{p.area || 0} m²</div>
-            <div className="flex items-center gap-2 text-slate-600"><Layers className="w-4 h-4 text-slate-400" />{p.tipoSuperficie || 'Sin definir'}</div>
-            <div className="flex items-center gap-2 text-slate-600"><Palette className="w-4 h-4 text-slate-400" />
-              <span className="w-3 h-3 rounded-full ring-1 ring-black/10" style={{ backgroundColor: p.colorHex || '#F8FAFC' }} />{p.color || 'Sin definir'}
+          <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-3 text-xs">
+            <div className="flex items-center gap-2 text-slate-600"><MapPin className="w-4 h-4 text-slate-400 shrink-0" />{ciudad || '—'}</div>
+            <div className="flex items-center gap-2 text-slate-600"><Ruler className="w-4 h-4 text-slate-400 shrink-0" />{p.area ? `${Number(p.area).toLocaleString('es-CO')} m²` : '—'}</div>
+            <div className="flex items-center gap-2 text-slate-600"><Layers className="w-4 h-4 text-slate-400 shrink-0" />{[superficie, ambiente].filter(Boolean).join(' · ') || '—'}</div>
+            <div className="flex items-center gap-2 text-slate-600"><Palette className="w-4 h-4 text-slate-400 shrink-0" />
+              {p.colorHex && <span className="w-3 h-3 rounded-full ring-1 ring-black/10 shrink-0" style={{ backgroundColor: p.colorHex }} />}{p.color || 'Por definir'}
             </div>
           </div>
 
@@ -150,7 +159,7 @@ ${pasos.length ? `<h2>Sistema recomendado</h2><ol>${pasos.map(x => `<li>${esc(x)
 
           {p.despacho && (
             <div className="rounded-2xl border border-slate-200 p-3 text-xs text-slate-600 space-y-1">
-              <div className="flex items-center gap-2 font-bold text-slate-800"><Truck className="w-4 h-4" /> Despacho · guía {p.despacho.numeroGuia}</div>
+              <div className="flex items-center gap-2 font-bold text-slate-800"><Truck className="w-4 h-4" /> Despacho{p.despacho.numeroGuia ? ` · guía ${p.despacho.numeroGuia}` : ''}</div>
               {p.despacho.direccionEntrega && <div>Destino: {p.despacho.direccionEntrega}{p.despacho.ciudadEntrega ? ` (${p.despacho.ciudadEntrega})` : ''}</div>}
               {p.despacho.fechaEntrega && <div>Entregado el {fecha(p.despacho.fechaEntrega)}{p.despacho.recibidoPor ? ` · recibió ${p.despacho.recibidoPor}` : ''}</div>}
             </div>
@@ -175,10 +184,11 @@ ${pasos.length ? `<h2>Sistema recomendado</h2><ol>${pasos.map(x => `<li>${esc(x)
           )}
         </div>
 
-        <div className="sticky bottom-0 bg-white border-t border-slate-100 px-6 py-4 flex justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer">Cerrar</button>
+        <div className="sticky bottom-0 bg-white border-t border-slate-100 px-4 sm:px-6 py-4 flex flex-wrap items-center justify-end gap-2">
+          {errorPdf && <p role="alert" className="w-full text-[11px] font-semibold text-red-700">{errorPdf}</p>}
+          <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer">Cerrar</button>
           {hayCotizacion && (
-            <button onClick={imprimir} className="px-4 py-2 rounded-xl bg-[#14216B] hover:bg-[#0f1a55] text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer">
+            <button type="button" onClick={imprimir} className="px-4 py-2 rounded-xl bg-[#14216B] hover:bg-[#0f1a55] text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer">
               <Printer className="w-4 h-4" /> Descargar PDF
             </button>
           )}

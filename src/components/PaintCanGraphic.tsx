@@ -1,4 +1,4 @@
-import React, { useId } from 'react';
+import React, { useId, useState } from 'react';
 
 interface PaintCanGraphicProps {
   colorHex?: string;
@@ -141,7 +141,10 @@ export const PaintCanGraphic: React.FC<PaintCanGraphicProps> = ({
   category
 }) => {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, '');
-  const photo = productPhoto(productLine, sizeName);
+  // Si la foto no carga, se dibuja la lata vectorial (nunca una imagen rota)
+  const [failedPhoto, setFailedPhoto] = useState<string | null>(null);
+  const candidate = productPhoto(productLine, sizeName);
+  const photo = candidate && candidate !== failedPhoto ? candidate : null;
   if (photo) {
     return (
       <div className={`relative flex items-center justify-center select-none ${className}`}>
@@ -153,6 +156,7 @@ export const PaintCanGraphic: React.FC<PaintCanGraphicProps> = ({
             alt={`${productLine} ${sizeName}`}
             loading="lazy"
             draggable={false}
+            onError={() => setFailedPhoto(photo)}
             className="w-full h-full object-contain"
           />
           {/* Color elegido */}

@@ -1,6 +1,6 @@
 import { BrandLogo } from './BrandLogo';
-import React, { useState } from 'react';
-import { ActiveTab, UserProfile, StoreCategory } from '../types';
+import React, { useEffect, useState } from 'react';
+import { ActiveTab, UserProfile, StoreCategory, StoreProduct } from '../types';
 import {
   Droplet,
   Home,
@@ -42,9 +42,12 @@ interface NavbarProps {
   onLogout?: () => void;
   onOpenVirtualAssistant?: () => void;
   onOpenNotification?: (n: Notificacion) => void;
+  /** Abrir la ficha de un producto elegido en las sugerencias de búsqueda */
+  onSelectProduct?: (p: StoreProduct) => void;
 }
 
 import { NotificationBell, Notificacion } from './NotificationBell';
+import { SearchWithSuggestions } from './SearchSuggestions';
 
 // Avatar con ícono genérico por defecto (en vez de una foto de stock fija) cuando el usuario no tiene foto propia
 const UserAvatarImg: React.FC<{ avatar?: string | null; name: string; sizeClass?: string }> = ({ avatar, name, sizeClass = 'w-7 h-7' }) => {
@@ -69,13 +72,15 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenBranchLocator,
   onOpenCalculator,
   onSearchChange,
+  searchFilter,
   selectedCategory = 'todos',
   onSelectCategory,
   onLoadSampleCase,
   hasValidatedData,
   onLogout,
   onOpenVirtualAssistant,
-  onOpenNotification
+  onOpenNotification,
+  onSelectProduct
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
@@ -84,12 +89,18 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [cartBounce, setCartBounce] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
 
-  const handleSearchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (onSearchChange) {
-      onSearchChange(searchQuery);
-    }
+  // La caja de búsqueda sigue lo que muestra la tienda (p. ej. si se borra el filtro desde los resultados)
+  useEffect(() => { setSearchQuery(searchFilter || ''); }, [searchFilter]);
+
+  /** Enter o "Ver todos los resultados": lleva al catálogo filtrado */
+  const submitSearch = (q: string) => {
+    const limpio = q.trim().slice(0, 80);
+    setSearchQuery(limpio);
+    if (onSearchChange) onSearchChange(limpio);
+    if (onSelectCategory) onSelectCategory('todos');
     setActiveTab('tienda');
+    setIsMobileMenuOpen(false);
+    if (limpio) setTimeout(() => document.getElementById('catalogo')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120);
   };
 
   const handleCategoryClick = (cat: StoreCategory) => {
@@ -170,42 +181,15 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
 
           {/* Search */}
-          <form
-            onSubmit={handleSearchSubmit}
-            className={`hidden sm:block relative transition-all duration-300 ease-in-out ${
-              isSearchFocused
-                ? 'flex-1 max-w-xl shadow-lg ring-2 ring-emerald-400/80 rounded-full'
-                : 'w-48 sm:w-64 md:w-80 max-w-md'
-            }`}
-          >
-            <Search className={`w-4 h-4 absolute left-3.5 top-2.5 pointer-events-none transition-colors ${
-              isSearchFocused ? 'text-emerald-400' : 'text-slate-400'
-            }`} />
-            <input
-              type="text"
-              value={searchQuery}
-              onFocus={() => setIsSearchFocused(true)}
-              onBlur={() => setIsSearchFocused(false)}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                if (onSearchChange) onSearchChange(e.target.value);
-              }}
-              placeholder="Buscar Koraza, viniltex, epóxico, rodillos..."
-              className="w-full pl-10 pr-9 py-2 bg-[#050D1C] border border-slate-700/80 rounded-full text-xs text-white placeholder-slate-400 focus:outline-hidden focus:border-cyan-400/60 transition-all"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSearchQuery('');
-                  if (onSearchChange) onSearchChange('');
-                }}
-                className="absolute right-3 top-2.5 text-slate-400 hover:text-white text-xs cursor-pointer p-0.5 rounded-full hover:bg-slate-800"
-              >
-                ✕
-              </button>
-            )}
-          </form>
+          <SearchWithSuggestions
+            value={searchQuery}
+            onChange={setSearchQuery}
+            onSubmit={submitSearch}
+            onSelectProduct={(p) => { setSearchQuery(''); onSelectProduct ? onSelectProduct(p) : submitSearch(p.name); }}
+            placeholder="Buscar Koraza, viniltex, epóxico, rodillos…"
+            className="hidden sm:block flex-1 max-w-md"
+            inputClassName="text-xs"
+          />
 
           {/* Direct Navbar Buttons: Tiendas, Calculadora & Proyectos */}
           <div className="hidden lg:flex items-center gap-2">
@@ -405,19 +389,14 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Búsqueda en celular: fila completa debajo del logo */}
-        <form onSubmit={handleSearchSubmit} className="sm:hidden relative pb-2.5">
-          <Search className="w-4 h-4 absolute left-3.5 top-2.5 pointer-events-none text-slate-400" />
-          <input
-            type="search"
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              if (onSearchChange) onSearchChange(e.target.value);
-            }}
-            placeholder="Buscar pinturas, epóxicos, rodillos..."
-            className="w-full pl-10 pr-3 py-2 bg-[#050D1C] border border-slate-700/80 rounded-full text-[13px] text-white placeholder-slate-400 focus:outline-hidden focus:border-cyan-400/60"
-          />
-        </form>
+        <SearchWithSuggestions
+          value={searchQuery}
+          onChange={setSearchQuery}
+          onSubmit={submitSearch}
+          onSelectProduct={(p) => { setSearchQuery(''); onSelectProduct ? onSelectProduct(p) : submitSearch(p.name); }}
+          className="sm:hidden pb-2.5"
+          inputClassName="text-[13px]"
+        />
       </div>
 
       {/* 3. Secondary Category Navigation Bar */}

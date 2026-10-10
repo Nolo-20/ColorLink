@@ -37,6 +37,8 @@ export interface CustomerOrder {
   id: string;
   orderNumber: string;
   date: string;
+  /** Fecha ISO de creación (para filtrar por periodo) */
+  createdAt?: string;
   total: number;
   subtotal: number;
   shipping: number;
@@ -298,6 +300,10 @@ export interface StoreProduct {
   defaultSizeId: string;
   image: string;
   isTool?: boolean;
+  /** Rendimiento real por galón a UNA mano (m²). Lo usan las calculadoras. */
+  coverageM2PerGallon?: number;
+  /** Manos recomendadas por el fabricante (por defecto 2). */
+  defaultCoats?: number;
 }
 
 export interface CartItem {

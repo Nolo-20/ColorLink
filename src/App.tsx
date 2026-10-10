@@ -119,6 +119,7 @@ export default function App() {
               id: o.ordenId,
               orderNumber: `CL-${o.ordenId.slice(0, 8).toUpperCase()}`,
               date: new Date(o.createdAt).toLocaleDateString('es-CO'),
+              createdAt: o.createdAt,
               total: o.total,
               subtotal: Math.round(o.total / 1.19),
               shipping: 0,
@@ -126,16 +127,17 @@ export default function App() {
               recipientName: user.name,
               recipientEmail: user.email,
               recipientPhone: user.phone,
-              shippingAddress: o.direccionEntrega || (user.address || 'Medellín, Antioquia'),
-              city: user.city || 'Medellín',
+              shippingAddress: o.direccionEntrega || '',
+              city: '',
               deliveryMethod: isPickup ? 'sucursal' : 'domicilio',
               pickupCode: isPickup ? o.qrToken.slice(0, 8).toUpperCase() : undefined,
               transactionId: o.ordenId,
               status: estadoCliente(o.estado),
               readyForPickup: o.estado === 'listo_recoger',
               canCancel: o.estado === 'confirmado',
-              carrier: isPickup ? 'Retiro en Sucursal Asignada' : 'Flota ColorLink',
-              estimatedDelivery: isPickup ? 'Disponible en tienda' : 'Próximas 24-48 horas',
+              pickupStore: isPickup ? (o.direccionEntrega || undefined) : undefined,
+              carrier: undefined,
+              estimatedDelivery: undefined,
               items: (o.items || []).map((it: any) => {
                 // Pedidos antiguos no guardaban el id del catálogo: se reconoce por el nombre
                 const catalogProduct = STORE_PRODUCTS.find(p => p.id === it.codigoProductoExterno)
@@ -189,6 +191,11 @@ export default function App() {
   const [resetToken, setResetToken] = useState<string | null>(
     () => new URLSearchParams(window.location.search).get('reset_token')
   );
+
+  // El asistente de IA edita el área directamente: el cálculo se mantiene sincronizado
+  useEffect(() => {
+    if (formData.areaM2 > 0) updateCalculationForArea(formData.areaM2, formData.descuentoAsesorPct || 0);
+  }, [formData.areaM2, formData.descuentoAsesorPct]);
 
   const updateCalculationForArea = (area: number, discountPct: number = 0) => {
     const areaEfectiva = area * 2;
@@ -254,7 +261,7 @@ export default function App() {
           sistemaRecomendado: aiResult?.sistema_recomendado,
           manoRecomendada: aiResult?.manos_recomendadas,
           rendimientoEstimado: aiResult?.rendimiento_estimado_m2_gal,
-          confianzaIaPct: aiResult?.nivel_confianza_ia_pct,
+          confianzaIaPct: (aiResult as any)?.source === 'colorlink-expert-engine' ? undefined : aiResult?.nivel_confianza_ia_pct,
           requiereVisitaHumana: aiResult?.requiere_visita_especialista_human_in_the_loop,
           imageBase64: formData.fotos[0]?.base64 || null
         })
@@ -293,7 +300,7 @@ export default function App() {
       );
       if (existingIdx >= 0) {
         const updated = [...prev];
-        updated[existingIdx] = { ...updated[existingIdx], quantity: updated[existingIdx].quantity + quantity };
+        updated[existingIdx] = { ...updated[existingIdx], quantity: Math.min(99, updated[existingIdx].quantity + Math.max(1, Math.floor(quantity) || 1)) };
         return updated;
       }
       const newItem: CartItem = {
@@ -304,7 +311,7 @@ export default function App() {
         sizeName: size.name,
         price: size.price,
         originalPrice: size.originalPrice,
-        quantity,
+        quantity: Math.min(99, Math.max(1, Math.floor(quantity) || 1)),
         colorId: color?.id,
         colorName: color?.name,
         colorCode: color?.code,
@@ -342,7 +349,7 @@ export default function App() {
       handleRemoveCartItem(id);
       return;
     }
-    setCartItems(prev => prev.map(item => item.id === id ? { ...item, quantity: newQty } : item));
+    setCartItems(prev => prev.map(item => item.id === id ? { ...item, quantity: Math.min(99, Math.floor(newQty)) } : item));
   };
 
   const handleRemoveCartItem = (id: string) => {
@@ -395,7 +402,7 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          items: purchasedItems.map(it => ({ productId: it.productId, name: it.name, price: it.price, cantidad: it.quantity, sizeName: it.sizeName, colorName: it.colorName })),
+          items: purchasedItems.map(it => ({ productId: it.productId, name: it.name, price: it.price, cantidad: it.quantity, sizeId: it.sizeId, sizeName: it.sizeName, colorName: it.colorName })),
           metodoEntrega: (orderDetails?.deliveryMethod === 'sucursal' || orderDetails?.deliveryMethod === 'pickup') ? 'recoger_tienda' : 'domicilio',
           direccionEntrega: orderDetails?.shippingAddress || undefined
         })
@@ -424,13 +431,12 @@ export default function App() {
     try {
       const res = await fetch(`/api/orders/${orderId}/cancel`, { method: 'PATCH' });
       const data = await res.json();
-      if (!data.success) {
-        alert(data.error || 'No se pudo cancelar el pedido');
-        return;
-      }
+      if (!data.success) return { error: data.error || 'No se pudo cancelar el pedido' };
       loadRealOrders();
+      return { ok: true };
     } catch (err) {
       console.error('Error cancelando la orden:', err);
+      return { error: 'No se pudo conectar con el servidor.' };
     }
   };
 
@@ -525,6 +531,11 @@ export default function App() {
         hasValidatedData={Boolean(formData.id)}
         onLogout={handleLogout}
         onOpenVirtualAssistant={() => setIsAssistantModalOpen(true)}
+        onSelectProduct={(p) => {
+          setSelectedProduct(p);
+          setSelectedColorForDetail(undefined);
+          setActiveTab('producto_detalle');
+        }}
         onOpenNotification={(n) => {
           if (n.enlace.tipo === 'pedido') {
             loadRealOrders();
@@ -561,6 +572,7 @@ export default function App() {
               setActiveTab(cat === 'todos' ? 'tienda' : 'categoria');
             }}
             searchFilter={searchFilter}
+            onClearSearch={() => setSearchFilter('')}
           />
         )}
 
@@ -653,6 +665,12 @@ export default function App() {
             }}
             onOpenSupport={() => setIsAssistantModalOpen(true)}
             onOrdersChanged={loadRealOrders}
+            loading={loadingOrders}
+            onViewProduct={(id, nombre) => {
+              const p = STORE_PRODUCTS.find(x => x.id === id)
+                || STORE_PRODUCTS.find(x => x.name.trim().toLowerCase() === nombre.trim().toLowerCase());
+              if (p) { setSelectedProduct(p); setSelectedColorForDetail(undefined); setActiveTab('producto_detalle'); }
+            }}
           />
         )}
 
@@ -660,6 +678,8 @@ export default function App() {
           <CustomerAccountHub
             user={user}
             onUpdateUser={handleUpdateUserProfile}
+            onProfileSaved={(u) => setUser(u)}
+            onOpenSupport={() => setIsAssistantModalOpen(true)}
             onNavigateToOrders={() => setActiveTab('pedidos')}
             onNavigateToProjects={() => setActiveTab(isLoggedIn ? 'dashboard' : 'proyectos_teaser')}
             onNavigateToStore={() => {
@@ -678,7 +698,7 @@ export default function App() {
               setActiveTab={setActiveTab}
               onOpenPdfModal={() => setIsPdfModalOpen(true)}
               onOpenAssistant={() => setIsAssistantModalOpen(true)}
-              onStartNewAiQuote={() => setActiveTab('nueva_cotizacion_ia')}
+              onStartNewAiQuote={() => { setAiResult(null); setActiveTab('nueva_cotizacion_ia'); }}
             />
           ) : (
             <ProjectsTeaserView

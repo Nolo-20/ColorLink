@@ -20,7 +20,6 @@ export const INITIAL_USER: UserProfile = {
   city: 'Medellín',
   role: 'cliente',
   authMethod: 'credentials',
-  avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
   isRegistered: false, // Default starts unauthenticated to show the modern login first
 };
 
@@ -38,7 +37,6 @@ export const DEMO_PROFILES: Record<UserProfile['role'], UserProfile> = {
     city: 'Medellín',
     role: 'cliente',
     authMethod: 'google',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
     isRegistered: true,
   },
   asesor: {
@@ -53,7 +51,6 @@ export const DEMO_PROFILES: Record<UserProfile['role'], UserProfile> = {
     role: 'asesor',
     department: 'Asesoría Técnica y Comercial Medellín',
     authMethod: 'microsoft',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
     isRegistered: true,
   },
   calidad: {
@@ -68,7 +65,6 @@ export const DEMO_PROFILES: Record<UserProfile['role'], UserProfile> = {
     role: 'calidad',
     department: 'Laboratorio de Patologías & Certificación NTC',
     authMethod: 'microsoft',
-    avatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150&auto=format&fit=crop&q=80',
     isRegistered: true,
   },
   administrador: {
@@ -83,7 +79,6 @@ export const DEMO_PROFILES: Record<UserProfile['role'], UserProfile> = {
     role: 'administrador',
     department: 'Dirección de Logística & Inventarios Aburrá',
     authMethod: 'apple',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
     isRegistered: true,
   }
 };
@@ -142,14 +137,14 @@ export const INITIAL_SAMPLE_PROJECT: ProjectFormData = {
   fotos: [
     {
       id: 'foto-1',
-      url: 'https://images.unsplash.com/photo-1590381105924-c72589b9ef3f?w=800&auto=format&fit=crop&q=80',
+      url: '/visualizer/edificio.jpg',
       name: 'evidencia_fachada_concreto_fisuras.jpg',
       size: '2.4 MB',
       isPreloaded: true
     },
     {
       id: 'foto-2',
-      url: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?w=800&auto=format&fit=crop&q=80',
+      url: '/visualizer/casa_colonial.jpg',
       name: 'detalle_humedad_zona_baja.jpg',
       size: '1.8 MB',
       isPreloaded: true
@@ -190,7 +185,7 @@ export const ALL_MOCK_PROJECTS: ProjectFormData[] = [
     fotos: [
       {
         id: 'foto-lau-1',
-        url: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?w=800&auto=format&fit=crop&q=80',
+        url: '/visualizer/sala.jpg',
         name: 'muros_interiores_drywall.jpg',
         size: '1.5 MB',
         isPreloaded: true

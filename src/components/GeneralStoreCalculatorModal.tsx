@@ -1,36 +1,51 @@
-import React, { useState } from 'react';
-import { 
-  Calculator, 
-  X, 
-  Ruler, 
-  Layers, 
-  Sparkles, 
-  Info, 
-  Check, 
-  ArrowRight, 
-  Plus, 
-  Trash2,
-  Package,
-  Droplet
-} from 'lucide-react';
-import { STORE_PRODUCTS } from '../data/storeProducts';
-import { StoreProduct } from '../types';
+import React, { useEffect, useState } from 'react';
+import { Calculator, X, ArrowRight, Plus, Trash2, Minus, ShoppingCart } from 'lucide-react';
+import { STORE_PRODUCTS, coverageFor, purchasePlan, formatCOP, MAX_ITEM_QTY } from '../data/storeProducts';
+import { StoreProduct, StoreProductSize, StoreProductColor } from '../types';
+import { PaintCanGraphic } from './PaintCanGraphic';
 
 interface GeneralStoreCalculatorModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSelectProduct?: (product: StoreProduct) => void;
-  onAddToCart?: (product: StoreProduct, size: any, color: any, quantity: number) => void;
+  onAddToCart?: (product: StoreProduct, size: StoreProductSize, color: StoreProductColor | undefined, quantity: number) => void;
 }
 
 interface WallEntry {
   id: string;
   name: string;
-  width: number;
-  height: number;
+  width: string;
+  height: string;
   doors: number;
   windows: number;
 }
+
+const MAX_WALLS = 30;
+const MAX_WALL_M = 200;
+const MAX_OPENINGS = 20;
+const DOOR_M2 = 1.8;
+const WINDOW_M2 = 1.2;
+const WASTE_FACTOR = 0.1;
+
+const sanitizeDecimal = (v: string) => {
+  let out = v.replace(/[^\d.,]/g, '').replace(',', '.');
+  const firstDot = out.indexOf('.');
+  if (firstDot !== -1) out = out.slice(0, firstDot + 1) + out.slice(firstDot + 1).replace(/\./g, '');
+  return out.slice(0, 7);
+};
+const parseNum = (v: string) => (v.trim() === '' || !/^\d*\.?\d*$/.test(v.trim()) ? NaN : Number(v));
+const fmt = (n: number) => n.toLocaleString('es-CO', { maximumFractionDigits: 1 });
+
+const PAINTS = STORE_PRODUCTS.filter(p => !p.isTool);
+
+const newWall = (n: number): WallEntry => ({
+  id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+  name: `Muro ${n}`,
+  width: '4',
+  height: '2.6',
+  doors: 0,
+  windows: 0
+});
 
 export const GeneralStoreCalculatorModal: React.FC<GeneralStoreCalculatorModalProps> = ({
   isOpen,
@@ -38,297 +53,318 @@ export const GeneralStoreCalculatorModal: React.FC<GeneralStoreCalculatorModalPr
   onSelectProduct,
   onAddToCart
 }) => {
-  const [selectedProductId, setSelectedProductId] = useState<string>('viniltex-ultralavable');
+  const [selectedProductId, setSelectedProductId] = useState<string>(PAINTS[0]?.id || '');
   const [surfaceType, setSurfaceType] = useState<'revoque' | 'repintado' | 'drywall' | 'estuco'>('repintado');
   const [coats, setCoats] = useState<number>(2);
-  
   const [walls, setWalls] = useState<WallEntry[]>([
-    { id: '1', name: 'Muro Principal', width: 4.5, height: 2.6, doors: 0, windows: 1 },
-    { id: '2', name: 'Muro Lateral', width: 3.5, height: 2.6, doors: 1, windows: 0 }
+    { id: '1', name: 'Muro principal', width: '4.5', height: '2.6', doors: 0, windows: 1 },
+    { id: '2', name: 'Muro lateral', width: '3.5', height: '2.6', doors: 1, windows: 0 }
   ]);
 
-  if (!isOpen) return null;
+  const currentProduct = PAINTS.find(p => p.id === selectedProductId) || PAINTS[0];
 
-  const currentProduct = STORE_PRODUCTS.find(p => p.id === selectedProductId) || STORE_PRODUCTS[0];
+  // Al cambiar de pintura se usan las manos recomendadas por el fabricante
+  useEffect(() => {
+    setCoats(coverageFor(currentProduct).coats);
+  }, [currentProduct?.id]);
 
-  // Surface absorption factors
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
+
+  if (!isOpen || !currentProduct) return null;
+
   const surfaceFactors: Record<string, { label: string; factor: number; desc: string }> = {
-    repintado: { label: 'Muro Ya Pintado (Buen Estado)', factor: 1.0, desc: 'Rendimiento estándar óptimo' },
-    estuco: { label: 'Estuco Pulido / Masilla', factor: 0.95, desc: 'Excelente anclaje con mínimo consumo' },
-    drywall: { label: 'Drywall / Yeso Cartón', factor: 0.85, desc: 'Absorción media, requiere buena primera mano' },
-    revoque: { label: 'Revoque / Cemento Nuevo', factor: 0.70, desc: 'Alta porosidad, recomendamos imprimante sellador previo' }
+    repintado: { label: 'Muro ya pintado (buen estado)', factor: 1.0, desc: 'Rendimiento estándar' },
+    estuco: { label: 'Estuco pulido / masilla', factor: 0.95, desc: 'Buen anclaje con bajo consumo' },
+    drywall: { label: 'Drywall / yeso cartón', factor: 0.85, desc: 'Absorción media: la primera mano rinde menos' },
+    revoque: { label: 'Revoque / cemento nuevo', factor: 0.7, desc: 'Alta porosidad: recomendamos sellador previo' }
   };
 
-  // Base coverage m2/galon (at 2 coats)
-  const baseCoverage = currentProduct.specs.rendimiento.includes('25') ? 25 :
-                        currentProduct.specs.rendimiento.includes('28') ? 28 :
-                        currentProduct.specs.rendimiento.includes('35') ? 35 : 24;
+  const { perCoat } = coverageFor(currentProduct);
+  const effectiveCoverage = perCoat * surfaceFactors[surfaceType].factor;
 
-  const effectiveCoverage = baseCoverage * surfaceFactors[surfaceType].factor;
+  // Validación por muro
+  const wallErrors: Record<string, string> = {};
+  let grossArea = 0;
+  let deductionsArea = 0;
+  walls.forEach(w => {
+    const width = parseNum(w.width);
+    const height = parseNum(w.height);
+    if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
+      wallErrors[w.id] = 'Ancho y alto deben ser números mayores que 0.';
+      return;
+    }
+    if (width > MAX_WALL_M || height > MAX_WALL_M) {
+      wallErrors[w.id] = `Máximo ${MAX_WALL_M} m por medida.`;
+      return;
+    }
+    const area = width * height;
+    const ded = w.doors * DOOR_M2 + w.windows * WINDOW_M2;
+    if (ded >= area) {
+      wallErrors[w.id] = 'Las puertas y ventanas ocupan más que el muro.';
+      return;
+    }
+    grossArea += area;
+    deductionsArea += ded;
+  });
+  const isValid = Object.keys(wallErrors).length === 0 && walls.length > 0;
+  const netArea = Math.round((grossArea - deductionsArea) * 10) / 10;
 
-  // Calculate total area
-  const grossArea = walls.reduce((sum, w) => sum + (w.width * w.height), 0);
-  const deductionsArea = walls.reduce((sum, w) => sum + (w.doors * 1.8) + (w.windows * 1.2), 0);
-  const netArea = Math.max(1, Math.round((grossArea - deductionsArea) * 10) / 10);
-
-  // Gallons required
-  const exactGallons = (netArea / effectiveCoverage) * (coats / 2);
-  const roundedGallons = Math.ceil(exactGallons);
-  const bucketsCount = Math.floor(roundedGallons / 5);
-  const remainingGallons = roundedGallons % 5;
+  const exactGallons = isValid && netArea > 0 ? (netArea * coats / effectiveCoverage) * (1 + WASTE_FACTOR) : 0;
+  const roundedGallons = Math.max(1, Math.ceil(exactGallons));
+  const plan = purchasePlan(currentProduct, roundedGallons);
+  const planSize = currentProduct.sizes.find(s => s.id === plan.sizeId && s.inStock)
+    || currentProduct.sizes.find(s => s.inStock)
+    || currentProduct.sizes[0];
+  const planCount = planSize.id === plan.sizeId ? plan.count : roundedGallons;
+  const planCost = planSize.price * planCount;
+  const defaultColor = currentProduct.colors.find(c => c.id === currentProduct.defaultColorId && c.inStock) || currentProduct.colors.find(c => c.inStock);
 
   const handleAddWall = () => {
-    const nextId = String(Date.now());
-    setWalls([...walls, {
-      id: nextId,
-      name: `Muro ${walls.length + 1}`,
-      width: 4,
-      height: 2.6,
-      doors: 0,
-      windows: 0
-    }]);
+    if (walls.length >= MAX_WALLS) return;
+    setWalls(prev => [...prev, newWall(prev.length + 1)]);
   };
-
   const handleRemoveWall = (id: string) => {
-    if (walls.length <= 1) return;
-    setWalls(walls.filter(w => w.id !== id));
+    setWalls(prev => (prev.length <= 1 ? prev : prev.filter(w => w.id !== id)));
+  };
+  const updateWall = (id: string, patch: Partial<WallEntry>) => {
+    setWalls(prev => prev.map(w => (w.id === id ? { ...w, ...patch } : w)));
   };
 
-  const handleUpdateWall = (id: string, field: keyof WallEntry, value: any) => {
-    setWalls(walls.map(w => {
-      if (w.id === id) {
-        return { ...w, [field]: value };
-      }
-      return w;
-    }));
-  };
+  const Stepper: React.FC<{ label: string; value: number; onChange: (n: number) => void }> = ({ label, value, onChange }) => (
+    <div className="flex items-center gap-1.5">
+      <span className="text-[11px] text-slate-500 font-bold">{label}</span>
+      <button type="button" aria-label={`Restar ${label}`} disabled={value <= 0} onClick={() => onChange(Math.max(0, value - 1))} className="w-6 h-6 rounded-md bg-white border border-slate-300 flex items-center justify-center disabled:opacity-30 cursor-pointer">
+        <Minus className="w-3 h-3" />
+      </button>
+      <span className="w-5 text-center text-xs font-black">{value}</span>
+      <button type="button" aria-label={`Sumar ${label}`} disabled={value >= MAX_OPENINGS} onClick={() => onChange(Math.min(MAX_OPENINGS, value + 1))} className="w-6 h-6 rounded-md bg-white border border-slate-300 flex items-center justify-center disabled:opacity-30 cursor-pointer">
+        <Plus className="w-3 h-3" />
+      </button>
+    </div>
+  );
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl max-w-4xl w-full shadow-2xl border border-slate-200 overflow-hidden my-auto">
-        
-        {/* Header */}
-        <div className="bg-[#0B1528] text-white p-6 sm:p-7 flex items-center justify-between border-b border-slate-800">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+    <div
+      className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="gcalc-title"
+    >
+      <div className="bg-white rounded-3xl max-w-4xl w-full shadow-2xl border border-slate-200 overflow-hidden my-auto" onClick={(e) => e.stopPropagation()}>
+
+        <div className="bg-[#0B1528] text-white p-5 sm:p-7 flex items-center justify-between gap-3 border-b border-slate-800">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-11 h-11 shrink-0 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
               <Calculator className="w-6 h-6" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                  Herramienta Técnica ColorLink
-                </span>
-              </div>
-              <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white mt-0.5">
-                Calculadora Técnica de Pintura & Metros Cuadrados
+            <div className="min-w-0">
+              <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">Calculadora ColorLink</span>
+              <h2 id="gcalc-title" className="text-lg sm:text-2xl font-black tracking-tight text-white leading-tight">
+                ¿Cuánta pintura necesito?
               </h2>
             </div>
           </div>
-
           <button
             type="button"
             onClick={onClose}
-            className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
+            aria-label="Cerrar calculadora"
+            className="w-10 h-10 shrink-0 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Content Body */}
-        <div className="p-6 sm:p-8 space-y-6 max-h-[75vh] overflow-y-auto">
-          
-          {/* 1. Product Selector */}
+        <div className="p-4 sm:p-8 space-y-6 max-h-[75vh] overflow-y-auto">
+
+          {/* 1. Pintura */}
           <div>
-            <label className="text-xs font-black uppercase text-slate-700 tracking-wider block mb-2">
-              1. Selecciona la Pintura que vas a utilizar:
-            </label>
+            <span className="text-xs font-black uppercase text-slate-700 tracking-wider block mb-2">1. Pintura que vas a usar</span>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {STORE_PRODUCTS.filter(p => !p.isTool).map(p => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => setSelectedProductId(p.id)}
-                  className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex items-center gap-3 ${
-                    selectedProductId === p.id 
-                      ? 'border-[#0B1E48] bg-blue-50/60 ring-2 ring-[#0B1E48]' 
-                      : 'border-slate-200 hover:border-slate-400 bg-white'
-                  }`}
-                >
-                  <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
-                    <Droplet className={`w-5 h-5 ${selectedProductId === p.id ? 'text-[#0B1E48]' : 'text-slate-400'}`} />
-                  </div>
-                  <div className="min-w-0">
-                    <h4 className="font-extrabold text-xs text-slate-900 truncate">{p.name}</h4>
-                    <p className="text-[11px] text-slate-500 truncate">{p.specs.rendimiento}</p>
-                  </div>
-                </button>
-              ))}
+              {PAINTS.map(p => {
+                const cov = coverageFor(p);
+                const selected = selectedProductId === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setSelectedProductId(p.id)}
+                    aria-pressed={selected}
+                    className={`p-2.5 rounded-2xl border text-left transition-all cursor-pointer flex items-center gap-3 ${
+                      selected ? 'border-[#0B1E48] bg-blue-50/60 ring-2 ring-[#0B1E48]' : 'border-slate-200 hover:border-slate-400 bg-white'
+                    }`}
+                  >
+                    <PaintCanGraphic productLine={p.name} sizeName="1 Galón" colorHex={p.colors[0]?.hex} colorName={p.colors[0]?.name} className="w-12 h-12 shrink-0" />
+                    <span className="min-w-0">
+                      <span className="block font-extrabold text-xs text-slate-900 truncate">{p.name}</span>
+                      <span className="block text-[11px] text-slate-500 truncate">~{fmt(cov.perCoat)} m²/galón por mano</span>
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          {/* 2. Surface & Hands */}
+          {/* 2. Superficie y manos */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-100">
             <div>
-              <label className="text-xs font-black uppercase text-slate-700 tracking-wider block mb-2">
-                2. Tipo de Superficie:
-              </label>
+              <label htmlFor="gcalc-surface" className="text-xs font-black uppercase text-slate-700 tracking-wider block mb-2">2. Tipo de superficie</label>
               <select
+                id="gcalc-surface"
                 value={surfaceType}
-                onChange={(e) => setSurfaceType(e.target.value as any)}
+                onChange={(e) => setSurfaceType(e.target.value as typeof surfaceType)}
                 className="w-full p-3 rounded-xl border border-slate-300 text-xs sm:text-sm font-bold text-slate-800 bg-white focus:outline-hidden focus:ring-2 focus:ring-[#0B1E48]"
               >
                 {Object.entries(surfaceFactors).map(([key, item]) => (
-                  <option key={key} value={key}>
-                    {item.label}
-                  </option>
+                  <option key={key} value={key}>{item.label}</option>
                 ))}
               </select>
-              <p className="text-[11px] text-slate-500 mt-1">
-                {surfaceFactors[surfaceType].desc}
-              </p>
+              <p className="text-[11px] text-slate-500 mt-1">{surfaceFactors[surfaceType].desc}</p>
             </div>
-
             <div>
-              <label className="text-xs font-black uppercase text-slate-700 tracking-wider block mb-2">
-                3. Número de Manos a Aplicar:
-              </label>
-              <div className="flex gap-2">
-                {[1, 2, 3].map(c => (
+              <span className="text-xs font-black uppercase text-slate-700 tracking-wider block mb-2">3. Número de manos</span>
+              <div className="flex gap-2" role="group" aria-label="Número de manos">
+                {[1, 2, 3, 4, 5].map(c => (
                   <button
                     key={c}
                     type="button"
                     onClick={() => setCoats(c)}
+                    aria-pressed={coats === c}
                     className={`flex-1 py-2.5 rounded-xl font-black text-xs transition-all cursor-pointer ${
-                      coats === c 
-                        ? 'bg-[#0B1E48] text-white shadow-xs' 
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      coats === c ? 'bg-[#0B1E48] text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                     }`}
                   >
-                    {c} {c === 1 ? 'Mano' : 'Manos'}
+                    {c}
                   </button>
                 ))}
               </div>
+              <p className="text-[11px] text-slate-500 mt-1">Recomendado para este producto: {coverageFor(currentProduct).coats} manos</p>
             </div>
           </div>
 
-          {/* 3. Walls list */}
+          {/* 3. Muros */}
           <div className="pt-2 border-t border-slate-100 space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-black uppercase text-slate-700 tracking-wider">
-                4. Dimensiones de Muros y Descuentos:
-              </label>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-black uppercase text-slate-700 tracking-wider">4. Muros, puertas y ventanas</span>
               <button
                 type="button"
                 onClick={handleAddWall}
-                className="text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1 cursor-pointer"
+                disabled={walls.length >= MAX_WALLS}
+                className="text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1 cursor-pointer disabled:opacity-40 shrink-0"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Añadir Muro</span>
+                <span>Añadir muro</span>
               </button>
             </div>
 
             <div className="space-y-2.5">
-              {walls.map((wall, idx) => (
-                <div key={wall.id} className="p-3 bg-slate-50 rounded-2xl border border-slate-200 grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
-                  <div className="sm:col-span-3">
+              {walls.map(wall => (
+                <div key={wall.id} className={`p-3 bg-slate-50 rounded-2xl border ${wallErrors[wall.id] ? 'border-red-300' : 'border-slate-200'}`}>
+                  <div className="grid grid-cols-2 sm:grid-cols-12 gap-3 items-center">
                     <input
                       type="text"
                       value={wall.name}
-                      onChange={(e) => handleUpdateWall(wall.id, 'name', e.target.value)}
-                      className="w-full text-xs font-bold text-slate-800 bg-white border border-slate-300 rounded-lg px-2.5 py-1.5"
+                      maxLength={30}
+                      aria-label="Nombre del muro"
+                      onChange={(e) => updateWall(wall.id, { name: e.target.value.replace(/[<>]/g, '').slice(0, 30) })}
+                      className="col-span-2 sm:col-span-3 w-full text-xs font-bold text-slate-800 bg-white border border-slate-300 rounded-lg px-2.5 py-1.5"
                     />
+                    {(['width', 'height'] as const).map(field => (
+                      <label key={field} className="sm:col-span-2 flex items-center gap-1.5">
+                        <span className="text-[11px] text-slate-500 font-bold">{field === 'width' ? 'Ancho' : 'Alto'}</span>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={wall[field]}
+                          onChange={(e) => updateWall(wall.id, { [field]: sanitizeDecimal(e.target.value) })}
+                          className="w-16 text-xs font-bold text-slate-900 bg-white border border-slate-300 rounded-lg px-2 py-1 text-center"
+                        />
+                        <span className="text-[11px] text-slate-400">m</span>
+                      </label>
+                    ))}
+                    <div className="col-span-2 sm:col-span-4 flex items-center gap-3 flex-wrap">
+                      <Stepper label="Puertas" value={wall.doors} onChange={(n) => updateWall(wall.id, { doors: n })} />
+                      <Stepper label="Ventanas" value={wall.windows} onChange={(n) => updateWall(wall.id, { windows: n })} />
+                    </div>
+                    <div className="col-span-2 sm:col-span-1 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveWall(wall.id)}
+                        disabled={walls.length <= 1}
+                        aria-label={`Eliminar ${wall.name}`}
+                        className="text-slate-400 hover:text-red-500 disabled:opacity-30 cursor-pointer p-1"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
-
-                  <div className="sm:col-span-3 flex items-center gap-2">
-                    <span className="text-[11px] text-slate-500 font-bold">Ancho:</span>
-                    <input
-                      type="number"
-                      step="0.1"
-                      min="0.5"
-                      value={wall.width}
-                      onChange={(e) => handleUpdateWall(wall.id, 'width', parseFloat(e.target.value) || 0)}
-                      className="w-16 text-xs font-bold text-slate-900 bg-white border border-slate-300 rounded-lg px-2 py-1 text-center"
-                    />
-                    <span className="text-[11px] text-slate-400">m</span>
-                  </div>
-
-                  <div className="sm:col-span-3 flex items-center gap-2">
-                    <span className="text-[11px] text-slate-500 font-bold">Alto:</span>
-                    <input
-                      type="number"
-                      step="0.1"
-                      min="0.5"
-                      value={wall.height}
-                      onChange={(e) => handleUpdateWall(wall.id, 'height', parseFloat(e.target.value) || 0)}
-                      className="w-16 text-xs font-bold text-slate-900 bg-white border border-slate-300 rounded-lg px-2 py-1 text-center"
-                    />
-                    <span className="text-[11px] text-slate-400">m</span>
-                  </div>
-
-                  <div className="sm:col-span-2 flex items-center gap-2 text-xs">
-                    <span title="Puertas / Ventanas" className="text-slate-500 text-[11px]">
-                      D/V: {wall.doors}p / {wall.windows}v
-                    </span>
-                  </div>
-
-                  <div className="sm:col-span-1 flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveWall(wall.id)}
-                      disabled={walls.length <= 1}
-                      className="text-slate-400 hover:text-red-500 disabled:opacity-30 cursor-pointer"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+                  {wallErrors[wall.id] && <p className="text-[11px] font-semibold text-red-600 mt-2">{wallErrors[wall.id]}</p>}
                 </div>
               ))}
             </div>
+            <p className="text-[11px] text-slate-400">Se descuentan {fmt(DOOR_M2)} m² por puerta y {fmt(WINDOW_M2)} m² por ventana.</p>
           </div>
 
-          {/* Results Summary Box */}
-          <div className="p-5 bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 text-white rounded-3xl border border-slate-800 space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <span className="text-xs text-blue-300 font-bold uppercase tracking-wider block">Área Neta a Pintar:</span>
-                <span className="text-3xl font-black text-white">{netArea} m²</span>
-                <span className="text-[11px] text-slate-400 block mt-0.5">
-                  (Bruto: {grossArea.toFixed(1)} m² - Descuentos: {deductionsArea.toFixed(1)} m²)
-                </span>
-              </div>
-
-              <div className="text-right">
-                <span className="text-xs text-emerald-400 font-black uppercase tracking-wider block">Pintura Necesaria:</span>
-                <div className="text-2xl sm:text-3xl font-black text-emerald-400">
-                  {bucketsCount > 0 ? `${bucketsCount} Cuñete(s) + ` : ''}{remainingGallons > 0 ? `${remainingGallons} Galón(es)` : bucketsCount === 0 ? '1 Galón' : ''}
+          {/* Resultado */}
+          <div className="p-5 bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 text-white rounded-3xl border border-slate-800 space-y-4" aria-live="polite">
+            {isValid ? (
+              <>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <span className="text-xs text-blue-300 font-bold uppercase tracking-wider block">Área neta a pintar</span>
+                    <span className="text-3xl font-black text-white">{fmt(netArea)} m²</span>
+                    <span className="text-[11px] text-slate-400 block mt-0.5">
+                      (Muros: {fmt(grossArea)} m² − puertas/ventanas: {fmt(deductionsArea)} m²)
+                    </span>
+                  </div>
+                  <div className="sm:text-right">
+                    <span className="text-xs text-emerald-400 font-black uppercase tracking-wider block">Pintura necesaria</span>
+                    <div className="text-2xl sm:text-3xl font-black text-emerald-400">{plan.label}</div>
+                    <span className="text-[11px] text-slate-300 block">
+                      ≈ {fmt(exactGallons)} galones de {currentProduct.name} (incluye 10 % de desperdicio)
+                    </span>
+                    <span className="text-[11px] text-slate-300 block">
+                      Valor estimado: {formatCOP(planCost)} COP ({planCount} × {planSize.name})
+                    </span>
+                  </div>
                 </div>
-                <span className="text-[11px] text-slate-300">
-                  Aprox. {exactGallons.toFixed(1)} galones calculados para {currentProduct.name}
-                </span>
-              </div>
-            </div>
 
-            <div className="pt-3 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
-              <span className="text-xs text-slate-300 font-medium">
-                ¿Deseas ver este producto y elegir tu color favorito?
-              </span>
-
-              <button
-                type="button"
-                onClick={() => {
-                  onClose();
-                  if (onSelectProduct) onSelectProduct(currentProduct);
-                }}
-                className="w-full sm:w-auto py-2.5 px-5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <span>Ver {currentProduct.name} en Tienda</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
+                <div className="pt-3 border-t border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2">
+                  {onSelectProduct && (
+                    <button
+                      type="button"
+                      onClick={() => { onClose(); onSelectProduct(currentProduct); }}
+                      className="py-2.5 px-5 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl border border-white/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <span>Elegir color en la ficha</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  )}
+                  {planCount > MAX_ITEM_QTY && (
+                    <p className="text-[11px] text-amber-300 sm:mr-auto">Para más de {MAX_ITEM_QTY} unidades cotiza tu obra en la plataforma de proyectos.</p>
+                  )}
+                  {onAddToCart && planSize.inStock && planCount <= MAX_ITEM_QTY && (
+                    <button
+                      type="button"
+                      onClick={() => onAddToCart(currentProduct, planSize, defaultColor, planCount)}
+                      className="py-2.5 px-5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <ShoppingCart className="w-4 h-4" />
+                      <span>Añadir {planCount} × {planSize.name}{defaultColor ? ` (${defaultColor.name})` : ''}</span>
+                    </button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-amber-300 font-semibold">Revisa las medidas de los muros marcados en rojo para ver el resultado.</p>
+            )}
           </div>
-
         </div>
-
       </div>
     </div>
   );
