@@ -1,3 +1,4 @@
+import { plantillaCorreo, adjuntosCorreo, parrafo, caja, esc, MARCA, type TonoEtiqueta } from './emailTemplate';
 import { STORE_PRODUCTS } from './src/data/storeProducts';
 import express from 'express';
 import path from 'path';
@@ -184,84 +185,75 @@ async function sendOrderStatusEmail(email: string, orden: any, estado: string) {
     entregado: 'Entregado',
     cancelado: 'Cancelado'
   };
+  const tonoEstado: Record<string, TonoEtiqueta> = {
+    confirmado: 'exito', entregado: 'exito', listo_recoger: 'marca', en_camino: 'info', en_alistamiento: 'info', cancelado: 'alerta'
+  };
 
   const orderCode = orden.ordenId.slice(0, 8).toUpperCase();
   const isPickup = orden.metodoEntrega === 'recoger_tienda';
   // El QR se envía al confirmar la compra y cuando el pedido queda listo para retirar
   const showQr = isPickup && (estado === 'confirmado' || estado === 'listo_recoger');
   const pickupCode = String(orden.qrToken || '').slice(0, 8).toUpperCase();
+  const dinero = (n: any) => `$${Math.round(Number(n) || 0).toLocaleString('es-CO')}`;
 
-  const attachments: any[] = [];
+  const extra: any[] = [];
   let qrBlock = '';
-
   if (showQr && orden.qrToken) {
-    const qrBuffer = await QRCode.toBuffer(String(orden.qrToken), { width: 240, margin: 1, errorCorrectionLevel: 'M' });
-    attachments.push({ filename: 'qr-retiro.png', content: qrBuffer, cid: 'qr-retiro@colorlink' });
-
+    const qrBuffer = await QRCode.toBuffer(String(orden.qrToken), { width: 240, margin: 1, errorCorrectionLevel: 'M', color: { dark: MARCA.header, light: '#FFFFFF' } });
+    extra.push({ filename: 'qr-retiro.png', content: qrBuffer, cid: 'qr-retiro@colorlink' });
     qrBlock = `
-      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:20px; text-align:center; margin:20px 0;">
-        <p style="margin:0 0 12px; color:#0A1A36; font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:0.5px;">
-          Tu código de retiro
-        </p>
-        <img src="cid:qr-retiro@colorlink" width="180" height="180" alt="Código QR de retiro" style="display:block; margin:0 auto; border:6px solid #ffffff; border-radius:8px;" />
-        <p style="margin:14px 0 2px; font-family: 'Courier New', monospace; font-size:24px; font-weight:800; letter-spacing:4px; color:#0A1A36;">
-          ${pickupCode}
-        </p>
-        <p style="margin:0; color:#64748b; font-size:11px;">Si el QR no se puede escanear, dicta este código en la sucursal.</p>
-        <p style="margin:16px 0 0; color:#334155; font-size:13px;">
-          <strong>Sucursal de retiro:</strong><br/>${escapeHtml(orden.direccionEntrega || 'Sucursal asignada')}
-        </p>
+      <div style="background:${MARCA.amarilloSuave};border:1px solid ${MARCA.amarilloBorde};border-radius:14px;padding:22px;text-align:center;margin:20px 0;">
+        <p style="margin:0 0 12px;color:${MARCA.navy};font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;">Tu código de retiro</p>
+        <img src="cid:qr-retiro@colorlink" width="180" height="180" alt="Código QR de retiro" style="display:block;margin:0 auto;border:8px solid #FFFFFF;border-radius:10px;" />
+        <p style="margin:14px 0 2px;font-family:'Courier New',monospace;font-size:26px;font-weight:800;letter-spacing:5px;color:${MARCA.navy};">${pickupCode}</p>
+        <p style="margin:0;color:${MARCA.textoSuave};font-size:11px;">Si el QR no se puede escanear, dicta este código en la sucursal.</p>
+        <p style="margin:16px 0 0;color:${MARCA.texto};font-size:13px;"><strong>Sucursal de retiro:</strong><br/>${esc(orden.direccionEntrega || 'Sucursal asignada')}</p>
       </div>`;
   }
 
-  const itemsRows = (orden.items || []).map((it: any) => `
+  const filas = (orden.items || []).map((it: any) => `
     <tr>
-      <td style="padding:8px 0; color:#334155; font-size:13px; border-bottom:1px solid #f1f5f9;">${escapeHtml(it.nombreProducto)} × ${it.cantidad}</td>
-      <td style="padding:8px 0; color:#0A1A36; font-size:13px; font-weight:700; text-align:right; border-bottom:1px solid #f1f5f9;">$${Number(it.subtotal).toLocaleString('es-CO')}</td>
+      <td style="padding:10px 0;color:${MARCA.texto};font-size:14px;border-bottom:1px solid ${MARCA.borde};">
+        ${esc(it.nombreProducto)}${it.presentacion ? ` <span style="color:${MARCA.textoSuave};">· ${esc(it.presentacion)}</span>` : ''}${it.color ? ` <span style="color:${MARCA.textoSuave};">· ${esc(it.color)}</span>` : ''}
+        <span style="color:${MARCA.textoSuave};"> × ${it.cantidad}</span>
+      </td>
+      <td style="padding:10px 0;color:${MARCA.navy};font-size:14px;font-weight:700;text-align:right;border-bottom:1px solid ${MARCA.borde};white-space:nowrap;">${dinero(it.subtotal)}</td>
     </tr>`).join('');
+  const envio = Number(orden.costoEnvio) || 0;
+  const tabla = filas ? `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:12px;border-collapse:collapse;">
+      ${filas}
+      ${envio ? `<tr><td style="padding:10px 0;color:${MARCA.textoSuave};font-size:13px;">Envío</td><td style="padding:10px 0;color:${MARCA.texto};font-size:13px;text-align:right;">${dinero(envio)}</td></tr>` : ''}
+      <tr>
+        <td style="padding:14px 0 0;color:${MARCA.navy};font-size:15px;font-weight:800;">Total</td>
+        <td style="padding:14px 0 0;color:${MARCA.navy};font-size:15px;font-weight:800;text-align:right;white-space:nowrap;">${dinero(orden.total)} COP</td>
+      </tr>
+    </table>` : '';
 
   const intro =
     showQr && estado === 'confirmado'
       ? 'Tu pago fue confirmado. Presenta este código en la sucursal junto con tu documento de identidad para retirar tu pedido.'
       : showQr && estado === 'listo_recoger'
         ? '¡Tu pedido ya está listo! Acércate a la sucursal con este código y tu documento de identidad.'
-        : `Tu pedido por un total de <strong style="color:#0A1A36;">$${Number(orden.total).toLocaleString('es-CO')} COP</strong> cambió de estado.`;
+        : estado === 'en_camino' ? 'Tu pedido salió hacia la dirección de entrega.'
+        : estado === 'entregado' ? (isPickup ? 'Retiraste tu pedido en la tienda. ¡Gracias por comprar en ColorLink! Cuéntanos qué te pareció el producto.' : 'Tu pedido fue entregado. ¡Gracias por comprar en ColorLink! Cuéntanos qué te pareció el producto.')
+        : estado === 'cancelado' ? 'Tu pedido fue cancelado. Si no lo solicitaste, escríbenos para ayudarte.'
+        : estado === 'en_alistamiento' ? 'Estamos preparando tu pedido en bodega.'
+        : `Tu pedido por <strong style="color:${MARCA.navy};">${dinero(orden.total)} COP</strong> cambió de estado.`;
 
   await transporter.sendMail({
     from: process.env.SMTP_FROM || '"ColorLink" <no-reply@colorlink.com>',
     to: email,
     subject: `Tu pedido #${orderCode} - ${estadoLabels[estado] || estado}`,
-    attachments,
-    html: `
-    <div style="font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #f1f5f9;">
-      <div style="background: #0A1A36; padding: 24px 32px; border-radius: 12px 12px 0 0;">
-        <img src="${APP_URL}/brand/logo-on-dark.png" alt="ColorLink" height="34" style="display:block;height:34px;width:auto;border:0;" />
-      </div>
-      <div style="background: #ffffff; padding: 32px; border-radius: 0 0 12px 12px;">
-        <span style="display:inline-block; background:#d1fae5; color:#065f46; font-size:11px; font-weight:800; padding:4px 10px; border-radius:999px; text-transform:uppercase; letter-spacing:0.5px;">
-          ${estadoLabels[estado] || estado}
-        </span>
-        <h2 style="color: #0A1A36; margin: 14px 0 6px; font-size: 20px;">Pedido #${orderCode}</h2>
-        <p style="color: #475569; font-size: 14px; line-height: 1.6; margin: 0;">${intro}</p>
-
-        ${qrBlock}
-
-        ${itemsRows ? `
-        <table style="width:100%; border-collapse:collapse; margin-top:8px;">${itemsRows}
-          <tr>
-            <td style="padding:12px 0 0; color:#0A1A36; font-size:14px; font-weight:800;">Total</td>
-            <td style="padding:12px 0 0; color:#0A1A36; font-size:14px; font-weight:800; text-align:right;">$${Number(orden.total).toLocaleString('es-CO')} COP</td>
-          </tr>
-        </table>` : ''}
-
-        <a href="${process.env.APP_URL || ''}" style="display:inline-block; background:#F2C417; color:#14216B; font-weight:800; font-size:13px; padding:12px 24px; border-radius:10px; text-decoration:none; margin-top:24px;">
-          Ver mi pedido
-        </a>
-        <p style="color: #94a3b8; font-size: 11px; margin-top: 28px; border-top: 1px solid #e2e8f0; padding-top: 16px;">
-          ColorLink Recubrimientos S.A.S. · Medellín, Colombia
-        </p>
-      </div>
-    </div>`
+    attachments: adjuntosCorreo(extra),
+    html: plantillaCorreo({
+      resumen: `${estadoLabels[estado] || estado} · Pedido #${orderCode}`,
+      etiqueta: { texto: estadoLabels[estado] || estado, tono: tonoEstado[estado] || 'marca' },
+      titulo: `Pedido #${orderCode}`,
+      cuerpo: parrafo(intro) + qrBlock + tabla,
+      boton: { texto: estado === 'entregado' ? 'Calificar mi compra' : 'Ver mi pedido', url: APP_URL },
+      destinatario: email
+    })
   });
 }
 
@@ -327,24 +319,16 @@ async function sendPasswordResetEmail(email: string, firstName: string, link: st
     from: process.env.SMTP_FROM || '"ColorLink" <no-reply@colorlink.com>',
     to: email,
     subject: 'Restablece tu contraseña de ColorLink',
-    html: `
-    <div style="font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #f1f5f9;">
-      <div style="background: #0A1A36; padding: 24px 32px; border-radius: 12px 12px 0 0;">
-        <img src="${APP_URL}/brand/logo-on-dark.png" alt="ColorLink" height="34" style="display:block;height:34px;width:auto;border:0;" />
-      </div>
-      <div style="background: #ffffff; padding: 32px; border-radius: 0 0 12px 12px;">
-        <h2 style="color: #0A1A36; margin: 0 0 10px;">Hola, ${firstName}</h2>
-        <p style="color: #475569; font-size: 14px; line-height: 1.6;">
-          Recibimos una solicitud para restablecer la contraseña de tu cuenta. El enlace es válido por 30 minutos y solo se puede usar una vez.
-        </p>
-        <a href="${link}" style="display:inline-block; background:#F2C417; color:#14216B; font-weight:800; font-size:13px; padding:12px 24px; border-radius:10px; text-decoration:none; margin-top:16px;">
-          Crear nueva contraseña
-        </a>
-        <p style="color: #94a3b8; font-size: 11px; margin-top: 28px; border-top: 1px solid #e2e8f0; padding-top: 16px;">
-          Si no fuiste tú, ignora este correo: tu contraseña actual sigue funcionando.
-        </p>
-      </div>
-    </div>`
+    attachments: adjuntosCorreo(),
+    html: plantillaCorreo({
+      resumen: 'Crea una nueva contraseña (el enlace vence en 30 minutos).',
+      etiqueta: { texto: 'Seguridad de tu cuenta', tono: 'info' },
+      titulo: `Hola, ${firstName}`,
+      cuerpo: parrafo('Recibimos una solicitud para restablecer la contraseña de tu cuenta. El enlace es válido por <strong>30 minutos</strong> y solo se puede usar una vez.'),
+      boton: { texto: 'Crear nueva contraseña', url: link },
+      nota: 'Si no fuiste tú, ignora este correo: tu contraseña actual sigue funcionando.',
+      destinatario: email
+    })
   });
 }
 
@@ -357,21 +341,22 @@ async function sendWelcomeEmail(email: string, firstName: string) {
     from: process.env.SMTP_FROM || '"ColorLink" <no-reply@colorlink.com>',
     to: email,
     subject: '¡Bienvenido a ColorLink! 🎨',
-    html: `
-    <div style="font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #f1f5f9;">
-      <div style="background: #0A1A36; padding: 24px 32px; border-radius: 12px 12px 0 0;">
-        <img src="${APP_URL}/brand/logo-on-dark.png" alt="ColorLink" height="34" style="display:block;height:34px;width:auto;border:0;" />
-      </div>
-      <div style="background: #ffffff; padding: 32px; border-radius: 0 0 12px 12px;">
-        <h2 style="color: #0A1A36; margin: 0 0 10px;">¡Hola, ${firstName}! 👋</h2>
-        <p style="color: #475569; font-size: 14px; line-height: 1.6;">
-          Tu cuenta en ColorLink ya está lista. Ya puedes cotizar proyectos con diagnóstico de IA o comprar directo en nuestra tienda de pinturas y recubrimientos.
-        </p>
-        <a href="${process.env.APP_URL || ''}" style="display:inline-block; background:#F2C417; color:#14216B; font-weight:800; font-size:13px; padding:12px 24px; border-radius:10px; text-decoration:none; margin-top:16px;">
-          Ingresar y Explorar
-        </a>
-      </div>
-    </div>`
+    attachments: adjuntosCorreo(),
+    html: plantillaCorreo({
+      resumen: 'Tu cuenta ya está lista.',
+      etiqueta: { texto: 'Cuenta creada', tono: 'exito' },
+      titulo: `¡Hola, ${firstName}! 👋`,
+      cuerpo: parrafo('Tu cuenta en ColorLink ya está lista. Ahora puedes:') + `
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 0;">
+          ${[
+            ['🛒', 'Comprar pinturas, recubrimientos y herramientas con entrega o retiro en tienda.'],
+            ['🏗️', 'Crear proyectos de obra y recibir cotización de un asesor.'],
+            ['🎨', 'Ver cómo luce cada color en paredes, fachadas, pisos y carros.']
+          ].map(([icono, texto]) => `<tr><td style="padding:6px 10px 6px 0;font-size:18px;vertical-align:top;">${icono}</td><td style="padding:6px 0;color:${MARCA.texto};font-size:14px;line-height:1.5;">${texto}</td></tr>`).join('')}
+        </table>`,
+      boton: { texto: 'Ingresar a ColorLink', url: APP_URL },
+      destinatario: email
+    })
   });
 }
 
@@ -383,12 +368,19 @@ async function sendOtpEmail(email: string, code: string) {
   await transporter.sendMail({
     from: process.env.SMTP_FROM || '"ColorLink" <no-reply@colorlink.com>',
     to: email,
-    subject: 'Tu código de acceso a ColorLink',
-    html: `<div style="font-family:sans-serif;padding:20px;">
-      <h2>Tu código de acceso</h2>
-      <p style="font-size:28px;font-weight:bold;letter-spacing:4px;">${code}</p>
-      <p style="color:#666;font-size:13px;">Este código expira en 10 minutos. Si no solicitaste esto, ignora este correo.</p>
-    </div>`
+    subject: `${code} es tu código de acceso a ColorLink`,
+    attachments: adjuntosCorreo(),
+    html: plantillaCorreo({
+      resumen: `Tu código es ${code}. Vence en 10 minutos.`,
+      etiqueta: { texto: 'Código de verificación', tono: 'info' },
+      titulo: 'Tu código de acceso',
+      cuerpo: parrafo('Escribe este código en ColorLink para continuar:') + `
+        <div style="background:${MARCA.amarilloSuave};border:1px solid ${MARCA.amarilloBorde};border-radius:14px;padding:20px;text-align:center;margin:16px 0;">
+          <span style="font-family:'Courier New',monospace;font-size:34px;font-weight:800;letter-spacing:10px;color:${MARCA.navy};">${esc(code)}</span>
+        </div>`,
+      nota: 'Este código vence en 10 minutos. Si no lo solicitaste, ignora este correo.',
+      destinatario: email
+    })
   });
 }
 
@@ -1107,28 +1099,18 @@ async function startServer() {
     await transporter.sendMail({
       from: process.env.SMTP_FROM || '"ColorLink" <no-reply@colorlink.com>',
       to: email,
-      subject: `Necesitamos una nueva foto para tu proyecto "${nombreProyecto}"`,
-      html: `
-    <div style="font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #f1f5f9;">
-      <div style="background: #0A1A36; padding: 24px 32px; border-radius: 12px 12px 0 0;">
-        <img src="${APP_URL}/brand/logo-on-dark.png" alt="ColorLink" height="34" style="display:block;height:34px;width:auto;border:0;" />
-      </div>
-      <div style="background: #ffffff; padding: 32px; border-radius: 0 0 12px 12px;">
-        <span style="display:inline-block; background:#fee2e2; color:#991b1b; font-size:11px; font-weight:800; padding:4px 10px; border-radius:999px; text-transform:uppercase;">
-          Acción requerida
-        </span>
-        <h2 style="color: #0A1A36; margin: 14px 0 6px;">${escapeHtml(nombreProyecto)}</h2>
-        <p style="color: #475569; font-size: 14px; line-height: 1.6;">
-          Revisamos tu proyecto (código <strong>#${proyectoId.slice(0, 8).toUpperCase()}</strong>) y necesitamos que cambies la imagen para poder continuar con la cotización.
-        </p>
-        <div style="background:#fef2f2; border-left:4px solid #ef4444; padding:12px 16px; border-radius:6px; margin:16px 0;">
-          <p style="margin:0; color:#7f1d1d; font-size:13px;"><strong>Motivo:</strong> ${escapeHtml(motivo)}</p>
-        </div>
-        <a href="${process.env.APP_URL || ''}" style="display:inline-block; background:#F2C417; color:#14216B; font-weight:800; font-size:13px; padding:12px 24px; border-radius:10px; text-decoration:none; margin-top:8px;">
-          Ingresar y subir nueva foto
-        </a>
-      </div>
-    </div>`
+      subject: `Necesitamos una nueva foto para tu proyecto "${String(nombreProyecto).replace(/[\r\n]/g, ' ')}"`,
+      attachments: adjuntosCorreo(),
+      html: plantillaCorreo({
+        resumen: 'Sube una nueva foto para continuar con la cotización.',
+        etiqueta: { texto: 'Acción requerida', tono: 'alerta' },
+        antetitulo: `Proyecto #${proyectoId.slice(0, 8).toUpperCase()}`,
+        titulo: nombreProyecto,
+        cuerpo: parrafo('Revisamos tu proyecto y necesitamos que cambies la imagen para poder continuar con la cotización.')
+          + caja(`<strong>Motivo:</strong> ${esc(motivo)}`, 'alerta'),
+        boton: { texto: 'Subir nueva foto', url: APP_URL },
+        destinatario: email
+      })
     });
   }
 
@@ -1140,19 +1122,17 @@ async function startServer() {
       from: process.env.SMTP_FROM || '"ColorLink" <no-reply@colorlink.com>',
       to: email,
       subject: d.paraCliente ? `Tu asesor te escribió sobre "${proyecto}"` : `Nuevo mensaje del cliente en "${proyecto}"`,
-      html: `
-    <div style="font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #f1f5f9;">
-      <div style="background: #0A1A36; padding: 24px 32px; border-radius: 12px 12px 0 0;">
-        <img src="${APP_URL}/brand/logo-on-dark.png" alt="ColorLink" height="34" style="display:block;height:34px;width:auto;border:0;" />
-      </div>
-      <div style="background: #ffffff; padding: 32px; border-radius: 0 0 12px 12px;">
-        <p style="color:#64748b; font-size:12px; font-weight:700; text-transform:uppercase; margin:0 0 6px;">${escapeHtml(proyecto)}</p>
-        <h2 style="color: #0A1A36; margin: 0 0 14px; font-size:18px;">${escapeHtml(d.autor)} te escribió</h2>
-        <div style="background:#f8fafc; border-left:4px solid #F4C20D; padding:12px 14px; color:#334155; font-size:14px; line-height:1.6; white-space:pre-wrap;">${escapeHtml(d.texto)}</div>
-        ${d.enlace ? `<p style="margin:22px 0 0;"><a href="${escapeHtml(d.enlace)}" style="background:#14216B; color:#fff; text-decoration:none; font-weight:700; font-size:13px; padding:10px 18px; border-radius:10px; display:inline-block;">Responder</a></p>` : ''}
-        <p style="color:#94a3b8; font-size:12px; margin-top:22px;">Responde desde ${d.paraCliente ? 'tu proyecto en ColorLink' : 'el ERP de ColorLink'}; este correo no recibe respuestas.</p>
-      </div>
-    </div>`
+      attachments: adjuntosCorreo(),
+      html: plantillaCorreo({
+        resumen: `${d.autor}: ${d.texto.slice(0, 80)}`,
+        etiqueta: { texto: 'Mensaje nuevo', tono: 'info' },
+        antetitulo: proyecto,
+        titulo: `${d.autor} te escribió`,
+        cuerpo: caja(`<span style="white-space:pre-wrap;">${esc(d.texto)}</span>`),
+        boton: d.enlace ? { texto: 'Responder', url: d.enlace, variante: 'secundario' } : undefined,
+        nota: `Responde desde ${d.paraCliente ? 'tu proyecto en ColorLink' : 'el ERP de ColorLink'}; este correo no recibe respuestas.`,
+        destinatario: email
+      })
     });
   }
 
@@ -1162,21 +1142,16 @@ async function startServer() {
       from: process.env.SMTP_FROM || '"ColorLink" <no-reply@colorlink.com>',
       to: email,
       subject: `Tu proyecto "${String(nombreProyecto).replace(/[\r\n]/g, ' ')}" fue recibido`,
-      html: `
-    <div style="font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; background: #f1f5f9;">
-      <div style="background: #0A1A36; padding: 24px 32px; border-radius: 12px 12px 0 0;">
-        <img src="${APP_URL}/brand/logo-on-dark.png" alt="ColorLink" height="34" style="display:block;height:34px;width:auto;border:0;" />
-      </div>
-      <div style="background: #ffffff; padding: 32px; border-radius: 0 0 12px 12px;">
-        <span style="display:inline-block; background:#fef3c7; color:#92400e; font-size:11px; font-weight:800; padding:4px 10px; border-radius:999px; text-transform:uppercase;">
-          En revisión
-        </span>
-        <h2 style="color: #0A1A36; margin: 14px 0 6px;">${escapeHtml(nombreProyecto)}</h2>
-        <p style="color: #475569; font-size: 14px; line-height: 1.6;">
-          Recibimos tu proyecto (código <strong>#${proyectoId.slice(0, 8).toUpperCase()}</strong>) y ya está en revisión por nuestro equipo técnico. Te avisaremos por aquí cuando cambie de estado.
-        </p>
-      </div>
-    </div>`
+      attachments: adjuntosCorreo(),
+      html: plantillaCorreo({
+        resumen: 'Tu proyecto ya está en revisión.',
+        etiqueta: { texto: 'En revisión', tono: 'marca' },
+        antetitulo: `Proyecto #${proyectoId.slice(0, 8).toUpperCase()}`,
+        titulo: nombreProyecto,
+        cuerpo: parrafo('Recibimos tu proyecto y ya está en revisión por nuestro equipo técnico. Un asesor te contactará y te avisaremos por correo y en la campana de notificaciones cada vez que cambie de estado.'),
+        boton: { texto: 'Ver mi proyecto', url: APP_URL },
+        destinatario: email
+      })
     });
   }
 
