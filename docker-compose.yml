@@ -7,8 +7,12 @@ services:
       TS_AUTHKEY: ${TS_AUTHKEY}
       TS_STATE_DIR: /var/lib/tailscale
       TS_USERSPACE: "false"
+      # Publica la tienda en internet con HTTPS (Tailscale Funnel): https://colorlink-web.<tu-tailnet>.ts.net
+      # Para dejarla solo dentro de tu tailnet, quita la línea AllowFunnel de tailscale/web-serve.json
+      TS_SERVE_CONFIG: /config/web-serve.json
     volumes:
       - ts_state:/var/lib/tailscale
+      - ./tailscale/web-serve.json:/config/web-serve.json:ro
       - /dev/net/tun:/dev/net/tun
     cap_add:
       - NET_ADMIN
@@ -34,7 +38,7 @@ services:
     restart: always
 
   # ERP interno: su propio nodo de Tailscale (https://colorlink-erp.<tailnet>.ts.net), independiente de la tienda.
-  # Solo accesible desde dispositivos de tu tailnet. nginx sirve el ERP en :8080 y reenvía /api al backend por la red de Docker.
+  # Publicado con Tailscale Funnel (ver tailscale/erp-serve.json). nginx sirve el ERP en :8080 y reenvía /api al backend por la red de Docker.
   tailscale-erp:
     image: tailscale/tailscale:latest
     container_name: colorlink-erp-tailscale
