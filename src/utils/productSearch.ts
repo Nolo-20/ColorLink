@@ -11,7 +11,7 @@ const SINONIMOS: Record<string, string[]> = {
   vinilo: ['viniltex'],
   fachada: ['koraza', 'exterior'],
   exterior: ['koraza', 'fachada'],
-  impermeabilizante: ['koraza', 'fill', 'impermeable'],
+  impermeabilizante: ['koraza', 'impermeable'],
   piso: ['epoxico', 'pisos'],
   pisos: ['epoxico'],
   carro: ['poliuretano', 'automotriz'],

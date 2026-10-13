@@ -439,49 +439,6 @@ export const STORE_PRODUCTS: StoreProduct[] = [
     defaultCoats: 2
   },
 
-  // 6. IMPERMEABILIZANTE PINTUCO FILL 7 AÑOS (Construcción)
-  {
-    id: 'pintucofill-7-anos',
-    sku: 'KRZ-FILL-7A',
-    name: 'Pintuco Fill Fibratado 7 Años',
-    brand: 'ColorLink Recubrimientos',
-    subtitle: 'Impermeabilizante elastomérico con fibras incorporadas que no requiere tela de refuerzo',
-    category: 'construccion',
-    categoryLabel: 'Impermeabilizantes',
-    rating: 0, // la calificación real viene de /api/products/:key/reviews
-    reviewsCount: 0,
-    badge: 'Con Fibras Activas',
-    description: 'Impermeabilizante acrílico líquido formulado con microfibras de polipropileno entrelazadas que forman una membrana elástica continua sobre cubiertas, terrazas, losas de concreto y tejas de asbesto o zinc. Elimina la necesidad de tender telas de poliéster en superficies transitables.',
-    features: [
-      'Garantía de estanqueidad de 7 años sin filtraciones',
-      'Puentea grietas activas hasta de 2 mm por tensión térmica',
-      'Fibras de polipropileno entrelazadas para máxima resistencia mecánica',
-      'Reduce hasta 6°C la temperatura interna del inmueble en color blanco'
-    ],
-    specs: {
-      rendimiento: '1.2 a 1.5 litros por m² en sistema completo de 3 manos cruzadas',
-      secado: 'Al tacto 2 horas | Entre manos 4 horas | Lluvia segura 12 horas',
-      base: 'Resinas Estireno Acrílicas Modificadas con Microfibras',
-      acabado: 'Membrana Caucho Satinada',
-      solvente: 'Agua limpia (solo 10% en mano de imprimación)'
-    },
-    colors: [
-      { id: 'blanco-termico', name: 'Blanco Termo-Reflectivo', hex: '#FFFFFF', code: 'PF-01', inStock: true },
-      { id: 'rojo-teja', name: 'Rojo Teja Colonial', hex: '#991B1B', code: 'PF-02', inStock: true },
-      { id: 'gris-terraza', name: 'Gris Placa', hex: '#64748B', code: 'PF-03', inStock: true }
-    ],
-    sizes: [
-      { id: 'cuarto', name: '1/4 Galón', price: 46000, inStock: true, capacityLiters: 0.95 },
-      { id: 'galon', name: '1 Galón', price: 148000, inStock: true, capacityLiters: 3.785 },
-      { id: 'cunete', name: '5 Galones (Cuñete)', price: 620000, inStock: true, capacityLiters: 18.92 }
-    ],
-    defaultColorId: 'blanco-termico',
-    defaultSizeId: 'galon',
-    image: '/products/pintucofill-galon.webp',
-    coverageM2PerGallon: 8.4,
-    defaultCoats: 3
-  },
-
   // -------------------------------------------------------------
   // HERRAMIENTAS & BROCHAS (CON FOTOS REALES VERIFICADAS Y DEDICADAS)
   // -------------------------------------------------------------

@@ -95,7 +95,6 @@ const PHOTO_LINES: Array<[RegExp, string]> = [
   [/viniltex/i, 'viniltex'],
   [/koraza/i, 'koraza'],
   [/pintulux/i, 'pintulux'],
-  [/fill/i, 'pintucofill'],
   [/ep[oó]xico/i, 'epoxico'],
   [/poliuretano/i, 'poliuretano']
 ];
@@ -103,7 +102,6 @@ const PHOTO_SIZES: Record<string, string[]> = {
   viniltex: ['cuarto', 'galon', 'medio', 'cunete'],
   koraza: ['cuarto', 'galon', 'cunete'],
   pintulux: ['cuarto', 'galon', 'cunete'],
-  pintucofill: ['cuarto', 'galon', 'cunete'],
   epoxico: ['cuarto', 'galon', 'cunete'],
   poliuretano: ['octavo', 'cuarto', 'galon', 'aerosol']
 };

@@ -71,14 +71,14 @@ const CATEGORY_DETAILS: Record<StoreCategory, CategoryInfo> = {
     bgImageUrl: sceneImage('sala')
   },
   construccion: {
-    title: 'Construcción, fachadas e impermeabilización',
+    title: 'Construcción y fachadas',
     badge: 'Protección exterior',
     icon: '🏗️',
     tagline: 'Barrera elastomérica contra lluvia, fisuras y sol',
-    description: 'Productos para fachadas expuestas, terrazas y cubiertas. Sellan microfisuras y protegen los muros exteriores de la humedad.',
+    description: 'Productos para fachadas expuestas y muros exteriores. Sellan microfisuras y protegen de la lluvia, la humedad y el sol.',
     purposes: [
       'Pinturas elastoméricas impermeables (Koraza)',
-      'Impermeabilizante fibratado para cubiertas (Pintuco Fill)',
+      'Colores para fachadas con visualizador',
       'Muros de ladrillo, revoque y concreto',
       'Resistencia UV a la intemperie'
     ],
