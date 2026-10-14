@@ -1,3 +1,4 @@
+import { CITY_NAMES } from '../data/storeProducts';
 import { BrandLogo } from './BrandLogo';
 import React, { useState, useEffect } from 'react';
 import { UserProfile } from '../types';
@@ -37,7 +38,8 @@ const cleanNit = (v: string) => {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const emailValido = (v: string) => EMAIL_RE.test(v.trim()) && v.trim().length <= 100;
-const CIUDADES = ['Medellín', 'Envigado', 'Itagüí', 'Sabaneta', 'Bello', 'La Estrella', 'Caldas', 'Copacabana', 'Girardota', 'Rionegro', 'Bogotá', 'Cali', 'Barranquilla', 'Cartagena', 'Bucaramanga', 'Pereira', 'Manizales', 'Armenia'];
+// Ciudades registradas en la base de datos (se cargan al abrir la tienda)
+const CIUDADES = CITY_NAMES;
 const SOLO_LETRAS = /^[A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+( [A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+)*$/;
 
 type AuthView = 'main_menu' | 'signup_start' | 'email_code' | 'verify_otp' | 'register_page' | 'forgot_password';

@@ -1,5 +1,5 @@
 import { ProductReviewsSection, Stars, useProductReviews } from './Reviews';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Calculator, 
   MapPin, 
@@ -132,7 +132,10 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
     }
   };
 
-  const setQty = (n: number) => setQuantity(clampQty(n));
+  // No se puede pedir más de lo que hay en bodega (el stock viene de la base de datos)
+  const maxQty = Math.max(1, Math.min(MAX_ITEM_QTY, selectedSize?.stock ?? MAX_ITEM_QTY));
+  const setQty = (n: number) => setQuantity(Math.min(maxQty, clampQty(n)));
+  useEffect(() => { setQuantity(q => Math.min(q, maxQty)); }, [maxQty]);
   const minReadyHours = Math.min(...STORE_BRANCHES.map(b => b.readyInHours));
 
   const opiniones = useProductReviews(product.id);
@@ -619,13 +622,16 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
               <button
                 type="button"
                 onClick={() => setQty(quantity + 1)}
-                disabled={quantity >= MAX_ITEM_QTY}
+                disabled={quantity >= maxQty}
                 aria-label="Sumar una unidad"
                 className="w-8 h-8 rounded-lg hover:bg-white flex items-center justify-center font-bold text-slate-700 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 +
               </button>
             </div>
+            {isCurrentSelectionInStock && selectedSize?.stock != null && selectedSize.stock <= 10 && (
+              <span className="text-[11px] font-bold text-amber-700">¡Quedan {selectedSize.stock} {selectedSize.stock === 1 ? 'unidad' : 'unidades'}!</span>
+            )}
           </div>
 
           {/* ======================================================== */}

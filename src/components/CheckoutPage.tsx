@@ -12,7 +12,7 @@ import {
   ShoppingCart
 } from 'lucide-react';
 import { CartItem, UserProfile } from '../types';
-import { STORE_BRANCHES, formatCOP } from '../data/storeProducts';
+import { STORE_BRANCHES, formatCOP, ciudadesDomicilio } from '../data/storeProducts';
 
 interface CheckoutPageProps {
   cartItems: CartItem[];
@@ -28,10 +28,8 @@ interface CheckoutPageProps {
 const FREE_SHIPPING_THRESHOLD = 150000;
 const SHIPPING_COST = 15000;
 
-const DELIVERY_CITIES = [
-  'Medellín', 'Envigado', 'Itagüí', 'Sabaneta', 'Bello', 'Copacabana', 'La Estrella',
-  'Bogotá D.C.', 'Cali', 'Yumbo', 'Barranquilla', 'Bucaramanga', 'Manizales', 'Coveñas'
-];
+// Ciudades con entrega a domicilio: vienen de la base de datos (tabla ciudad, campo domicilio)
+const deliveryCities = () => ciudadesDomicilio();
 
 const NAME_RE = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ' .-]+$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -172,7 +170,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
   const [deliveryMode, setDeliveryMode] = useState<'envio' | 'recogida'>('envio');
 
   // Datos del cliente: solo lo que viene de su perfil real (nunca datos de ejemplo)
-  const initialCity = DELIVERY_CITIES.find(c => user.city && normalize(c).startsWith(normalize(user.city).slice(0, 5))) || '';
+  const initialCity = deliveryCities().find(c => user.city && normalize(c).startsWith(normalize(user.city).slice(0, 5))) || '';
   const [form, setForm] = useState<FormState>(() => ({
     recipientName: collapse(user.name || '').slice(0, 60),
     phone: cleanPhone(user.phone || ''),
@@ -246,6 +244,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
       deliveryMethod: deliveryMode === 'recogida' ? 'sucursal' : 'domicilio',
       pickupStore: deliveryMode === 'recogida' ? `${selectedBranch.name} (${selectedBranch.address})` : undefined,
       branchName: deliveryMode === 'recogida' ? selectedBranch.name : undefined,
+      branchId: deliveryMode === 'recogida' ? selectedBranch.id : undefined,
       shippingAddress: shippingAddress.slice(0, 400),
       city: deliveryMode === 'recogida' ? selectedBranch.city : form.city,
       recipientName: name,
@@ -504,7 +503,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
                         {...a11y('city')}
                       >
                         <option value="">Selecciona tu ciudad</option>
-                        {DELIVERY_CITIES.map(c => <option key={c} value={c}>{c}</option>)}
+                        {deliveryCities().map(c => <option key={c} value={c}>{c}</option>)}
                       </select>
                       <ErrorText k="city" />
                     </div>

@@ -1,3 +1,4 @@
+import { CITY_NAMES } from '../data/storeProducts';
 import React, { useState, useEffect, useRef } from 'react';
 import { ProjectFormData, CalculationBreakdown, UserProfile, SurfaceType, SpaceEnvironment, SurfaceCondition, ColorTone } from '../types';
 import { COLOR_PALETTES } from '../data/mockData';
@@ -55,10 +56,8 @@ const TIPOS_IMAGEN = ['image/png', 'image/jpeg', 'image/webp'];
 const MAX_IMAGEN_MB = 8;
 
 /** Ciudades que se ofrecen al crear un proyecto */
-export const CIUDADES_PROYECTO = [
-  'Medellín', 'Envigado', 'Itagüí', 'Sabaneta', 'Bello', 'La Estrella', 'Caldas', 'Copacabana', 'Girardota', 'Rionegro',
-  'Bogotá', 'Cali', 'Barranquilla', 'Cartagena', 'Bucaramanga', 'Pereira', 'Manizales', 'Armenia'
-];
+// Ciudades registradas en la base de datos (se cargan al abrir la tienda)
+export const CIUDADES_PROYECTO = CITY_NAMES;
 
 export const SUPERFICIE_LABEL: Record<string, string> = {
   concreto: 'Concreto', revoque: 'Revoque / pañete', ladrillo: 'Ladrillo', drywall: 'Drywall / yeso', metal: 'Metal', madera: 'Madera'

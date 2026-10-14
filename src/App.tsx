@@ -14,7 +14,7 @@ import {
   CustomerOrder
 } from './types';
 import { INITIAL_USER, EMPTY_PROJECT_FORM, SAMPLE_CALCULATION, DEMO_PROFILES } from './data/mockData';
-import { STORE_PRODUCTS } from './data/storeProducts';
+import { STORE_PRODUCTS, cargarDatosTienda } from './data/storeProducts';
 import { Navbar } from './components/Navbar';
 import { ModernLoginScreen } from './components/ModernLoginScreen';
 import { BrandLogo } from './components/BrandLogo';
@@ -49,7 +49,7 @@ const productoDesdeUrl = (): StoreProduct | undefined => {
   return id ? STORE_PRODUCTS.find(x => x.id === id) : undefined;
 };
 
-export default function App() {
+function TiendaApp() {
   // ---------- Sesión real ----------
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [isCheckingSession, setIsCheckingSession] = useState(true);
@@ -438,6 +438,7 @@ export default function App() {
           items: purchasedItems.map(it => ({ productId: it.productId, name: it.name, price: it.price, cantidad: it.quantity, sizeId: it.sizeId, sizeName: it.sizeName, colorName: it.colorName })),
           metodoEntrega: (orderDetails?.deliveryMethod === 'sucursal' || orderDetails?.deliveryMethod === 'pickup') ? 'recoger_tienda' : 'domicilio',
           metodoPago: orderDetails?.paymentMethod,
+          sucursalId: orderDetails?.branchId,
           destinatario: orderDetails?.recipientName,
           telefonoContacto: orderDetails?.recipientPhone,
           ciudadEntrega: orderDetails?.city,
@@ -451,6 +452,7 @@ export default function App() {
       if (data.success && data.order) {
         setCartItems(prev => prev.filter(item => !item.selectedForCheckout));
         loadRealOrders();
+        cargarDatosTienda().catch(() => undefined); // el stock cambió
         const o = data.order;
         return {
           orderNum: `CL-${String(o.ordenId).slice(0, 8).toUpperCase()}`,
@@ -958,6 +960,38 @@ export default function App() {
         </div>
       </footer>
 
+    </div>
+  );
+}
+/**
+ * Antes de mostrar la tienda se carga desde la base de datos el catálogo, las tiendas y las ciudades.
+ * Así todo lo que aparece en pantalla existe en la BD (precios, stock, colores, sucursales).
+ */
+export default function App() {
+  const [estado, setEstado] = useState<'cargando' | 'listo' | 'error'>('cargando');
+  const cargar = () => {
+    setEstado('cargando');
+    cargarDatosTienda().then(() => setEstado('listo')).catch(() => setEstado('error'));
+  };
+  useEffect(() => { cargar(); }, []);
+
+  if (estado === 'listo') return <TiendaApp />;
+  return (
+    <div className="min-h-screen bg-[#0A1A36] flex flex-col items-center justify-center gap-5 px-6 text-center">
+      <img src="/brand/logo-on-dark.svg" alt="ColorLink" className="h-10 w-auto" />
+      {estado === 'cargando' ? (
+        <div className="flex items-center gap-2 text-slate-300 text-sm">
+          <span className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+          Cargando la tienda…
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-slate-200 text-sm">No pudimos cargar el catálogo. Revisa tu conexión e inténtalo de nuevo.</p>
+          <button type="button" onClick={cargar} className="px-5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-sm font-black cursor-pointer">
+            Reintentar
+          </button>
+        </div>
+      )}
     </div>
   );
 }

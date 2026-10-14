@@ -271,6 +271,8 @@ export interface StoreProductSize {
   price: number;
   originalPrice?: number;
   inStock: boolean;
+  /** Unidades disponibles en bodega (viene del inventario) */
+  stock?: number;
   capacityLiters?: number;
 }
 
