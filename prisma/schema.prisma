@@ -16,12 +16,80 @@ model Rol {
 }
 
 model Ciudad {
-  ciudadId    Int                   @id @default(autoincrement()) @map("ciudad_id")
-  ciudad      String
-  empresas    EmpresaCliente[]
-  inventarios InventarioProducto[]
+  ciudadId     Int                   @id @default(autoincrement()) @map("ciudad_id")
+  ciudad       String                @unique
+  departamento String?
+  domicilio    Boolean               @default(false) // hay entrega a domicilio en esta ciudad
+  empresas     EmpresaCliente[]
+  inventarios  InventarioProducto[]
+  sucursales   Sucursal[]
+  usuarios     Usuario[]
 
   @@map("ciudad")
+}
+
+// Tiendas (retiro y venta) y bodegas (inventario) de ColorLink
+model Sucursal {
+  sucursalId   String               @id @map("sucursal_id") // slug, ej. medellin-guayabal
+  nombre       String
+  ciudadId     Int                  @map("ciudad_id")
+  ciudad       Ciudad               @relation(fields: [ciudadId], references: [ciudadId])
+  tipo         String               @default("tienda") // tienda | bodega
+  direccion    String?
+  telefono     String?
+  email        String?
+  horario      String?
+  listoEnHoras Int?                 @map("listo_en_horas")
+  lat          Float?
+  lng          Float?
+  orden        Int                  @default(0)
+  activo       Boolean              @default(true)
+  inventarios  InventarioProducto[]
+  ordenes      Orden[]
+
+  @@map("sucursal")
+}
+
+// Producto de la tienda (línea): sus presentaciones son filas de Producto y sus colores, ColorProducto
+model LineaProducto {
+  lineaId             String          @id @map("linea_id") // slug, ej. koraza-sol-lluvia
+  sku                 String?
+  nombre              String
+  marca               String?
+  subtitulo           String?
+  categoria           String          // hogar | construccion | automotriz | industrial | herramientas
+  categoriaEtiqueta   String?         @map("categoria_etiqueta")
+  badge               String?
+  descripcion         String?
+  caracteristicas     Json?
+  ficha               Json?
+  imagen              String?
+  esHerramienta       Boolean         @default(false) @map("es_herramienta")
+  rendimientoGalon    Float?          @map("rendimiento_galon")
+  manosDefault        Int?            @map("manos_default")
+  colorDefault        String?         @map("color_default")
+  tamanoDefault       String?         @map("tamano_default")
+  orden               Int             @default(0)
+  activo              Boolean         @default(true)
+  presentaciones      Producto[]
+  colores             ColorProducto[]
+
+  @@map("linea_producto")
+}
+
+model ColorProducto {
+  colorProductoId String        @id @default(uuid()) @map("color_producto_id")
+  lineaId         String        @map("linea_id")
+  linea           LineaProducto @relation(fields: [lineaId], references: [lineaId], onDelete: Cascade)
+  colorKey        String        @map("color_key")
+  nombre          String
+  hex             String
+  codigo          String?
+  orden           Int           @default(0)
+  activo          Boolean       @default(true)
+
+  @@unique([lineaId, colorKey])
+  @@map("color_producto")
 }
 
 model Usuario {
@@ -47,6 +115,8 @@ model Usuario {
   proyectosComoPerito Proyecto[] @relation("ProyectoPerito")
   ordenes Orden[]
   activo       Boolean             @default(true)
+  ciudadId     Int?                @map("ciudad_id")
+  ciudadRef    Ciudad?             @relation(fields: [ciudadId], references: [ciudadId])
   notificacionesVistasAt DateTime? @map("notificaciones_vistas_at")
   resenas      ResenaProducto[]
   evaluaciones EvaluacionVendedor[]
@@ -181,6 +251,8 @@ model Orden {
   estado           String   @default("creado") // creado, confirmado, en_alistamiento, en_camino, listo_recoger, entregado, cancelado
   metodoEntrega    String   @map("metodo_entrega") // domicilio | recoger_tienda
   direccionEntrega String?  @map("direccion_entrega")
+  sucursalId       String?  @map("sucursal_id") // sucursal de retiro
+  sucursal         Sucursal? @relation(fields: [sucursalId], references: [sucursalId])
   destinatario     String?
   telefonoContacto String?  @map("telefono_contacto")
   ciudadEntrega    String?  @map("ciudad_entrega")
@@ -308,9 +380,19 @@ model Producto {
   rendimientoM2   Float?                @map("rendimiento_m2")
   acabado         String?
   precio          Float?
+  lineaId         String?               @map("linea_id")
+  linea           LineaProducto?        @relation(fields: [lineaId], references: [lineaId])
+  tamanoId        String?               @map("tamano_id")   // id de la presentación en la tienda (galon, cunete…)
+  tamanoNombre    String?               @map("tamano_nombre")
+  capacidadLitros Float?                @map("capacidad_litros")
+  sku             String?
+  orden           Int                   @default(0)
+  activo          Boolean               @default(true)
   inventarios     InventarioProducto[]
   cotizacionItems CotizacionItem[]
   ordenItems OrdenItem[]
+
+  @@unique([lineaId, tamanoId])
 
   @@map("producto")
 }
@@ -321,6 +403,8 @@ model InventarioProducto {
   producto           Producto  @relation(fields: [productoId], references: [productoId])
   ciudadId           Int       @map("ciudad_id")
   ciudad             Ciudad    @relation(fields: [ciudadId], references: [ciudadId])
+  sucursalId         String?   @map("sucursal_id")
+  sucursal           Sucursal? @relation(fields: [sucursalId], references: [sucursalId])
   nombreBodega       String?   @map("nombre_bodega")
   numeroLote         String?   @map("numero_lote")
   cantidadDisponible Int?      @map("cantidad_disponible")

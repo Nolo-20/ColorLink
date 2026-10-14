@@ -1,5 +1,4 @@
 import { plantillaCorreo, adjuntosCorreo, parrafo, caja, esc, MARCA, type TonoEtiqueta } from './emailTemplate';
-import { STORE_PRODUCTS } from './src/data/storeProducts';
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
@@ -18,6 +17,88 @@ import { registerVisualizerRoutes, startVisualizerAutogen } from './visualizerGe
 dotenv.config();
 
 const prisma = new PrismaClient();
+
+// ------------------------------------------------------------------
+// Catálogo, sucursales y stock: todo sale de la base de datos
+// ------------------------------------------------------------------
+
+/** Convierte una línea de la BD al formato que usa la tienda (StoreProduct). */
+function lineaAProductoTienda(l: any, stockPorProducto: Map<string, number>) {
+  const ficha = (l.ficha || {}) as any;
+  return {
+    id: l.lineaId,
+    sku: l.sku || l.lineaId.toUpperCase(),
+    name: l.nombre,
+    brand: l.marca || 'ColorLink',
+    subtitle: l.subtitulo || '',
+    category: l.categoria,
+    categoryLabel: l.categoriaEtiqueta || '',
+    rating: 0,
+    reviewsCount: 0,
+    badge: l.badge || undefined,
+    description: l.descripcion || '',
+    features: Array.isArray(l.caracteristicas) ? l.caracteristicas : [],
+    specs: { rendimiento: ficha.rendimiento || '', secado: ficha.secado || '', base: ficha.base || '', acabado: ficha.acabado || '', solvente: ficha.solvente || undefined },
+    colors: (l.colores || []).map((c: any) => ({ id: c.colorKey, name: c.nombre, hex: c.hex, code: c.codigo || '', inStock: c.activo })),
+    sizes: (l.presentaciones || []).map((p: any) => ({
+      id: p.tamanoId,
+      name: p.tamanoNombre || p.presentacion,
+      price: Math.round(p.precio || 0),
+      inStock: (stockPorProducto.get(p.productoId) || 0) > 0,
+      stock: stockPorProducto.get(p.productoId) || 0,
+      capacityLiters: p.capacidadLitros ?? undefined
+    })),
+    defaultColorId: l.colorDefault || undefined,
+    defaultSizeId: l.tamanoDefault || l.presentaciones?.[0]?.tamanoId || '',
+    image: l.imagen || '',
+    isTool: l.esHerramienta || undefined,
+    coverageM2PerGallon: l.rendimientoGalon ?? undefined,
+    defaultCoats: l.manosDefault ?? undefined
+  };
+}
+
+async function stockPorProductoMap(productoIds?: string[]) {
+  const grupos = await prisma.inventarioProducto.groupBy({
+    by: ['productoId'],
+    where: productoIds ? { productoId: { in: productoIds } } : undefined,
+    _sum: { cantidadDisponible: true }
+  });
+  return new Map(grupos.map(g => [g.productoId, g._sum.cantidadDisponible || 0]));
+}
+
+/** Descuenta stock de los lotes de una presentación (primero los lotes con más unidades). Lanza error si no alcanza. */
+async function descontarStock(tx: any, productoId: string, cantidad: number, etiqueta: string) {
+  const lotes = await tx.inventarioProducto.findMany({ where: { productoId, cantidadDisponible: { gt: 0 } }, orderBy: { cantidadDisponible: 'desc' } });
+  const total = lotes.reduce((s: number, l: any) => s + (l.cantidadDisponible || 0), 0);
+  if (total < cantidad) {
+    const err: any = new Error(total > 0 ? `Solo quedan ${total} unidades de ${etiqueta}.` : `${etiqueta} está agotado.`);
+    err.publico = true;
+    throw err;
+  }
+  let falta = cantidad;
+  for (const lote of lotes) {
+    if (falta <= 0) break;
+    const usar = Math.min(falta, lote.cantidadDisponible || 0);
+    await tx.inventarioProducto.update({ where: { inventarioId: lote.inventarioId }, data: { cantidadDisponible: { decrement: usar } } });
+    falta -= usar;
+  }
+}
+
+/** Devuelve al inventario las unidades de un pedido cancelado (al lote con más existencias de cada presentación). */
+async function devolverStock(tx: any, ordenId: string) {
+  const items = await tx.ordenItem.findMany({ where: { ordenId, productoId: { not: null } } });
+  for (const it of items) {
+    const lote = await tx.inventarioProducto.findFirst({ where: { productoId: it.productoId }, orderBy: { cantidadDisponible: 'desc' } });
+    if (lote) await tx.inventarioProducto.update({ where: { inventarioId: lote.inventarioId }, data: { cantidadDisponible: { increment: it.cantidad } } });
+  }
+}
+
+/** Busca una ciudad registrada por nombre (sin distinguir mayúsculas). */
+async function ciudadPorNombre(nombre: any) {
+  const limpio = String(nombre ?? '').trim().replace(/\s+/g, ' ');
+  if (!limpio) return null;
+  return prisma.ciudad.findFirst({ where: { ciudad: { equals: limpio, mode: 'insensitive' } } });
+}
 
 const JWT_SECRET = process.env.JWT_SECRET || 'CAMBIA_ESTO_EN_TU_ENV';
 const APP_URL = process.env.APP_URL || 'http://localhost:3000';
@@ -548,12 +629,15 @@ async function startServer() {
         return res.status(400).json({ success: false, error: 'Este pedido ya fue despachado y no se puede cancelar.' });
       }
 
-      const updated = await prisma.orden.update({
-        where: { ordenId: req.params.id },
-        data: {
-          estado: 'cancelado',
-          historial: { create: { estado: 'cancelado', comentario: 'Cancelado por el cliente.', usuarioId: req.user.id } }
-        }
+      const updated = await prisma.$transaction(async (tx) => {
+        await devolverStock(tx, orden.ordenId);
+        return tx.orden.update({
+          where: { ordenId: req.params.id },
+          data: {
+            estado: 'cancelado',
+            historial: { create: { estado: 'cancelado', comentario: 'Cancelado por el cliente.', usuarioId: req.user.id } }
+          }
+        });
       });
 
       res.json({ success: true, order: updated });
@@ -594,6 +678,9 @@ async function startServer() {
         return res.status(500).json({ success: false, error: 'Rol "cliente" no existe. Corre el seed primero (pnpm run db:seed).' });
       }
 
+      const ciudadDb = await ciudadPorNombre(ciudad);
+      if (!ciudadDb) return res.status(400).json({ success: false, error: 'Elige tu ciudad de la lista.' });
+
       const passwordHash = await bcrypt.hash(password, 10);
 
       const newUser = await prisma.usuario.create({
@@ -608,7 +695,8 @@ async function startServer() {
           company: tipoPersona === 'juridica' ? empresa : null,
           documentId: documento,
           address: direccion || null,
-          city: ciudad || 'Medellín'
+          city: ciudadDb.ciudad,
+          ciudadId: ciudadDb.ciudadId
         },
         include: { rol: true }
       });
@@ -1023,6 +1111,9 @@ async function startServer() {
       const v = validateSignupFields({ ...req.body, email: actual.email }, { requirePassword: false });
       if ('error' in v) return res.status(400).json({ success: false, error: v.error });
 
+      const ciudadDb = await ciudadPorNombre(v.ciudad);
+      if (!ciudadDb) return res.status(400).json({ success: false, error: 'Elige tu ciudad de la lista.' });
+
       const docEnUso = await prisma.usuario.findFirst({ where: { documentId: v.documento, NOT: { usuarioId: actual.usuarioId } } });
       if (docEnUso) return res.status(409).json({ success: false, error: 'Ya existe una cuenta con ese número de documento' });
 
@@ -1032,7 +1123,8 @@ async function startServer() {
         company: v.tipoPersona === 'juridica' ? v.empresa : null,
         documentId: v.documento,
         address: v.direccion || null,
-        city: v.ciudad || 'Medellín',
+        city: ciudadDb.ciudad,
+        ciudadId: ciudadDb.ciudadId,
         telefono: v.celular
       };
       if (req.body.password) data.passwordHash = await bcrypt.hash(String(req.body.password), 10);
@@ -1049,10 +1141,14 @@ async function startServer() {
   // PROYECTOS DEL CLIENTE
   // ================================================================
 
+  // Solo se aceptan ciudades registradas en la base de datos
   async function findOrCreateCiudad(nombre: string) {
-    const clean = (nombre || 'Medellín').trim();
-    let ciudad = await prisma.ciudad.findFirst({ where: { ciudad: clean } });
-    if (!ciudad) ciudad = await prisma.ciudad.create({ data: { ciudad: clean } });
+    const ciudad = await ciudadPorNombre(nombre);
+    if (!ciudad) {
+      const err: any = new Error('Elige una ciudad de la lista.');
+      err.publico = true;
+      throw err;
+    }
     return ciudad;
   }
 
@@ -1781,6 +1877,9 @@ async function startServer() {
       }
       const datosError = errorDatosEmpleado({ nombre, apellido, email, telefono, documentId }, false);
       if (datosError) return res.status(400).json({ success: false, error: datosError });
+      // La sede del empleado es una ciudad registrada
+      const ciudadEmpleado = city ? await ciudadPorNombre(city) : null;
+      if (city && !ciudadEmpleado) return res.status(400).json({ success: false, error: 'Elige una ciudad de la lista.' });
       const policyError = validatePasswordPolicy(String(password));
       if (policyError) return res.status(400).json({ success: false, error: policyError });
 
@@ -1801,7 +1900,7 @@ async function startServer() {
           telefono: telefono ? String(telefono).trim().slice(0, 20) : null,
           documentId: documentId ? String(documentId).trim().toUpperCase().slice(0, 20) : null,
           company: company ? String(company).trim().slice(0, 100) : null,
-          ...(city ? { city: String(city).trim().slice(0, 60) } : {}),
+          ...(ciudadEmpleado ? { city: ciudadEmpleado.ciudad, ciudadId: ciudadEmpleado.ciudadId } : {}),
           rolId: rolRow.rolId,
           passwordHash: await bcrypt.hash(String(password), 10),
           authProvider: 'credentials'
@@ -1971,14 +2070,14 @@ async function startServer() {
         return res.status(400).json({ success: false, error: `El descuento debe estar entre 0 y ${MAX_DESCUENTO_ASESOR} %.` });
       }
 
-      const base = productoId ? await prisma.producto.findUnique({ where: { productoId } }) : null;
+      const base = productoId ? await prisma.producto.findFirst({ where: { productoId, activo: true } }) : null;
       if (!base) return res.status(404).json({ success: false, error: 'Selecciona un producto del catálogo.' });
       if (!base.rendimientoM2 || base.rendimientoM2 <= 0) {
         return res.status(400).json({ success: false, error: 'Este producto no tiene rendimiento (m²/galón) configurado; no se puede cotizar por área.' });
       }
 
       // Mismo producto en sus dos presentaciones (cuñete 5 gal y galón 1 gal)
-      const familia = await prisma.producto.findMany({ where: { nombre: base.nombre } });
+      const familia = await prisma.producto.findMany({ where: { nombre: base.nombre, activo: true } });
       const cuneteProd = familia.find(f => f.presentacion === 'cunete_5gal') || null;
       const galonProd = familia.find(f => f.presentacion === 'galon_1gal') || null;
       const precioGalon = galonProd?.precio ?? (cuneteProd?.precio ? cuneteProd.precio / 4.6 : base.precio);
@@ -2197,9 +2296,10 @@ async function startServer() {
   app.get('/api/inventory', requireAuth, async (req, res) => {
     try {
       const [productos, stock] = await Promise.all([
-        prisma.producto.findMany({ orderBy: { nombre: 'asc' } }),
+        prisma.producto.findMany({ where: { activo: true }, orderBy: [{ nombre: 'asc' }, { orden: 'asc' }] }),
         prisma.inventarioProducto.findMany({
-          include: { producto: true, ciudad: true },
+          where: { producto: { activo: true } },
+          include: { producto: true, ciudad: true, sucursal: true },
           orderBy: { nombreBodega: 'asc' }
         })
       ]);
@@ -2232,7 +2332,7 @@ async function startServer() {
       const updated = await prisma.inventarioProducto.update({
         where: { inventarioId: req.params.id },
         data: { cantidadDisponible: nuevaCantidad },
-        include: { producto: true, ciudad: true }
+        include: { producto: true, ciudad: true, sucursal: true }
       });
 
       res.json({ success: true, item: updated });
@@ -2245,30 +2345,42 @@ async function startServer() {
   // Registra una entrada de mercancía (nuevo lote en una bodega)
   app.post('/api/inventory', requireAuth, requireRole('administrador'), async (req: any, res) => {
     try {
-      const { productoId, ciudadId, nombreBodega, numeroLote, cantidadDisponible, tiempoDespacho } = req.body;
+      const { productoId, sucursalId, ciudadId, nombreBodega, numeroLote, cantidadDisponible, tiempoDespacho } = req.body;
       const cantidad = Math.round(Number(cantidadDisponible));
-      if (!productoId || !ciudadId || !nombreBodega || !Number.isFinite(cantidad) || cantidad < 0) {
-        return res.status(400).json({ success: false, error: 'Producto, ciudad, bodega y una cantidad válida son requeridos.' });
+      if (!productoId || !Number.isFinite(cantidad) || cantidad < 0 || cantidad > 1_000_000) {
+        return res.status(400).json({ success: false, error: 'Elige el producto y una cantidad válida.' });
       }
-
-      const [producto, ciudad] = await Promise.all([
-        prisma.producto.findUnique({ where: { productoId } }),
-        prisma.ciudad.findUnique({ where: { ciudadId: Number(ciudadId) } })
-      ]);
+      const producto = await prisma.producto.findFirst({ where: { productoId, activo: true } });
       if (!producto) return res.status(404).json({ success: false, error: 'Producto no encontrado' });
-      if (!ciudad) return res.status(404).json({ success: false, error: 'Ciudad no encontrada' });
+
+      // La bodega es una sucursal registrada; si es nueva, se crea como sucursal tipo "bodega"
+      let bodega = sucursalId ? await prisma.sucursal.findUnique({ where: { sucursalId: String(sucursalId) } }) : null;
+      if (!bodega) {
+        const nombre = String(nombreBodega || '').trim().replace(/\s+/g, ' ');
+        if (nombre.length < 3 || nombre.length > 60) return res.status(400).json({ success: false, error: 'Elige una bodega o escribe el nombre de la nueva (3 a 60 caracteres).' });
+        const ciudad = await prisma.ciudad.findUnique({ where: { ciudadId: Number(ciudadId) } });
+        if (!ciudad) return res.status(400).json({ success: false, error: 'Elige la ciudad de la bodega.' });
+        bodega = await prisma.sucursal.findFirst({ where: { nombre: { equals: nombre, mode: 'insensitive' } } })
+          || await prisma.sucursal.create({
+            data: {
+              sucursalId: `bodega-${nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)}-${Date.now().toString(36).slice(-4)}`,
+              nombre, ciudadId: ciudad.ciudadId, tipo: 'bodega', orden: 300
+            }
+          });
+      }
 
       const item = await prisma.inventarioProducto.create({
         data: {
           productoId,
-          ciudadId: ciudad.ciudadId,
-          nombreBodega: String(nombreBodega).trim(),
+          ciudadId: bodega.ciudadId,
+          sucursalId: bodega.sucursalId,
+          nombreBodega: bodega.nombre,
           numeroLote: numeroLote ? String(numeroLote).trim() : `LT-${new Date().getFullYear()}-${Date.now().toString().slice(-5)}`,
           cantidadDisponible: cantidad,
           fechaTinturado: new Date(),
           tiempoDespacho: tiempoDespacho != null && tiempoDespacho !== '' ? Math.round(Number(tiempoDespacho)) : null
         },
-        include: { producto: true, ciudad: true }
+        include: { producto: true, ciudad: true, sucursal: true }
       });
 
       res.json({ success: true, item });
@@ -2278,10 +2390,10 @@ async function startServer() {
     }
   });
 
-  // Ciudades con bodega (para los selectores del ERP)
-  app.get('/api/cities', requireAuth, async (_req, res) => {
+  // Ciudades registradas (públicas: las usan el registro, el checkout, los proyectos y el ERP)
+  app.get('/api/cities', async (_req, res) => {
     try {
-      const ciudades = await prisma.ciudad.findMany({ orderBy: { ciudad: 'asc' } });
+      const ciudades = await prisma.ciudad.findMany({ orderBy: { ciudad: 'asc' }, select: { ciudadId: true, ciudad: true, departamento: true, domicilio: true } });
       res.json({ success: true, cities: ciudades });
     } catch (error: any) {
       console.error('[get-cities]', error);
@@ -2289,47 +2401,56 @@ async function startServer() {
     }
   });
 
-  // Catálogo de la tienda: adapta tus Producto reales al formato que esperan los componentes del storefront
-  app.get('/api/store/products', async (req, res) => {
+  // Catálogo de la tienda (público): líneas activas con presentaciones, precios, stock y colores desde la BD
+  app.get('/api/catalog', async (_req, res) => {
     try {
-      const productos = await prisma.producto.findMany({
-        include: { inventarios: true }
+      const lineas = await prisma.lineaProducto.findMany({
+        where: { activo: true },
+        orderBy: { orden: 'asc' },
+        include: {
+          presentaciones: { where: { activo: true }, orderBy: { orden: 'asc' } },
+          colores: { orderBy: { orden: 'asc' } }
+        }
       });
-
-      // Agrupa por nombre base (para que "Koraza Tech 5G" y "Koraza Tech 1G" aparezcan
-      // como tamaños del mismo producto, en vez de como productos separados)
-      const grupos: Record<string, any[]> = {};
-      for (const p of productos) {
-        const key = p.nombre;
-        if (!grupos[key]) grupos[key] = [];
-        grupos[key].push(p);
-      }
-
-      const storeProducts = Object.entries(grupos).map(([nombre, variantes]) => {
-        const stockTotal = variantes.reduce((sum, v) =>
-          sum + v.inventarios.reduce((s: number, inv: any) => s + (inv.cantidadDisponible || 0), 0), 0);
-
-        return {
-          id: variantes[0].productoId,
-          name: nombre,
-          category: variantes[0].categoria || 'general',
-          description: `${nombre} — línea profesional ColorLink.`,
-          images: [], // sin fotos reales todavía; el frontend debe manejar el caso vacío con un ícono
-          inStock: stockTotal > 0,
-          sizes: variantes.map(v => ({
-            id: v.productoId,
-            name: v.presentacion === 'cunete_5gal' ? 'Cuñete 5 Gal' : v.presentacion === 'galon_1gal' ? 'Galón 1 Gal' : (v.presentacion || 'Único'),
-            price: v.precio || 0,
-            stock: v.inventarios.reduce((s: number, inv: any) => s + (inv.cantidadDisponible || 0), 0)
-          })),
-          colors: [] // tu catálogo de pinturas no maneja variantes de color por SKU todavía
-        };
-      });
-
-      res.json({ success: true, products: storeProducts });
+      const stock = await stockPorProductoMap(lineas.flatMap(l => l.presentaciones.map(p => p.productoId)));
+      res.setHeader('Cache-Control', 'no-cache');
+      res.json({ success: true, products: lineas.filter(l => l.presentaciones.length > 0).map(l => lineaAProductoTienda(l, stock)) });
     } catch (error: any) {
-      console.error('[get-store-products]', error);
+      console.error('[catalog]', error);
       res.status(500).json({ success: false, error: 'No se pudo cargar el catálogo' });
+    }
+  });
+
+  // Tiendas (público) para retiro en tienda y la página de sucursales; ?tipo=bodega para el ERP
+  app.get('/api/branches', async (req, res) => {
+    try {
+      const tipo = req.query.tipo === 'bodega' ? 'bodega' : req.query.tipo === 'todas' ? undefined : 'tienda';
+      const sucursales = await prisma.sucursal.findMany({
+        where: { activo: true, ...(tipo ? { tipo } : {}) },
+        include: { ciudad: true },
+        orderBy: [{ orden: 'asc' }, { nombre: 'asc' }]
+      });
+      res.json({
+        success: true,
+        branches: sucursales.map(s => ({
+          id: s.sucursalId,
+          name: s.nombre,
+          tipo: s.tipo,
+          ciudadId: s.ciudadId,
+          city: s.ciudad.ciudad,
+          department: s.ciudad.departamento || undefined,
+          address: s.direccion || '',
+          phone: s.telefono || '',
+          email: s.email || undefined,
+          schedule: s.horario || '',
+          readyInHours: s.listoEnHoras ?? 2,
+          lat: s.lat ?? undefined,
+          lng: s.lng ?? undefined
+        }))
+      });
+    } catch (error: any) {
+      console.error('[branches]', error);
+      res.status(500).json({ success: false, error: 'No se pudieron cargar las sucursales' });
     }
   });
 
@@ -2403,41 +2524,72 @@ async function startServer() {
         return res.status(400).json({ success: false, error: 'Escribe la dirección de entrega.' });
       }
 
-      // El precio sale del catálogo de la tienda (nunca del navegador); la cantidad se valida
+      // El precio y la disponibilidad salen de la base de datos (nunca del navegador)
       const corto = (v: any, max: number) => (v == null || v === '' ? null : String(v).replace(/[\r\n]/g, ' ').trim().slice(0, max) || null);
+      const lineaIds = [...new Set(items.map((i: any) => String(i.productId || '')))].filter(Boolean) as string[];
+      const lineas = await prisma.lineaProducto.findMany({
+        where: { lineaId: { in: lineaIds }, activo: true },
+        include: { presentaciones: { where: { activo: true } }, colores: true }
+      });
       const itemsConPrecio: any[] = [];
       for (const i of items) {
-        const producto = STORE_PRODUCTS.find(p => p.id === i.productId);
-        if (!producto) return res.status(400).json({ success: false, error: `El producto "${String(i.name || '').slice(0, 60)}" ya no está disponible.` });
-        const talla = producto.sizes.find(sz => sz.name === i.sizeName || sz.id === i.sizeId) || (producto.sizes.length === 1 ? producto.sizes[0] : undefined);
-        if (!talla) return res.status(400).json({ success: false, error: `Elige una presentación válida para ${producto.name}.` });
-        if (talla.inStock === false) return res.status(400).json({ success: false, error: `${producto.name} (${talla.name}) está agotado.` });
+        const linea = lineas.find(l => l.lineaId === i.productId);
+        if (!linea) return res.status(400).json({ success: false, error: `El producto "${String(i.name || '').slice(0, 60)}" ya no está disponible.` });
+        const pres = linea.presentaciones.find(p => p.tamanoId === i.sizeId || p.tamanoNombre === i.sizeName)
+          || (linea.presentaciones.length === 1 ? linea.presentaciones[0] : undefined);
+        if (!pres || pres.precio == null) return res.status(400).json({ success: false, error: `Elige una presentación válida para ${linea.nombre}.` });
         const cantidad = Math.floor(Number(i.cantidad ?? i.quantity));
         if (!Number.isInteger(cantidad) || cantidad < 1 || cantidad > 99) {
-          return res.status(400).json({ success: false, error: `Cantidad inválida para ${producto.name} (de 1 a 99).` });
+          return res.status(400).json({ success: false, error: `Cantidad inválida para ${linea.nombre} (de 1 a 99).` });
         }
-        const color = i.colorName ? producto.colors?.find(c => c.name === i.colorName) : undefined;
-        if (i.colorName && !color) return res.status(400).json({ success: false, error: `El color elegido no existe para ${producto.name}.` });
+        const color = i.colorName ? linea.colores.find(c => c.nombre === i.colorName) : undefined;
+        if (i.colorName && !color) return res.status(400).json({ success: false, error: `El color elegido no existe para ${linea.nombre}.` });
+        if (color && !color.activo) return res.status(400).json({ success: false, error: `El color ${color.nombre} no está disponible.` });
+        const precio = Math.round(pres.precio);
         itemsConPrecio.push({
-          productoId: null, // el catálogo de la tienda es independiente del catálogo B2B de cotizaciones
-          codigoProductoExterno: producto.id,
-          presentacion: corto(talla.name, 60),
-          color: corto(color?.name, 60),
-          nombreProducto: producto.name.slice(0, 120),
+          productoId: pres.productoId,
+          codigoProductoExterno: linea.lineaId,
+          presentacion: corto(pres.tamanoNombre || pres.presentacion, 60),
+          color: corto(color?.nombre, 60),
+          nombreProducto: linea.nombre.slice(0, 120),
           cantidad,
-          precioUnitario: talla.price,
-          subtotal: talla.price * cantidad
+          precioUnitario: precio,
+          subtotal: precio * cantidad
         });
+      }
+
+      // Domicilio: solo a ciudades registradas con cobertura de entrega
+      let ciudadEntregaDb: { ciudad: string } | null = null;
+      if (metodoEntrega === 'domicilio') {
+        ciudadEntregaDb = await prisma.ciudad.findFirst({ where: { ciudad: { equals: String(ciudadEntrega || '').trim(), mode: 'insensitive' }, domicilio: true }, select: { ciudad: true } });
+        if (!ciudadEntregaDb) return res.status(400).json({ success: false, error: 'Elige una ciudad con entrega a domicilio.' });
+      }
+
+      // Retiro en tienda: la sucursal debe existir en la base de datos
+      let sucursalRetiro: { sucursalId: string; nombre: string; direccion: string | null } | null = null;
+      if (metodoEntrega === 'recoger_tienda') {
+        sucursalRetiro = req.body.sucursalId
+          ? await prisma.sucursal.findFirst({ where: { sucursalId: String(req.body.sucursalId), activo: true, tipo: 'tienda' }, select: { sucursalId: true, nombre: true, direccion: true } })
+          : null;
+        if (!sucursalRetiro) return res.status(400).json({ success: false, error: 'Elige la tienda donde vas a recoger el pedido.' });
       }
 
       const subtotalProductos = itemsConPrecio.reduce((sum, i) => sum + i.subtotal, 0);
       // Envío a domicilio: gratis desde $150.000; recogida en tienda siempre gratis (igual que en el checkout)
       const costoEnvio = metodoEntrega === 'domicilio' && subtotalProductos < 150000 ? 15000 : 0;
       const total = subtotalProductos + costoEnvio;
-      const direccionEntregaFinal = direccion || null;
+      const direccionEntregaFinal = sucursalRetiro
+        ? `${sucursalRetiro.nombre}${sucursalRetiro.direccion ? `, ${sucursalRetiro.direccion}` : ''}`
+        : (direccion || null);
 
-      const orden = await prisma.orden.create({
+      // Se crea el pedido y se descuenta el inventario en una sola transacción
+      const orden = await prisma.$transaction(async (tx) => {
+        for (const it of itemsConPrecio) {
+          await descontarStock(tx, it.productoId, it.cantidad, `${it.nombreProducto} (${it.presentacion})`);
+        }
+        return tx.orden.create({
         data: {
+          sucursalId: sucursalRetiro?.sucursalId || null,
           usuarioId: req.user.id,
           total,
           estado: 'confirmado',
@@ -2445,7 +2597,7 @@ async function startServer() {
           direccionEntrega: direccionEntregaFinal,
           destinatario: quienRecibe,
           telefonoContacto: celContacto || null,
-          ciudadEntrega: limpio(ciudadEntrega, 60),
+          ciudadEntrega: ciudadEntregaDb?.ciudad || null,
           notasEntrega: limpio(notasEntrega, 200),
           metodoPago: metodoPagoFinal,
           costoEnvio,
@@ -2459,12 +2611,14 @@ async function startServer() {
           } }
         },
         include: { items: true }
+        });
       });
 
       await sendOrderStatusEmail(req.user.email, orden, 'confirmado');
 
       res.json({ success: true, order: orden });
     } catch (error: any) {
+      if (error?.publico) return res.status(400).json({ success: false, error: error.message });
       console.error('[create-order]', error);
       res.status(400).json({ success: false, error: 'No se pudo crear el pedido. Intenta de nuevo.' });
     }
@@ -2781,6 +2935,8 @@ async function startServer() {
         return res.status(400).json({ success: false, error: '"En camino" solo aplica a pedidos a domicilio.' });
       }
 
+      // Si el equipo cancela, las unidades vuelven al inventario
+      if (estado === 'cancelado') await prisma.$transaction(tx => devolverStock(tx, req.params.id));
       const orden = await prisma.orden.update({
         where: { ordenId: req.params.id },
         data: {
@@ -2903,11 +3059,13 @@ async function startServer() {
 
       // Catálogo real para no inventar productos ni precios
       if (!catalogCache || Date.now() - catalogCache.at > 5 * 60 * 1000) {
-        const rows = await prisma.producto.findMany({
-          select: { nombre: true, categoria: true, presentacion: true, rendimientoM2: true, precio: true },
-          orderBy: { nombre: 'asc' },
-          take: 60
+        const filas = await prisma.producto.findMany({
+          where: { activo: true },
+          select: { nombre: true, categoria: true, presentacion: true, tamanoNombre: true, rendimientoM2: true, precio: true },
+          orderBy: [{ nombre: 'asc' }, { orden: 'asc' }],
+          take: 80
         });
+        const rows = filas.map(f => ({ ...f, presentacion: f.tamanoNombre || f.presentacion }));
         catalogCache = { at: Date.now(), rows };
       }
       const productos = catalogCache.rows;
