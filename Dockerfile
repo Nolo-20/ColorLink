@@ -1,5 +1,7 @@
 FROM node:20-slim AS base
 WORKDIR /app
+# Prisma necesita OpenSSL para conectarse a la base de datos (la imagen slim no lo trae)
+RUN apt-get update -y && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
 # ---- Dependencias ----
