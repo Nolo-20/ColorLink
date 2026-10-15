@@ -36,7 +36,9 @@ const sanitizeDecimal = (v: string) => {
 const parseNum = (v: string) => (v.trim() === '' || !/^\d*\.?\d*$/.test(v.trim()) ? NaN : Number(v));
 const fmt = (n: number) => n.toLocaleString('es-CO', { maximumFractionDigits: 1 });
 
-const PAINTS = STORE_PRODUCTS.filter(p => !p.isTool);
+/** Pinturas para muros y pisos (la línea automotriz se compra por kit, no por m²).
+ *  Se calcula al abrir: el catálogo llega de la base de datos después de cargar este archivo. */
+const pinturasCalculables = () => STORE_PRODUCTS.filter(p => !p.isTool && p.category !== 'automotriz');
 
 const newWall = (n: number): WallEntry => ({
   id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -53,7 +55,8 @@ export const GeneralStoreCalculatorModal: React.FC<GeneralStoreCalculatorModalPr
   onSelectProduct,
   onAddToCart
 }) => {
-  const [selectedProductId, setSelectedProductId] = useState<string>(PAINTS[0]?.id || '');
+  const PAINTS = pinturasCalculables();
+  const [selectedProductId, setSelectedProductId] = useState<string>(() => pinturasCalculables()[0]?.id || '');
   const [surfaceType, setSurfaceType] = useState<'revoque' | 'repintado' | 'drywall' | 'estuco'>('repintado');
   const [coats, setCoats] = useState<number>(2);
   const [walls, setWalls] = useState<WallEntry[]>([

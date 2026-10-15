@@ -26,6 +26,7 @@ import {
 import { StoreProduct, StoreProductColor, StoreProductSize } from '../types';
 import { MAX_ITEM_QTY, clampQty, formatCOP, toolTypeFor, STORE_BRANCHES } from '../data/storeProducts';
 import { PaintCalculatorModal } from './PaintCalculatorModal';
+import { AutoKitGuide } from './AutoKitGuide';
 import { BranchLocatorModal } from './BranchLocatorModal';
 import { AmbientWallVisualizer, isLightColor } from './AmbientWallVisualizer';
 import { PaintCanGraphic } from './PaintCanGraphic';
@@ -35,6 +36,8 @@ import { motion, AnimatePresence } from 'motion/react';
 interface ProductDetailViewProps {
   product: StoreProduct;
   initialColorId?: string;
+  /** Presentación a preseleccionar (p. ej. desde la guía de kits automotrices) */
+  initialSizeId?: string;
   onAddToCart: (product: StoreProduct, size: StoreProductSize, color?: StoreProductColor, quantity?: number) => void;
   onBuyNow: (product: StoreProduct, size: StoreProductSize, color?: StoreProductColor, quantity?: number) => void;
   onBackToCatalog: () => void;
@@ -44,6 +47,7 @@ interface ProductDetailViewProps {
 export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
   product,
   initialColorId,
+  initialSizeId,
   onAddToCart,
   onBuyNow,
   onBackToCatalog,
@@ -65,6 +69,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
 
   // Current selected size (defaults to first in-stock size or defaultSizeId)
   const [selectedSizeId, setSelectedSizeId] = useState<string>(() => {
+    if (initialSizeId && product.sizes?.some(s => s.id === initialSizeId)) return initialSizeId;
     if (product.sizes && product.sizes.length > 0) {
       const defaultS = product.sizes.find(s => s.id === product.defaultSizeId && s.inStock);
       if (defaultS) return defaultS.id;
@@ -83,7 +88,9 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
       setSelectedColorId(defaultCol ? defaultCol.id : product.colors[0].id);
     }
 
-    if (product.sizes && product.sizes.length > 0) {
+    if (initialSizeId && product.sizes?.some(s => s.id === initialSizeId)) {
+      setSelectedSizeId(initialSizeId);
+    } else if (product.sizes && product.sizes.length > 0) {
       const defaultS = product.sizes.find(s => s.id === product.defaultSizeId && s.inStock) || product.sizes.find(s => s.inStock);
       setSelectedSizeId(defaultS ? defaultS.id : product.sizes[0].id);
     }
@@ -91,7 +98,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
     setQuantity(1);
     setIsVisualizerOpen(false);
     setIsDescriptionExpanded(false);
-  }, [product.id, initialColorId]);
+  }, [product.id, initialColorId, initialSizeId]);
 
   const [quantity, setQuantity] = useState<number>(1);
   const [showColorPalette, setShowColorPalette] = useState<boolean>(true);
@@ -568,7 +575,10 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
           {/* ======================================================== */}
           {/* BOTÓN CALCULADORA (Exact Match with Screenshot 7) */}
           {/* ======================================================== */}
-          {!product.isTool && (
+          {product.category === 'automotriz' && (
+            <AutoKitGuide product={product} selectedSizeId={selectedSize?.id} onPickSize={setSelectedSizeId} />
+          )}
+          {!product.isTool && product.category !== 'automotriz' && (
             <div className="pt-1">
               <button
                 type="button"
@@ -629,8 +639,13 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
                 +
               </button>
             </div>
-            {isCurrentSelectionInStock && selectedSize?.stock != null && selectedSize.stock <= 10 && (
-              <span className="text-[11px] font-bold text-amber-700">¡Quedan {selectedSize.stock} {selectedSize.stock === 1 ? 'unidad' : 'unidades'}!</span>
+            {isCurrentSelectionInStock && selectedSize?.stock != null && (
+              selectedSize.stock <= 10
+                ? <span className="text-[11px] font-bold text-amber-700">¡Quedan {selectedSize.stock} {selectedSize.stock === 1 ? 'unidad' : 'unidades'}!</span>
+                : <span className="text-[11px] font-semibold text-slate-500">{selectedSize.stock} disponibles</span>
+            )}
+            {isCurrentSelectionInStock && quantity >= maxQty && selectedSize?.stock != null && selectedSize.stock < MAX_ITEM_QTY && (
+              <span className="w-full text-[11px] font-semibold text-slate-500">Es el máximo disponible en bodega para esta presentación.</span>
             )}
           </div>
 

@@ -1,3 +1,4 @@
+import { ColorSwatches } from './ProjectColorPicker';
 import React, { useEffect, useRef, useState } from 'react';
 import { ProjectChat, AsesorContacto } from './ProjectChat';
 import { SUPERFICIE_LABEL, AMBIENTE_LABEL } from './ClientProjectsManager';
@@ -111,7 +112,7 @@ ${pasos.length ? `<h2>Sistema recomendado</h2><ol>${pasos.map(x => `<li>${esc(x)
             <div className="flex items-center gap-2 text-slate-600"><Ruler className="w-4 h-4 text-slate-400 shrink-0" />{p.area ? `${Number(p.area).toLocaleString('es-CO')} m²` : '—'}</div>
             <div className="flex items-center gap-2 text-slate-600"><Layers className="w-4 h-4 text-slate-400 shrink-0" />{[superficie, ambiente].filter(Boolean).join(' · ') || '—'}</div>
             <div className="flex items-center gap-2 text-slate-600"><Palette className="w-4 h-4 text-slate-400 shrink-0" />
-              {p.colorHex && <span className="w-3 h-3 rounded-full ring-1 ring-black/10 shrink-0" style={{ backgroundColor: p.colorHex }} />}{p.color || 'Por definir'}
+              <ColorSwatches color={p.color} colorHex={p.colorHex} />{p.color || 'Por definir'}
             </div>
           </div>
 

@@ -37,3 +37,7 @@ export const sceneThumb = (id: string) => `/visualizer/${id}-thumb.jpg`;
 
 export const scenesForCategory = (category?: string): VisualizerScene[] =>
   VISUALIZER_SCENES[(category as VisualizerCategory)] || VISUALIZER_SCENES.hogar;
+
+/** Categoría a la que pertenece una escena (define el acabado con que se pinta) */
+export const categoryOfScene = (id: string): VisualizerCategory | undefined =>
+  (Object.keys(VISUALIZER_SCENES) as VisualizerCategory[]).find(cat => VISUALIZER_SCENES[cat].some(s => s.id === id));

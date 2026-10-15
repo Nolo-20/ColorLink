@@ -41,7 +41,7 @@ export async function cargarDatosTienda(): Promise<void> {
   const vistos = new Set<string>();
   const colores: typeof PROJECT_COLORS = [];
   for (const p of STORE_PRODUCTS) {
-    if (p.isTool) continue;
+    if (p.isTool || p.category === 'automotriz') continue; // los proyectos son de obra: muros, fachadas y pisos
     for (const c of p.colors) {
       const clave = c.name.trim().toLowerCase();
       if (!c.inStock || vistos.has(clave)) continue;
@@ -58,6 +58,16 @@ export const nombresCiudades = (): string[] => STORE_CITIES.map(c => c.ciudad);
 export const ciudadesDomicilio = (): string[] => STORE_CITIES.filter(c => c.domicilio).map(c => c.ciudad);
 
 export const MAX_ITEM_QTY = 99;
+
+/** Unidades en bodega de una presentación (según el último catálogo cargado). */
+export const stockDe = (productId: string, sizeId: string): number => {
+  const size = STORE_PRODUCTS.find(p => p.id === productId)?.sizes.find(s => s.id === sizeId);
+  if (!size) return 0;
+  return typeof size.stock === 'number' ? Math.max(0, size.stock) : (size.inStock === false ? 0 : MAX_ITEM_QTY);
+};
+
+/** Máximo que se puede pedir de una presentación: lo que hay en bodega (y nunca más de MAX_ITEM_QTY). */
+export const maxPedible = (productId: string, sizeId: string): number => Math.min(MAX_ITEM_QTY, stockDe(productId, sizeId));
 
 /** Limita una cantidad a un entero entre 1 y MAX_ITEM_QTY (NaN -> 1). */
 export const clampQty = (n: number): number => {

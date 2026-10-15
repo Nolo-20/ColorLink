@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ProjectFormData, SurfaceType, SpaceEnvironment, SurfaceCondition, ColorTone, UserProfile } from '../types';
-import { COLOR_PALETTES, EMPTY_PROJECT_FORM } from '../data/mockData';
+import { EMPTY_PROJECT_FORM } from '../data/mockData';
+import { ProjectColorPicker } from './ProjectColorPicker';
 import { CIUDADES_PROYECTO, AREA_MAX_M2, errorNombreProyecto, errorArea } from './ClientProjectsManager';
 import {
   Building2,
@@ -155,11 +156,6 @@ export const SmartCaptureForm: React.FC<SmartCaptureFormProps> = ({
   const handleRemovePhoto = (id: string) => {
     setErrorFotos('');
     setFormData(prev => ({ ...prev, fotos: prev.fotos.filter(p => p.id !== id) }));
-  };
-
-  const handleColorSelect = (tone: ColorTone) => {
-    setTocado(t => ({ ...t, color: true }));
-    set({ color: tone.name, colorHex: tone.hex });
   };
 
   const cambiarArea = (texto: string) => {
@@ -423,26 +419,17 @@ export const SmartCaptureForm: React.FC<SmartCaptureFormProps> = ({
             <div className="w-9 h-9 rounded-xl bg-cyan-100 text-cyan-700 flex items-center justify-center font-bold shrink-0">4</div>
             <div>
               <h2 className="text-base font-bold text-slate-900">Color y acabado</h2>
-              <p className="text-xs text-slate-500">Un color de referencia; tu asesor te ayuda a ajustarlo</p>
+              <p className="text-xs text-slate-500">Hasta 3 colores de referencia; tu asesor te ayuda a ajustarlos</p>
             </div>
           </div>
 
           <fieldset id="campo-color" className="mb-5">
             <legend className="sr-only">Color *</legend>
-            <div className="grid grid-cols-1 min-[400px]:grid-cols-2 sm:grid-cols-4 gap-3">
-              {COLOR_PALETTES.map((tone) => {
-                const isSelected = formData.color === tone.name;
-                return (
-                  <button key={tone.id} id={`color-swatch-${tone.id}`} type="button" aria-pressed={isSelected} onClick={() => handleColorSelect(tone)} className={`${opcion(isSelected)} flex items-center gap-3`}>
-                    <span className="w-8 h-8 rounded-lg shadow-inner border border-black/10 shrink-0" style={{ backgroundColor: tone.hex }} />
-                    <span className="overflow-hidden">
-                      <span className="block text-xs font-bold text-slate-900 truncate">{tone.name}</span>
-                      <span className="block text-[10px] text-slate-400 font-mono">{tone.code}</span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+            <ProjectColorPicker
+              color={formData.color || ''}
+              colorHex={formData.colorHex || ''}
+              onChange={(color, colorHex) => { setTocado(t => ({ ...t, color: true })); set({ color, colorHex }); }}
+            />
             <ErrorTxt msg={err('color')} />
           </fieldset>
 

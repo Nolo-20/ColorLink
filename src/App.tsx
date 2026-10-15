@@ -14,7 +14,7 @@ import {
   CustomerOrder
 } from './types';
 import { INITIAL_USER, EMPTY_PROJECT_FORM, SAMPLE_CALCULATION, DEMO_PROFILES } from './data/mockData';
-import { STORE_PRODUCTS, cargarDatosTienda } from './data/storeProducts';
+import { STORE_PRODUCTS, cargarDatosTienda, maxPedible } from './data/storeProducts';
 import { Navbar } from './components/Navbar';
 import { ModernLoginScreen } from './components/ModernLoginScreen';
 import { BrandLogo } from './components/BrandLogo';
@@ -49,6 +49,30 @@ const productoDesdeUrl = (): StoreProduct | undefined => {
   return id ? STORE_PRODUCTS.find(x => x.id === id) : undefined;
 };
 
+// ---------- Carrito guardado en el navegador (sobrevive a recargar la página) ----------
+const CARRITO_KEY = 'colorlink_carrito_v1';
+
+/** Ajusta el carrito guardado al catálogo actual: precios vigentes, sin productos retirados y sin pasar el stock. */
+const reconciliarCarrito = (items: CartItem[]): CartItem[] =>
+  items.flatMap((it): CartItem[] => {
+    const p = STORE_PRODUCTS.find(x => x.id === it?.productId);
+    const s = p?.sizes.find(x => x.id === it.sizeId);
+    if (!p || !s) return [];
+    const max = maxPedible(p.id, s.id);
+    const cantidad = Math.max(1, Math.floor(Number(it.quantity)) || 1);
+    if (max <= 0) return [{ ...it, price: s.price, originalPrice: s.originalPrice, inStock: false, selectedForCheckout: false }];
+    return [{ ...it, price: s.price, originalPrice: s.originalPrice, inStock: true, quantity: Math.min(cantidad, max) }];
+  });
+
+const leerCarrito = (): CartItem[] => {
+  try {
+    const crudo = JSON.parse(localStorage.getItem(CARRITO_KEY) || '[]');
+    return Array.isArray(crudo) ? reconciliarCarrito(crudo) : [];
+  } catch {
+    return [];
+  }
+};
+
 function TiendaApp() {
   // ---------- Sesión real ----------
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
@@ -70,9 +94,21 @@ function TiendaApp() {
   }, []);
 
   // ---------- Carrito (100% cliente, como lo diseñó AI Studio) ----------
-  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [cartItems, setCartItems] = useState<CartItem[]>(leerCarrito);
+  const [cartNotice, setCartNotice] = useState<string | null>(null);
+  useEffect(() => {
+    try { localStorage.setItem(CARRITO_KEY, JSON.stringify(cartItems)); } catch { /* navegador sin almacenamiento */ }
+  }, [cartItems]);
+  useEffect(() => {
+    if (!cartNotice) return;
+    const t = setTimeout(() => setCartNotice(null), 4000);
+    return () => clearTimeout(t);
+  }, [cartNotice]);
+  /** Recarga catálogo y stock, y ajusta el carrito a lo que realmente hay */
+  const refrescarCatalogo = () => cargarDatosTienda().then(() => setCartItems(prev => reconciliarCarrito(prev))).catch(() => undefined);
   const [selectedProduct, setSelectedProduct] = useState<StoreProduct | undefined>(() => productoDesdeUrl());
   const [selectedColorForDetail, setSelectedColorForDetail] = useState<string | undefined>(undefined);
+  const [selectedSizeForDetail, setSelectedSizeForDetail] = useState<string | undefined>(undefined);
   const [selectedCategory, setSelectedCategory] = useState<StoreCategory>('todos');
   const [searchFilter, setSearchFilter] = useState('');
   const [isMiniCartOpen, setIsMiniCartOpen] = useState<boolean>(false);
@@ -301,6 +337,21 @@ function TiendaApp() {
     color?: StoreProductColor,
     quantity: number = 1
   ) => {
+    const max = maxPedible(product.id, size.id);
+    const pedido = Math.max(1, Math.floor(quantity) || 1);
+    const enCarrito = cartItems.find(item => item.productId === product.id && item.sizeId === size.id && item.colorId === color?.id)?.quantity || 0;
+    if (max <= 0) {
+      setCartNotice(`${product.name} (${size.name}) está agotado por ahora.`);
+      return;
+    }
+    if (enCarrito >= max) {
+      setCartNotice(`Ya tienes en el carrito las ${max} unidades disponibles de ${product.name} (${size.name}).`);
+      setIsMiniCartOpen(true);
+      return;
+    }
+    if (enCarrito + pedido > max) {
+      setCartNotice(`Solo hay ${max} unidades de ${product.name} (${size.name}); agregamos las disponibles.`);
+    }
     setCartItems(prev => {
       const existingIdx = prev.findIndex(item =>
         item.productId === product.id &&
@@ -309,7 +360,7 @@ function TiendaApp() {
       );
       if (existingIdx >= 0) {
         const updated = [...prev];
-        updated[existingIdx] = { ...updated[existingIdx], quantity: Math.min(99, updated[existingIdx].quantity + Math.max(1, Math.floor(quantity) || 1)) };
+        updated[existingIdx] = { ...updated[existingIdx], inStock: true, quantity: Math.min(max, updated[existingIdx].quantity + pedido) };
         return updated;
       }
       const newItem: CartItem = {
@@ -320,13 +371,14 @@ function TiendaApp() {
         sizeName: size.name,
         price: size.price,
         originalPrice: size.originalPrice,
-        quantity: Math.min(99, Math.max(1, Math.floor(quantity) || 1)),
+        quantity: Math.min(max, pedido),
         colorId: color?.id,
         colorName: color?.name,
         colorCode: color?.code,
         colorHex: color?.hex,
         image: product.image,
-        selectedForCheckout: true
+        selectedForCheckout: true,
+        inStock: true
       };
       return [...prev, newItem];
     });
@@ -358,7 +410,10 @@ function TiendaApp() {
       handleRemoveCartItem(id);
       return;
     }
-    setCartItems(prev => prev.map(item => item.id === id ? { ...item, quantity: Math.min(99, Math.floor(newQty)) } : item));
+    const item = cartItems.find(i => i.id === id);
+    const max = item ? maxPedible(item.productId, item.sizeId) : 0;
+    if (item && Math.floor(newQty) > max) setCartNotice(max > 0 ? `Solo hay ${max} unidades disponibles de ${item.name} (${item.sizeName}).` : `${item.name} (${item.sizeName}) está agotado.`);
+    setCartItems(prev => prev.map(i => i.id === id ? { ...i, quantity: Math.max(1, Math.min(max || 1, Math.floor(newQty))) } : i));
   };
 
   const handleRemoveCartItem = (id: string) => {
@@ -366,11 +421,11 @@ function TiendaApp() {
   };
 
   const handleToggleSelectCartItem = (id: string) => {
-    setCartItems(prev => prev.map(item => item.id === id ? { ...item, selectedForCheckout: !item.selectedForCheckout } : item));
+    setCartItems(prev => prev.map(item => item.id === id && item.inStock !== false ? { ...item, selectedForCheckout: !item.selectedForCheckout } : item));
   };
 
   const handleSelectAllCartItems = (selected: boolean) => {
-    setCartItems(prev => prev.map(item => ({ ...item, selectedForCheckout: selected })));
+    setCartItems(prev => prev.map(item => ({ ...item, selectedForCheckout: selected && item.inStock !== false })));
   };
 
   const handleBuyAgain = (item: CustomerOrder['items'][0]) => {
@@ -407,7 +462,7 @@ function TiendaApp() {
     // Botones Atrás / Adelante del navegador
     const abrirDesdeUrl = () => {
       const p = productoDesdeUrl();
-      if (p) { setSelectedProduct(p); setSelectedColorForDetail(undefined); setActiveTab('producto_detalle'); }
+      if (p) { setSelectedProduct(p); setSelectedColorForDetail(undefined); setSelectedSizeForDetail(undefined); setActiveTab('producto_detalle'); }
       else setActiveTab(prev => (prev === 'producto_detalle' ? 'tienda' : prev));
     };
     window.addEventListener('popstate', abrirDesdeUrl);
@@ -452,13 +507,14 @@ function TiendaApp() {
       if (data.success && data.order) {
         setCartItems(prev => prev.filter(item => !item.selectedForCheckout));
         loadRealOrders();
-        cargarDatosTienda().catch(() => undefined); // el stock cambió
+        refrescarCatalogo(); // el stock cambió
         const o = data.order;
         return {
           orderNum: `CL-${String(o.ordenId).slice(0, 8).toUpperCase()}`,
           pickupCode: o.metodoEntrega === 'recoger_tienda' && o.qrToken ? String(o.qrToken).slice(0, 8).toUpperCase() : undefined,
         };
       }
+      refrescarCatalogo(); // p. ej. el stock cambió mientras pagaba
       return { error: data.error || 'No se pudo registrar el pedido.' };
     } catch (err) {
       console.error('Error creando la orden real:', err);
@@ -568,13 +624,12 @@ function TiendaApp() {
           setSelectedCategory(cat);
           setActiveTab(cat === 'todos' ? 'tienda' : 'categoria');
         }}
-        onLoadSampleCase={handleLoadSampleCase}
         hasValidatedData={Boolean(formData.id)}
         onLogout={handleLogout}
         onOpenVirtualAssistant={() => setIsAssistantModalOpen(true)}
         onSelectProduct={(p) => {
           setSelectedProduct(p);
-          setSelectedColorForDetail(undefined);
+          setSelectedColorForDetail(undefined); setSelectedSizeForDetail(undefined);
           setActiveTab('producto_detalle');
         }}
         onOpenNotification={(n) => {
@@ -594,7 +649,7 @@ function TiendaApp() {
           <StorefrontHome
             onSelectProduct={(prod) => {
               setSelectedProduct(prod);
-              setSelectedColorForDetail(undefined);
+              setSelectedColorForDetail(undefined); setSelectedSizeForDetail(undefined);
               setActiveTab('producto_detalle');
             }}
             onQuickAddToCart={(prod) => {
@@ -620,9 +675,10 @@ function TiendaApp() {
         {activeTab === 'categoria' && (
           <CategoryPageView
             category={selectedCategory}
-            onSelectProduct={(prod, initialColorId) => {
+            onSelectProduct={(prod, initialColorId, initialSizeId) => {
               setSelectedProduct(prod);
               setSelectedColorForDetail(initialColorId);
+              setSelectedSizeForDetail(initialSizeId);
               setActiveTab('producto_detalle');
             }}
             onQuickAddToCart={(prod, color) => {
@@ -662,6 +718,7 @@ function TiendaApp() {
           <ProductDetailView
             product={selectedProduct}
             initialColorId={selectedColorForDetail}
+            initialSizeId={selectedSizeForDetail}
             onAddToCart={handleAddToCart}
             onBuyNow={handleBuyNow}
             onBackToCatalog={() => setActiveTab('tienda')}
@@ -710,7 +767,7 @@ function TiendaApp() {
             onViewProduct={(id, nombre) => {
               const p = STORE_PRODUCTS.find(x => x.id === id)
                 || STORE_PRODUCTS.find(x => x.name.trim().toLowerCase() === nombre.trim().toLowerCase());
-              if (p) { setSelectedProduct(p); setSelectedColorForDetail(undefined); setActiveTab('producto_detalle'); }
+              if (p) { setSelectedProduct(p); setSelectedColorForDetail(undefined); setSelectedSizeForDetail(undefined); setActiveTab('producto_detalle'); }
             }}
           />
         )}
@@ -904,6 +961,14 @@ function TiendaApp() {
         user={user}
         formData={formData}
       />
+
+      {cartNotice && (
+        <div role="status" className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[120] w-[calc(100%-2rem)] max-w-md rounded-2xl bg-[#0A1A36] text-white text-xs font-semibold px-4 py-3 shadow-2xl border border-amber-400/60 flex items-start gap-2">
+          <span className="text-amber-400 font-black">!</span>
+          <span className="flex-1">{cartNotice}</span>
+          <button type="button" onClick={() => setCartNotice(null)} aria-label="Cerrar aviso" className="text-slate-400 hover:text-white cursor-pointer">✕</button>
+        </div>
+      )}
 
       <FloatingAssistantButton
         isOpen={isAssistantModalOpen}

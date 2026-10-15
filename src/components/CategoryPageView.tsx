@@ -4,6 +4,7 @@ import { STORE_PRODUCTS, formatCOP, toolTypeFor } from '../data/storeProducts';
 import { PaintCanGraphic } from './PaintCanGraphic';
 import { ToolGraphic } from './ToolGraphic';
 import { PaintedScene } from './PaintedScene';
+import { AutoKitGuide } from './AutoKitGuide';
 import { scenesForCategory, sceneImage } from '../data/visualizerScenes';
 import {
   Truck,
@@ -21,7 +22,7 @@ import {
 
 interface CategoryPageViewProps {
   category: StoreCategory;
-  onSelectProduct: (product: StoreProduct, initialColorId?: string) => void;
+  onSelectProduct: (product: StoreProduct, initialColorId?: string, initialSizeId?: string) => void;
   onQuickAddToCart: (product: StoreProduct, color?: StoreProductColor, size?: StoreProductSize) => void;
   onBackToStore: () => void;
   onOpenCalculator: (product?: StoreProduct) => void;
@@ -136,12 +137,21 @@ const CATEGORY_DETAILS: Record<StoreCategory, CategoryInfo> = {
   }
 };
 
-type SortKey = 'relevancia' | 'precio_asc' | 'precio_desc' | 'nombre';
+type SortKey = 'relevancia' | 'precio_asc' | 'precio_desc' | 'nombre' | 'nombre_desc' | 'disponibles';
 
 const normalize = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
 const defaultSizeOf = (p: StoreProduct) =>
   p.sizes.find(s => s.id === p.defaultSizeId && s.inStock) || p.sizes.find(s => s.inStock) || p.sizes[0];
+
+/** Orden de los colores dentro de una línea (todos tienen el mismo precio por presentación) */
+const ordenarColores = (colors: StoreProductColor[], sortKey: SortKey) => {
+  const lista = [...colors];
+  if (sortKey === 'nombre') lista.sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  if (sortKey === 'nombre_desc') lista.sort((a, b) => b.name.localeCompare(a.name, 'es'));
+  if (sortKey === 'disponibles') lista.sort((a, b) => Number(b.inStock) - Number(a.inStock));
+  return lista;
+};
 
 const minPrice = (p: StoreProduct) => {
   const inStock = p.sizes.filter(s => s.inStock);
@@ -264,6 +274,8 @@ export const CategoryPageView: React.FC<CategoryPageViewProps> = ({
     if (sortKey === 'precio_asc') sorted.sort((a, b) => minPrice(a) - minPrice(b));
     if (sortKey === 'precio_desc') sorted.sort((a, b) => minPrice(b) - minPrice(a));
     if (sortKey === 'nombre') sorted.sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    if (sortKey === 'nombre_desc') sorted.sort((a, b) => b.name.localeCompare(a.name, 'es'));
+    if (sortKey === 'disponibles') sorted.sort((a, b) => Number(b.sizes.some(s => s.inStock)) - Number(a.sizes.some(s => s.inStock)));
     return sorted;
   }, [categoryProducts, lineFilter, q, sortKey]);
 
@@ -343,7 +355,16 @@ export const CategoryPageView: React.FC<CategoryPageViewProps> = ({
               </div>
             </div>
 
-            {category !== 'herramientas' && (
+            {category === 'automotriz' && categoryProducts[0] && (
+              <div className="lg:col-span-4">
+                <AutoKitGuide
+                  product={categoryProducts[0]}
+                  variant="dark"
+                  onPickSize={(sizeId) => onSelectProduct(categoryProducts[0], undefined, sizeId)}
+                />
+              </div>
+            )}
+            {category !== 'herramientas' && category !== 'automotriz' && (
               <div className="lg:col-span-4 bg-slate-950/50 backdrop-blur-md p-6 rounded-2xl border border-white/20 text-white space-y-3 shadow-xl">
                 <div className="flex items-center gap-2">
                   <Sparkles className="w-5 h-5 text-amber-300" />
@@ -417,9 +438,11 @@ export const CategoryPageView: React.FC<CategoryPageViewProps> = ({
                 className="w-full md:w-56 pl-8 pr-3 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-800 cursor-pointer focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
               >
                 <option value="relevancia">Relevancia</option>
-                <option value="precio_asc">Precio: menor a mayor</option>
-                <option value="precio_desc">Precio: mayor a menor</option>
-                <option value="nombre">Nombre (A–Z)</option>
+                {categoryProducts.length > 1 && <option value="precio_asc">Precio: menor a mayor</option>}
+                {categoryProducts.length > 1 && <option value="precio_desc">Precio: mayor a menor</option>}
+                <option value="nombre">{showAsLines ? 'Nombre / color (A–Z)' : 'Nombre (A–Z)'}</option>
+                <option value="nombre_desc">{showAsLines ? 'Nombre / color (Z–A)' : 'Nombre (Z–A)'}</option>
+                <option value="disponibles">Disponibles primero</option>
               </select>
             </div>
           </div>
@@ -441,9 +464,9 @@ export const CategoryPageView: React.FC<CategoryPageViewProps> = ({
           visibleProducts.map(product => {
             const size = defaultSizeOf(product);
             const colorMatches = q && product.colors.some(c => normalize(`${c.name} ${c.code}`).includes(q)) && !normalize(`${product.name} ${product.subtitle}`).includes(q);
-            const colors = colorMatches
+            const colors = ordenarColores(colorMatches
               ? product.colors.filter(c => normalize(`${c.name} ${c.code}`).includes(q))
-              : product.colors;
+              : product.colors, sortKey);
             const freeShipping = size.price >= FREE_SHIPPING_THRESHOLD;
 
             return (
@@ -466,7 +489,7 @@ export const CategoryPageView: React.FC<CategoryPageViewProps> = ({
                   </button>
                 </div>
 
-                <ScrollRow label={product.name}>
+                <ScrollRow key={sortKey} label={product.name}>
                   {colors.map(color => {
                     const cardId = `${product.id}-${color.id}`;
                     const isJustAdded = addedAnimationId === cardId;

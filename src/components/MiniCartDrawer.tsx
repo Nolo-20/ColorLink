@@ -12,7 +12,8 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CartItem } from '../types';
-import { MAX_ITEM_QTY, clampQty, formatCOP } from '../data/storeProducts';
+import { clampQty, formatCOP, maxPedible } from '../data/storeProducts';
+import { StockLinea } from './StockLinea';
 
 interface MiniCartDrawerProps {
   isOpen: boolean;
@@ -197,6 +198,7 @@ export const MiniCartDrawer: React.FC<MiniCartDrawerProps> = ({
                           <p className="text-[11px] text-slate-500 font-medium">
                             {item.sizeName}{item.colorName ? ` • ${item.colorName}` : ''}
                           </p>
+                          <StockLinea productId={item.productId} sizeId={item.sizeId} quantity={item.quantity} />
                           <div className="text-sm font-black text-slate-900">
                             {formatCOP(item.price * item.quantity)} <span className="text-[10px] text-slate-500">COP</span>
                           </div>
@@ -225,9 +227,9 @@ export const MiniCartDrawer: React.FC<MiniCartDrawerProps> = ({
                               <button
                                 type="button"
                                 onClick={() => onUpdateQuantity(item.id, clampQty(item.quantity + 1))}
-                                disabled={item.quantity >= MAX_ITEM_QTY}
+                                disabled={item.quantity >= maxPedible(item.productId, item.sizeId)}
                                 className="p-1 text-slate-800 hover:text-slate-950 transition-transform active:scale-80 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                                title={item.quantity >= MAX_ITEM_QTY ? `Máximo ${MAX_ITEM_QTY} unidades` : 'Aumentar'}
+                                title={item.quantity >= maxPedible(item.productId, item.sizeId) ? `Solo hay ${maxPedible(item.productId, item.sizeId)} disponibles` : 'Aumentar'}
                                 aria-label="Aumentar cantidad"
                               >
                                 <Plus className="w-3.5 h-3.5" />

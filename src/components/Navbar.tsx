@@ -13,7 +13,6 @@ import {
   ChevronDown,
   Building2,
   MapPin,
-  Sparkles,
   ShoppingCart,
   LogIn,
   Store,
@@ -37,7 +36,6 @@ interface NavbarProps {
   onSearchChange?: (query: string) => void;
   selectedCategory?: StoreCategory;
   onSelectCategory?: (category: StoreCategory) => void;
-  onLoadSampleCase: () => void;
   hasValidatedData: boolean;
   onLogout?: () => void;
   onOpenVirtualAssistant?: () => void;
@@ -75,7 +73,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   searchFilter,
   selectedCategory = 'todos',
   onSelectCategory,
-  onLoadSampleCase,
   hasValidatedData,
   onLogout,
   onOpenVirtualAssistant,
@@ -202,7 +199,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   : 'bg-slate-900/80 hover:bg-slate-800 text-slate-200 border-slate-700/70 hover:text-white'
               }`}
             >
-              <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+              <MapPin className={`w-3.5 h-3.5 ${activeTab === 'tiendas' ? 'text-slate-950' : 'text-emerald-400'}`} />
               <span>Tiendas</span>
             </button>
 
@@ -225,7 +222,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   : 'bg-slate-900/80 hover:bg-slate-800 text-white border-slate-700/70'
               }`}
             >
-              <HardHat className="w-3.5 h-3.5 text-amber-400" />
+              <HardHat className={`w-3.5 h-3.5 ${activeTab === 'captura' || activeTab === 'dashboard' || activeTab === 'proyectos_teaser' ? 'text-slate-950' : 'text-amber-400'}`} />
               <span>Proyectos & Obras</span>
             </button>
           </div>
@@ -265,7 +262,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }`}
                 title="Rastrear y ver mis pedidos"
               >
-                <Package className="w-5 h-5 text-emerald-400" />
+                <Package className={`w-5 h-5 ${activeTab === 'pedidos' ? 'text-slate-950' : 'text-emerald-400'}`} />
                 <span className="hidden sm:inline text-xs font-bold">Pedidos</span>
               </button>
             )}
@@ -342,13 +339,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                         <span>Tienda de Pinturas</span>
                       </button>
 
-                      <button
-                        onClick={() => { onLoadSampleCase(); setIsUserDropdownOpen(false); }}
-                        className="w-full text-left p-2 rounded-xl hover:bg-slate-100 text-slate-700 flex items-center gap-2 cursor-pointer"
-                      >
-                        <Sparkles className="w-4 h-4 text-amber-500" />
-                        <span>Cargar Caso Demo 85m²</span>
-                      </button>
                     </div>
 
                     <div className="pt-2 border-t border-slate-100">
@@ -378,7 +368,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
 
             <button
+              type="button"
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              aria-label={isMobileMenuOpen ? 'Cerrar menú' : 'Abrir menú'}
+              aria-expanded={isMobileMenuOpen}
               className="lg:hidden p-2 rounded-xl bg-slate-900/80 text-white hover:bg-slate-800 border border-slate-700/70 cursor-pointer"
             >
               {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -471,7 +464,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 activeTab === 'tiendas' ? 'bg-emerald-500 text-slate-950 border-emerald-400' : 'bg-slate-800/70 text-white border-slate-700/70'
               }`}
             >
-              <MapPin className="w-4 h-4 text-emerald-400" />
+              <MapPin className={`w-4 h-4 ${activeTab === 'tiendas' ? 'text-slate-950' : 'text-emerald-400'}`} />
               <span>Tiendas & Sucursales</span>
             </button>
 

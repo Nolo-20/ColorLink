@@ -1,14 +1,24 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { paintSurface, rgbToLab, closeMask } from '../lib/surfacePainter';
-import { sceneImage, sceneMask } from '../data/visualizerScenes';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { paintSurface, prepareSurface, rgbToLab, closeMask, SurfaceFinish } from '../lib/surfacePainter';
+import { sceneImage, sceneMask, categoryOfScene } from '../data/visualizerScenes';
+
+/** Acabado según el tipo de escena: laca automotriz brillante, epóxico semibrillante o muro mate */
+const finishFor = (sceneId: string): SurfaceFinish => {
+  switch (categoryOfScene(sceneId)) {
+    case 'automotriz': return { gloss: 1, darkCut: 40 };
+    case 'industrial': return { gloss: 0.6, darkCut: 0 };
+    default: return { gloss: 0.15, darkCut: 0 };
+  }
+};
 
 interface LoadedScene {
   base: ImageData;
   alpha: Uint8ClampedArray;
 }
 
-// Caché compartida: cada escena se descarga y decodifica una sola vez
+// Caché compartida: cada escena se descarga, decodifica y prepara una sola vez
 const cache = new Map<string, Promise<LoadedScene>>();
+const preparedCache = new WeakMap<LoadedScene, ReturnType<typeof prepareSurface>>();
 
 const loadImage = (src: string) => new Promise<HTMLImageElement>((resolve, reject) => {
   const img = new Image();
@@ -164,15 +174,24 @@ export const PaintedScene: React.FC<PaintedSceneProps> = ({ sceneId, colorHex, c
     return () => { alive = false; };
   }, [sceneId]);
 
+  const finish = finishFor(sceneId);
+  // La preparación (luz de la foto y máscara refinada) se hace una vez por escena
+  const prepared = useMemo(() => {
+    if (!scene) return null;
+    let p = preparedCache.get(scene);
+    if (!p) { p = prepareSurface(scene.base, scene.alpha, finish); preparedCache.set(scene, p); }
+    return p;
+  }, [scene]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !scene) return;
-    const { base, alpha } = scene;
+    if (!canvas || !scene || !prepared) return;
+    const { base } = scene;
     canvas.width = base.width; canvas.height = base.height;
     const out = new ImageData(base.width, base.height);
-    paintSurface(base, alpha, colorHex, out);
+    paintSurface(base, prepared, colorHex, out, finish);
     canvas.getContext('2d')!.putImageData(out, 0, 0);
-  }, [scene, colorHex]);
+  }, [scene, prepared, colorHex]);
 
   if (failed) {
     return <img src={sceneImage(sceneId)} alt={alt} className={`object-cover ${className}`} />;

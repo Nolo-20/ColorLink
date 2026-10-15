@@ -16,7 +16,8 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { CartItem } from '../types';
-import { MAX_ITEM_QTY, clampQty, formatCOP } from '../data/storeProducts';
+import { clampQty, formatCOP, maxPedible } from '../data/storeProducts';
+import { StockLinea } from './StockLinea';
 
 interface FullCartPageProps {
   cartItems: CartItem[];
@@ -184,7 +185,8 @@ export const FullCartPage: React.FC<FullCartPageProps> = ({
                       </div>
                     </div>
 
-                    {!item.selectedForCheckout && (
+                    <StockLinea productId={item.productId} sizeId={item.sizeId} quantity={item.quantity} />
+                    {item.inStock !== false && !item.selectedForCheckout && (
                       <p className="text-[11px] font-semibold text-amber-700">Guardado para más tarde: no se incluirá en este pago.</p>
                     )}
 
@@ -214,9 +216,9 @@ export const FullCartPage: React.FC<FullCartPageProps> = ({
                         <button
                           type="button"
                           onClick={() => onUpdateQuantity(item.id, clampQty(item.quantity + 1))}
-                          disabled={item.quantity >= MAX_ITEM_QTY}
+                          disabled={item.quantity >= maxPedible(item.productId, item.sizeId)}
                           className="p-1 text-slate-900 hover:text-slate-950 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                          title={item.quantity >= MAX_ITEM_QTY ? `Máximo ${MAX_ITEM_QTY} unidades` : 'Aumentar cantidad'}
+                          title={item.quantity >= maxPedible(item.productId, item.sizeId) ? `Solo hay ${maxPedible(item.productId, item.sizeId)} disponibles` : 'Aumentar cantidad'}
                           aria-label="Aumentar cantidad"
                         >
                           <Plus className="w-4 h-4 text-slate-700" />

@@ -216,54 +216,153 @@ export function maskToCanvas(mask: Uint8Array, width: number, height: number): H
   return c;
 }
 
+/** Acabado de la superficie: cuánto brillo/reflejo tiene y si se excluyen partes oscuras (llantas, molduras, vidrios). */
+export interface SurfaceFinish {
+  /** 0 = mate (muros), 1 = laca automotriz de alto brillo */
+  gloss: number;
+  /** Excluir píxeles mucho más oscuros que la superficie (diferencia de L*). 0 = no excluir. */
+  darkCut: number;
+}
+
+export interface PreparedSurface {
+  width: number;
+  height: number;
+  /** L* de cada píxel de la foto */
+  L: Float32Array;
+  /** Máscara final 0..1 (ya sin molduras oscuras y con bordes suaves) */
+  alpha: Float32Array;
+  /** L* mediana de la superficie original */
+  Lm: number;
+  /** Filas superior e inferior de la superficie (para el reflejo del cielo) */
+  y0: number;
+  y1: number;
+}
+
+const median = (vals: number[]) => {
+  if (!vals.length) return 50;
+  vals.sort((a, b) => a - b);
+  return vals[Math.floor(vals.length / 2)];
+};
+
+/** Se calcula una vez por escena: luminosidad, mediana de la superficie y máscara refinada. */
+export function prepareSurface(base: ImageData, alphaMask: Uint8ClampedArray, finish: SurfaceFinish): PreparedSurface {
+  const { width: W, height: H } = base;
+  const n = W * H;
+  const px = base.data;
+  const L = new Float32Array(n);
+  const C = new Float32Array(n);
+  const muestraL: number[] = [];
+  const muestraC: number[] = [];
+  let y0 = H, y1 = 0;
+  for (let i = 0; i < n; i++) {
+    const [l, a, b] = rgbToLab(px[i * 4], px[i * 4 + 1], px[i * 4 + 2]);
+    L[i] = l; C[i] = Math.hypot(a, b);
+    if (alphaMask[i * 4 + 3] >= 128) {
+      if ((i & 7) === 0) { muestraL.push(l); muestraC.push(C[i]); }
+      const y = (i / W) | 0;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+  }
+  const Lm = median(muestraL);
+  const Cm = median(muestraC);
+
+  const raw = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let a = alphaMask[i * 4 + 3] / 255;
+    // Molduras negras, llantas, vidrios oscuros y pilotos de color no son pintura de carrocería
+    if (a > 0 && finish.darkCut > 0 && (L[i] < Lm - finish.darkCut || C[i] > Cm + 30)) a = 0;
+    raw[i] = a;
+  }
+  // Bordes suaves (caja 3x3)
+  const alpha = new Float32Array(n);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      let sum = 0, cnt = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        const yy = y + dy;
+        if (yy < 0 || yy >= H) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx;
+          if (xx < 0 || xx >= W) continue;
+          sum += raw[yy * W + xx]; cnt++;
+        }
+      }
+      alpha[y * W + x] = sum / cnt;
+    }
+  }
+  return { width: W, height: H, L, alpha, Lm, y0: y0 > y1 ? 0 : y0, y1: y0 > y1 ? H - 1 : y1 };
+}
+
+const labLToY = (l: number) => {
+  const fy = (l + 16) / 116;
+  const f3 = fy * fy * fy;
+  return f3 > 0.008856 ? f3 : (fy - 16 / 116) / 7.787;
+};
+
 /**
- * Pinta la región: el color objetivo se multiplica por la iluminación relativa de
- * cada píxel (luminancia del píxel / luminancia media de la superficie), así se
- * conservan sombras, luces y textura. alphaMask es un canvas del tamaño de la foto.
+ * Pinta la superficie conservando la luz de la foto:
+ *  - el tono sale del color elegido (se escala en RGB lineal, así no cambia de matiz);
+ *  - las sombras se suavizan según lo oscuro del color (en un negro casi no se notan, en un blanco sí);
+ *  - los brillos y el reflejo del cielo se suman y pierden color, como en una pintura brillante;
+ *  - un 10 % menos de croma, porque en una foto ningún color se ve "puro".
  */
 export function paintSurface(
   base: ImageData,
-  alphaMask: Uint8ClampedArray,
+  prep: PreparedSurface,
   colorHex: string,
-  out: ImageData
+  out: ImageData,
+  finish: SurfaceFinish
 ) {
   const px = base.data;
   const o = out.data;
+  const { L, alpha, Lm, y0, y1, width: W } = prep;
   const n = base.width * base.height;
-
-  // Luminancia media (lineal) de la superficie original
-  let sumY = 0, cnt = 0;
-  for (let i = 0; i < n; i++) {
-    const a = alphaMask[i * 4 + 3];
-    if (a < 128) continue;
-    sumY += LIN[px[i * 4]] * 0.2126 + LIN[px[i * 4 + 1]] * 0.7152 + LIN[px[i * 4 + 2]] * 0.0722;
-    cnt++;
-  }
-  const meanY = cnt ? sumY / cnt : 0.5;
+  const gloss = finish.gloss;
 
   const [tr, tg, tb] = hexToRgb(colorHex);
   const TR = LIN[tr], TG = LIN[tg], TB = LIN[tb];
-  const targetY = TR * 0.2126 + TG * 0.7152 + TB * 0.0722;
-  // En colores oscuros comprimimos un poco el contraste para que no se "queme" la textura
-  const contrast = 0.75 + 0.25 * Math.min(1, targetY / 0.5);
+  const tY = Math.max(1e-4, TR * 0.2126 + TG * 0.7152 + TB * 0.0722);
+  const Lt = rgbToLab(tr, tg, tb)[0];
+  const kSombra = 0.35 + 0.65 * Math.min(1, Lt / Math.max(1, Lm));
+  const room = Math.max(1, 100 - Lt);
+  const alto = Math.max(1, y1 - y0);
 
   for (let i = 0; i < n; i++) {
-    const a = alphaMask[i * 4 + 3] / 255;
+    const a = alpha[i];
     const r = px[i * 4], g = px[i * 4 + 1], b = px[i * 4 + 2];
-    if (a <= 0) {
-      o[i * 4] = r; o[i * 4 + 1] = g; o[i * 4 + 2] = b; o[i * 4 + 3] = 255;
+    o[i * 4 + 3] = 255;
+    if (a <= 0.004) {
+      o[i * 4] = r; o[i * 4 + 1] = g; o[i * 4 + 2] = b;
       continue;
     }
-    const Y = LIN[r] * 0.2126 + LIN[g] * 0.7152 + LIN[b] * 0.0722;
-    let light = meanY > 0 ? Y / meanY : 1;
-    light = 1 + (light - 1) * contrast;
-    light = Math.max(0.08, Math.min(1.9, light));
-    const nr = linearToSrgb(Math.min(1, TR * light));
-    const ng = linearToSrgb(Math.min(1, TG * light));
-    const nb = linearToSrgb(Math.min(1, TB * light));
-    o[i * 4] = Math.round(r + (nr - r) * a);
-    o[i * 4 + 1] = Math.round(g + (ng - g) * a);
-    o[i * 4 + 2] = Math.round(b + (nb - b) * a);
-    o[i * 4 + 3] = 255;
+    const d = L[i] - Lm;
+    const sombra = d < 0 ? d : 0;
+    const brillo = d > 0 ? d : 0;
+    let env = 0;
+    if (gloss > 0) {
+      const yn = Math.min(1, Math.max(0, ((i / W | 0) - y0) / alto));
+      const arriba = Math.max(0, 1 - yn / 0.45);
+      env = gloss * (9 * Math.pow(arriba, 1.5) - 5 * Math.min(1, Math.max(0, (yn - 0.8) / 0.2)));
+    }
+    const pos = brillo * gloss + Math.max(0, env);
+    let Lo = Lt + sombra * kSombra + (pos * room) / (pos + room) + Math.min(0, env);
+    Lo = Math.max(Lo, Lt * 0.55);
+    Lo = Math.min(100, Math.max(0, Lo));
+    const Yo = labLToY(Lo);
+    const desat = Math.min(1, Math.max(0.25, 1 - (brillo * gloss) / 45 - Math.max(0, env) / 80)) * 0.9;
+    const w = 1 - desat;
+    const esc = Yo / tY;
+    let cr = TR * esc * desat + Yo * w;
+    let cg = TG * esc * desat + Yo * w;
+    let cb = TB * esc * desat + Yo * w;
+    const mx = Math.max(cr, cg, cb);
+    if (mx > 1) {
+      const k = 1 / mx;
+      cr = cr * k + (1 - k) * Yo; cg = cg * k + (1 - k) * Yo; cb = cb * k + (1 - k) * Yo;
+    }
+    o[i * 4] = Math.round(r + (linearToSrgb(cr) - r) * a);
+    o[i * 4 + 1] = Math.round(g + (linearToSrgb(cg) - g) * a);
+    o[i * 4 + 2] = Math.round(b + (linearToSrgb(cb) - b) * a);
   }
 }

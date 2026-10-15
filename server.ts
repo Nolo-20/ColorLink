@@ -1296,6 +1296,13 @@ async function startServer() {
         imageBase64
       } = req.body;
 
+      // Hasta 3 colores: nombres separados por coma y hex "#RRGGBB" separados por coma
+      if (colorHex != null && colorHex !== '' && !/^#[0-9a-f]{6}(,#[0-9a-f]{6}){0,2}$/i.test(String(colorHex))) {
+        return res.status(400).json({ success: false, error: 'Puedes elegir máximo 3 colores.' });
+      }
+      if (color != null && String(color).length > 200) {
+        return res.status(400).json({ success: false, error: 'Los nombres de los colores son demasiado largos.' });
+      }
       if (!nombreProyecto) {
         return res.status(400).json({ success: false, error: 'El nombre del proyecto es requerido' });
       }
