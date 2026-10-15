@@ -50,6 +50,7 @@ export const ESTADO_CLIENTE: Record<string, { label: string; detalle: string; cl
   aprobado_calidad: { label: 'Aprobado por calidad', detalle: 'El sistema fue aprobado y pasa a despacho.', clase: 'bg-teal-50 text-teal-700 border-teal-200' },
   rechazado: { label: 'Requiere ajustes', detalle: 'El perito pidió ajustes técnicos; te contactaremos.', clase: 'bg-amber-50 text-amber-700 border-amber-200' },
   despachado: { label: 'Despachado', detalle: 'Tu pedido va en camino a la obra.', clase: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+  entregado: { label: 'Entregado', detalle: 'El material fue recibido en obra. Proyecto finalizado.', clase: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
   cancelado: { label: 'Cancelado', detalle: 'Este proyecto fue cerrado.', clase: 'bg-slate-100 text-slate-600 border-slate-200' }
 };
 const TIPOS_IMAGEN = ['image/png', 'image/jpeg', 'image/webp'];

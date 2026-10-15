@@ -79,7 +79,7 @@ export interface ProjectFormData {
   consentimientoDatos: boolean;
   timestamp: string;
   // Campos de ajuste asesor / calidad
-  estadoPipeline?: 'capturado' | 'revision_asesor' | 'aprobado_calidad' | 'cotizado' | 'despachado';
+  estadoPipeline?: 'capturado' | 'revision_asesor' | 'aprobado_calidad' | 'cotizado' | 'despachado' | 'entregado';
   descuentoAsesorPct?: number;
   observacionesAsesor?: string;
   dictamenCalidad?: {

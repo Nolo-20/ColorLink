@@ -117,7 +117,7 @@ const MAX_AREA_M2 = 100000;
 const MAX_DESCUENTO_ASESOR = 15;
 const ESTADOS_PROYECTO = [
   'en_revision', 'imagen_por_corregir', 'en_peritaje', 'cotizado',
-  'aprobado_calidad', 'rechazado', 'despachado', 'cancelado'
+  'aprobado_calidad', 'rechazado', 'despachado', 'entregado', 'cancelado'
 ];
 
 // Estados que un asesor puede fijar a mano; aprobar/rechazar/despachar tienen su propio flujo
@@ -191,7 +191,7 @@ function textoHistorialCliente(
   const ESTADO: Record<string, string> = {
     en_revision: 'en revisión', imagen_por_corregir: 'pendiente de una nueva foto', en_peritaje: 'en revisión técnica',
     cotizado: 'cotizado', aprobado_calidad: 'aprobado por calidad', rechazado: 'con ajustes técnicos pendientes',
-    despachado: 'despachado', cancelado: 'cancelado'
+    despachado: 'despachado', entregado: 'entregado en obra', cancelado: 'cancelado'
   };
   if (c.startsWith('Escalado a asesor ')) {
     const asesor = c.slice('Escalado a asesor '.length).split('.')[0];
@@ -1417,7 +1417,7 @@ async function startServer() {
 
       const proyectoActual = await prisma.proyecto.findUnique({ where: { proyectoId: req.params.id } });
       if (!proyectoActual) return res.status(404).json({ success: false, error: 'Proyecto no encontrado' });
-      if (['despachado', 'cancelado'].includes(proyectoActual.estadoPipeline || '')) {
+      if (['despachado', 'entregado', 'cancelado'].includes(proyectoActual.estadoPipeline || '')) {
         return res.status(400).json({ success: false, error: 'Este proyecto ya está cerrado y no se puede modificar.' });
       }
 
@@ -1481,7 +1481,7 @@ async function startServer() {
 
       const proyectoActual = await prisma.proyecto.findUnique({ where: { proyectoId: req.params.id } });
       if (!proyectoActual) return res.status(404).json({ success: false, error: 'Proyecto no encontrado' });
-      if (['despachado', 'cancelado'].includes(proyectoActual.estadoPipeline || '')) {
+      if (['despachado', 'entregado', 'cancelado'].includes(proyectoActual.estadoPipeline || '')) {
         return res.status(400).json({ success: false, error: 'Este proyecto ya está cerrado.' });
       }
 
@@ -1745,7 +1745,7 @@ async function startServer() {
         include: { usuario: { select: { email: true } } }
       });
       if (!proyecto) return res.status(404).json({ success: false, error: 'Proyecto no encontrado' });
-      if (['despachado', 'cancelado', 'aprobado_calidad'].includes(proyecto.estadoPipeline || '')) {
+      if (['despachado', 'entregado', 'cancelado', 'aprobado_calidad'].includes(proyecto.estadoPipeline || '')) {
         return res.status(400).json({ success: false, error: 'Este proyecto ya avanzó y no admite cambio de imagen.' });
       }
 
@@ -1995,7 +1995,7 @@ async function startServer() {
 
       const proyectoActual = await prisma.proyecto.findUnique({ where: { proyectoId: req.params.id } });
       if (!proyectoActual) return res.status(404).json({ success: false, error: 'Proyecto no encontrado' });
-      if (['despachado', 'cancelado'].includes(proyectoActual.estadoPipeline || '')) {
+      if (['despachado', 'entregado', 'cancelado'].includes(proyectoActual.estadoPipeline || '')) {
         return res.status(400).json({ success: false, error: 'Este proyecto ya está cerrado.' });
       }
 
@@ -2060,7 +2060,7 @@ async function startServer() {
 
       const proyecto = await prisma.proyecto.findUnique({ where: { proyectoId: req.params.id } });
       if (!proyecto) return res.status(404).json({ success: false, error: 'Proyecto no encontrado' });
-      if (['despachado', 'cancelado', 'aprobado_calidad'].includes(proyecto.estadoPipeline || '')) {
+      if (['despachado', 'entregado', 'cancelado', 'aprobado_calidad'].includes(proyecto.estadoPipeline || '')) {
         return res.status(400).json({ success: false, error: 'Este proyecto ya avanzó y no admite una nueva cotización.' });
       }
 
@@ -2242,11 +2242,13 @@ async function startServer() {
       const updated = await prisma.proyecto.update({
         where: { proyectoId: req.params.id },
         data: {
+          // La entrega cierra el proyecto: pasa al estado final "entregado"
+          estadoPipeline: 'entregado',
           despacho: { update: { recibidoPor, documentoRecibe: documentoRecibe || null, fechaEntrega: new Date() } },
           historial: {
             create: {
               estadoAnterior: 'despachado',
-              estadoNuevo: 'despachado',
+              estadoNuevo: 'entregado',
               comentario: `Entrega confirmada en obra. Recibió: ${recibidoPor}${documentoRecibe ? ` (doc. ${documentoRecibe})` : ''}.`,
               ...actor
             }
@@ -2266,7 +2268,7 @@ async function startServer() {
   app.get('/api/projects/dispatch-board', requireAuth, requireRole('administrador', 'despachos'), async (_req, res) => {
     try {
       const proyectos = await prisma.proyecto.findMany({
-        where: { estadoPipeline: { in: ['aprobado_calidad', 'despachado'] } },
+        where: { estadoPipeline: { in: ['aprobado_calidad', 'despachado', 'entregado'] } },
         include: PROYECTO_STAFF_INCLUDE,
         orderBy: { updatedAt: 'asc' } // los que llevan más tiempo esperando, primero
       });
@@ -3090,7 +3092,7 @@ async function startServer() {
 
       const ESTADO_PROY_TXT: Record<string, string> = {
         en_revision: 'en revisión', imagen_por_corregir: 'imagen por corregir (debe subir otra foto)', en_peritaje: 'en peritaje técnico',
-        cotizado: 'cotizado', aprobado_calidad: 'aprobado por calidad', rechazado: 'requiere ajustes técnicos', despachado: 'despachado', cancelado: 'cancelado'
+        cotizado: 'cotizado', aprobado_calidad: 'aprobado por calidad', rechazado: 'requiere ajustes técnicos', despachado: 'despachado (en camino a la obra)', entregado: 'entregado en obra (cerrado)', cancelado: 'cancelado'
       };
       const ESTADO_ORDEN_TXT: Record<string, string> = {
         creado: 'creado', confirmado: 'comprado', en_alistamiento: 'en preparación en bodega', en_camino: 'en camino',

@@ -27,12 +27,13 @@ import {
 } from 'lucide-react';
 
 // Pasos que ve el cliente, calculados del estado real del proyecto
-const PASOS = ['Recibido', 'Cotizado', 'Aprobado', 'Despachado'];
+const PASOS = ['Recibido', 'Cotizado', 'Aprobado', 'Despachado', 'Entregado'];
 const pasoActual = (p: any): number => {
   switch (p.estadoPipeline) {
     case 'cotizado': case 'en_peritaje': case 'rechazado': return 1;
     case 'aprobado_calidad': return 2;
     case 'despachado': return 3;
+    case 'entregado': return 4;
     default: return 0;
   }
 };
@@ -43,7 +44,8 @@ const PROXIMO_PASO: Record<string, string> = {
   cotizado: 'Revisa la cotización y escríbele a tu asesor si tienes dudas.',
   aprobado_calidad: 'Coordinamos el despacho del material a tu obra.',
   rechazado: 'Tu asesor te contará los ajustes técnicos que se requieren.',
-  despachado: 'El material va en camino; confirma la recepción en obra.',
+  despachado: 'El material va en camino a tu obra.',
+  entregado: 'El material fue recibido en obra. ¡Gracias por confiar en ColorLink!',
   cancelado: 'Este proyecto fue cerrado.'
 };
 
@@ -258,11 +260,11 @@ export const RoleDashboard: React.FC<RoleDashboardProps> = ({
                         {p.estadoPipeline === 'cancelado' ? (
                           <p className="text-xs font-bold text-slate-500 bg-slate-100 rounded-lg p-2 border border-slate-200">Proyecto cancelado</p>
                         ) : (
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+                          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center text-xs">
                             {PASOS.map((paso, i) => {
                               const actual = pasoActual(p);
-                              const etiqueta = i === 3 && p.despacho?.fechaEntrega ? 'Entregado' : paso;
-                              const clase = i < actual
+                              const etiqueta = paso;
+                              const clase = i < actual || (i === actual && p.estadoPipeline === 'entregado')
                                 ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
                                 : i === actual
                                   ? 'bg-[#14216B] text-white border-[#14216B]'

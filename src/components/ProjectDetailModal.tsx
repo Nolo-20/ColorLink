@@ -26,7 +26,7 @@ const esc = (v: any) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;'
 
 const ESTADO_TXT: Record<string, string> = {
   en_revision: 'En revisión', imagen_por_corregir: 'Imagen por corregir', en_peritaje: 'En peritaje', cotizado: 'Cotizado',
-  aprobado_calidad: 'Aprobado por calidad', rechazado: 'Requiere ajustes', despachado: 'Despachado', cancelado: 'Cancelado'
+  aprobado_calidad: 'Aprobado por calidad', rechazado: 'Requiere ajustes', despachado: 'Despachado', entregado: 'Entregado en obra', cancelado: 'Cancelado'
 };
 
 /** Detalle del proyecto del cliente, con su cotización real y descarga en PDF (impresión del navegador). */
