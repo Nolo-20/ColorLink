@@ -496,13 +496,41 @@ export const CustomerOrdersView: React.FC<CustomerOrdersViewProps> = ({
                 <div className="p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                   <div className="lg:col-span-8 space-y-4 min-w-0">
 
-                    {/* Estado: barra de seguimiento */}
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 sm:px-5 py-4">
-                      <ProgressTracker progreso={progresoPedido(estadoPedidoDesdeTienda(order.status, order.readyForPickup), retiro)} />
-                      {isDelivered && entregadoEl && (
-                        <p className="mt-3 text-center text-[11px] font-semibold text-slate-500">
-                          {retiro ? 'Retirado' : 'Entregado'} el {fechaLarga(entregadoEl)}
-                        </p>
+                    {/* Estado */}
+                    <div className="flex items-center gap-2">
+                      {isDelivered && (
+                        <div className="flex items-center gap-1.5 text-green-700 font-black text-base sm:text-lg">
+                          <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
+                          <span>
+                            {entregadoEl
+                              ? `${retiro ? 'Retirado' : 'Entregado'} el ${fechaLarga(entregadoEl)}`
+                              : retiro ? 'Retirado en tienda' : 'Entregado'}
+                          </span>
+                        </div>
+                      )}
+                      {isShipped && (
+                        <div className="flex items-center gap-1.5 text-blue-700 font-black text-base sm:text-lg">
+                          <Truck className="w-5 h-5 text-blue-600 shrink-0" />
+                          <span>En camino a tu dirección</span>
+                        </div>
+                      )}
+                      {isDispatched && (
+                        <div className="flex items-center gap-1.5 text-amber-700 font-black text-base sm:text-lg">
+                          <Package className="w-5 h-5 text-amber-600 shrink-0" />
+                          <span>{order.readyForPickup ? 'Listo para retirar en la tienda' : 'En preparación en bodega'}</span>
+                        </div>
+                      )}
+                      {isPurchased && (
+                        <div className="flex items-center gap-1.5 text-indigo-700 font-black text-base sm:text-lg">
+                          <Clock className="w-5 h-5 text-indigo-600 shrink-0" />
+                          <span>Pedido confirmado</span>
+                        </div>
+                      )}
+                      {isCancelled && (
+                        <div className="flex items-center gap-1.5 text-rose-700 font-black text-base sm:text-lg">
+                          <X className="w-5 h-5 text-rose-600 shrink-0" />
+                          <span>Pedido cancelado</span>
+                        </div>
                       )}
                     </div>
 
