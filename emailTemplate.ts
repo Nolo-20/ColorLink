@@ -7,6 +7,7 @@
  */
 import fs from 'fs';
 import path from 'path';
+import type { Progreso } from './src/shared/progreso';
 
 // Paleta de la marca (igual a src/index.css)
 export const MARCA = {
@@ -92,6 +93,41 @@ export const caja = (htmlInterno: string, tono: 'marca' | 'alerta' | 'info' = 'm
 
 export const parrafo = (htmlInterno: string) =>
   `<p style="margin:0 0 12px;color:${MARCA.texto};font-size:15px;line-height:1.65;">${htmlInterno}</p>`;
+
+/**
+ * Barra de progreso (Comprado → Enviado → En reparto → Entregado) hecha con tablas,
+ * que es lo único que Gmail y Outlook dibujan igual. Los círculos son celdas redondeadas.
+ */
+export const barraProgreso = (p: Progreso) => {
+  if (p.cancelado) {
+    return `<div style="background:${MARCA.rojoSuave};border:1px solid #F5C2C4;border-radius:14px;padding:16px 18px;margin:20px 0;text-align:center;color:${MARCA.rojoTexto};font-size:15px;font-weight:800;">${esc(p.titulo)}</div>`;
+  }
+  const hecho = MARCA.azul;
+  const gris = '#CBD5E1';
+  const n = p.pasos.length;
+  const ancho = Math.floor(100 / n);
+  const linea = (activa: boolean, visible: boolean) =>
+    `<td width="50%" style="padding:0;"><div style="height:4px;line-height:4px;font-size:0;background:${visible ? (activa ? hecho : gris) : 'transparent'};">&nbsp;</div></td>`;
+  const celdas = p.pasos.map((paso, i) => {
+    const alcanzado = i <= p.actual;
+    const esActual = i === p.actual;
+    const circulo = alcanzado
+      ? `<td width="28" style="padding:0;"><div style="width:28px;height:28px;line-height:28px;border-radius:14px;background:${hecho};color:#FFFFFF;font-size:15px;font-weight:900;text-align:center;font-family:Arial,Helvetica,sans-serif;">&#10003;</div></td>`
+      : `<td width="28" style="padding:0;"><div style="width:22px;height:22px;border-radius:14px;background:#FFFFFF;border:3px solid ${gris};font-size:0;line-height:0;">&nbsp;</div></td>`;
+    return `
+      <td width="${ancho}%" align="center" valign="top" style="padding:0;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+          ${linea(i <= p.actual, i > 0)}${circulo}${linea(i < p.actual, i < n - 1)}
+        </tr></table>
+        <div style="padding:8px 2px 0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.3;color:${esActual ? MARCA.navy : MARCA.textoSuave};font-weight:${esActual ? 800 : 600};">${esc(paso)}</div>
+      </td>`;
+  }).join('');
+  return `
+  <div style="background:#F8FAFC;border:1px solid ${MARCA.borde};border-radius:16px;padding:20px 14px 18px;margin:20px 0;">
+    <p style="margin:0 0 16px;text-align:center;color:${MARCA.navy};font-size:18px;font-weight:800;line-height:1.3;">${esc(p.titulo)}</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="table-layout:fixed;"><tr>${celdas}</tr></table>
+  </div>`;
+};
 
 // ------------------------------------------------------------------ plantilla completa
 

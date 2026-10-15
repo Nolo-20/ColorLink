@@ -1,3 +1,5 @@
+import { ProgressTracker } from './ProgressTracker';
+import { progresoProyecto } from '../shared/progreso';
 import React, { useState, useEffect } from 'react';
 import { UserProfile, ProjectFormData, CalculationBreakdown, ActiveTab } from '../types';
 import { ProjectDetailModal } from './ProjectDetailModal';
@@ -26,17 +28,7 @@ import {
   MessageSquare
 } from 'lucide-react';
 
-// Pasos que ve el cliente, calculados del estado real del proyecto
-const PASOS = ['Recibido', 'Cotizado', 'Aprobado', 'Despachado', 'Entregado'];
-const pasoActual = (p: any): number => {
-  switch (p.estadoPipeline) {
-    case 'cotizado': case 'en_peritaje': case 'rechazado': return 1;
-    case 'aprobado_calidad': return 2;
-    case 'despachado': return 3;
-    case 'entregado': return 4;
-    default: return 0;
-  }
-};
+// Qué sigue para el cliente según el estado real del proyecto
 const PROXIMO_PASO: Record<string, string> = {
   en_revision: 'Tu asesor revisa la solicitud y prepara la cotización.',
   imagen_por_corregir: 'Sube una nueva foto del área para continuar.',
@@ -257,26 +249,9 @@ export const RoleDashboard: React.FC<RoleDashboardProps> = ({
 
                       <div className="pt-4 border-t border-slate-100 space-y-2">
                         <span className="text-[11px] font-bold text-slate-500 uppercase">Estado del Proyecto:</span>
-                        {p.estadoPipeline === 'cancelado' ? (
-                          <p className="text-xs font-bold text-slate-500 bg-slate-100 rounded-lg p-2 border border-slate-200">Proyecto cancelado</p>
-                        ) : (
-                          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center text-xs">
-                            {PASOS.map((paso, i) => {
-                              const actual = pasoActual(p);
-                              const etiqueta = paso;
-                              const clase = i < actual || (i === actual && p.estadoPipeline === 'entregado')
-                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                                : i === actual
-                                  ? 'bg-[#14216B] text-white border-[#14216B]'
-                                  : 'bg-slate-50 text-slate-400 border-slate-200';
-                              return (
-                                <div key={paso} className={`p-2 font-bold rounded-lg border ${clase}`} aria-current={i === actual ? 'step' : undefined}>
-                                  {i + 1}. {etiqueta}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-2 sm:px-4 py-4">
+                          <ProgressTracker progreso={progresoProyecto(p.estadoPipeline)} />
+                        </div>
                         <p className="text-[11px] text-slate-500">
                           Estado actual: <strong className="text-slate-700">{(ESTADO_CLIENTE[p.estadoPipeline] || ESTADO_CLIENTE.en_revision).label}</strong>
                         </p>

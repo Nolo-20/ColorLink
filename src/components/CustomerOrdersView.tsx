@@ -1,3 +1,5 @@
+import { ProgressTracker } from './ProgressTracker';
+import { progresoPedido, estadoPedidoDesdeTienda } from '../shared/progreso';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ProductThumb } from './ProductThumb';
 import {
@@ -494,41 +496,13 @@ export const CustomerOrdersView: React.FC<CustomerOrdersViewProps> = ({
                 <div className="p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                   <div className="lg:col-span-8 space-y-4 min-w-0">
 
-                    {/* Estado */}
-                    <div className="flex items-center gap-2">
-                      {isDelivered && (
-                        <div className="flex items-center gap-1.5 text-green-700 font-black text-base sm:text-lg">
-                          <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
-                          <span>
-                            {entregadoEl
-                              ? `${retiro ? 'Retirado' : 'Entregado'} el ${fechaLarga(entregadoEl)}`
-                              : retiro ? 'Retirado en tienda' : 'Entregado'}
-                          </span>
-                        </div>
-                      )}
-                      {isShipped && (
-                        <div className="flex items-center gap-1.5 text-blue-700 font-black text-base sm:text-lg">
-                          <Truck className="w-5 h-5 text-blue-600 shrink-0" />
-                          <span>En camino a tu dirección</span>
-                        </div>
-                      )}
-                      {isDispatched && (
-                        <div className="flex items-center gap-1.5 text-amber-700 font-black text-base sm:text-lg">
-                          <Package className="w-5 h-5 text-amber-600 shrink-0" />
-                          <span>{order.readyForPickup ? 'Listo para retirar en la tienda' : 'En preparación en bodega'}</span>
-                        </div>
-                      )}
-                      {isPurchased && (
-                        <div className="flex items-center gap-1.5 text-indigo-700 font-black text-base sm:text-lg">
-                          <Clock className="w-5 h-5 text-indigo-600 shrink-0" />
-                          <span>Pedido confirmado</span>
-                        </div>
-                      )}
-                      {isCancelled && (
-                        <div className="flex items-center gap-1.5 text-rose-700 font-black text-base sm:text-lg">
-                          <X className="w-5 h-5 text-rose-600 shrink-0" />
-                          <span>Pedido cancelado</span>
-                        </div>
+                    {/* Estado: barra de seguimiento */}
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 sm:px-5 py-4">
+                      <ProgressTracker progreso={progresoPedido(estadoPedidoDesdeTienda(order.status, order.readyForPickup), retiro)} />
+                      {isDelivered && entregadoEl && (
+                        <p className="mt-3 text-center text-[11px] font-semibold text-slate-500">
+                          {retiro ? 'Retirado' : 'Entregado'} el {fechaLarga(entregadoEl)}
+                        </p>
                       )}
                     </div>
 
@@ -708,13 +682,6 @@ export const CustomerOrdersView: React.FC<CustomerOrdersViewProps> = ({
       {trackingOrder && (() => {
         const t = trackingOrder;
         const retiro = esRetiro(t);
-        const paso = t.status === 'entregado' ? 4 : t.status === 'enviado' || t.readyForPickup ? 3 : t.status === 'despacho' ? 2 : t.status === 'comprado' ? 1 : 0;
-        const pasos = [
-          { label: 'Confirmado', sub: 'Pago recibido' },
-          { label: 'Preparación', sub: 'En bodega' },
-          { label: retiro ? 'Listo en tienda' : 'Enviado', sub: retiro ? 'Para retirar' : 'En camino' },
-          { label: retiro ? 'Retirado' : 'Entregado', sub: retiro ? 'En la tienda' : 'En destino' }
-        ];
         return (
           <div
             className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-xs overflow-y-auto"
@@ -746,32 +713,7 @@ export const CustomerOrdersView: React.FC<CustomerOrdersViewProps> = ({
                 </div>
               ) : (
                 <div className="p-5 sm:p-6 bg-slate-50 border-b border-slate-200">
-                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-600 mb-6">Progreso</h4>
-                  <div className="relative">
-                    <div className="absolute top-4 left-[12.5%] right-[12.5%] h-1 bg-slate-200">
-                      <div className="h-full bg-emerald-500 transition-all duration-500" style={{ width: `${Math.max(0, paso - 1) / 3 * 100}%` }} />
-                    </div>
-                    <ol className="relative z-10 grid grid-cols-4 gap-1 sm:gap-2 text-center">
-                      {pasos.map((p, i) => {
-                        const n = i + 1;
-                        const hecho = n < paso || (n === paso && paso === 4);
-                        const actual = n === paso && paso !== 4;
-                        return (
-                          <li key={p.label} className="flex flex-col items-center" aria-current={actual ? 'step' : undefined}>
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${hecho
-                              ? 'bg-emerald-500 text-white ring-4 ring-emerald-100'
-                              : actual
-                                ? 'bg-amber-400 text-slate-950 ring-4 ring-amber-100'
-                                : 'bg-slate-200 text-slate-500'}`}>
-                              {hecho ? '✓' : n}
-                            </div>
-                            <span className="text-[11px] sm:text-xs font-extrabold text-slate-900 mt-2 leading-tight">{p.label}</span>
-                            <span className="text-[10px] text-slate-500 font-medium hidden sm:inline">{p.sub}</span>
-                          </li>
-                        );
-                      })}
-                    </ol>
-                  </div>
+                  <ProgressTracker progreso={progresoPedido(estadoPedidoDesdeTienda(t.status, t.readyForPickup), retiro)} />
                 </div>
               )}
 

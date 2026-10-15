@@ -1,4 +1,5 @@
-import { plantillaCorreo, adjuntosCorreo, parrafo, caja, esc, MARCA, type TonoEtiqueta } from './emailTemplate';
+import { plantillaCorreo, adjuntosCorreo, parrafo, caja, esc, MARCA, barraProgreso, type TonoEtiqueta } from './emailTemplate';
+import { progresoPedido, progresoProyecto } from './src/shared/progreso';
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
@@ -331,7 +332,7 @@ async function sendOrderStatusEmail(email: string, orden: any, estado: string) {
       resumen: `${estadoLabels[estado] || estado} · Pedido #${orderCode}`,
       etiqueta: { texto: estadoLabels[estado] || estado, tono: tonoEstado[estado] || 'marca' },
       titulo: `Pedido #${orderCode}`,
-      cuerpo: parrafo(intro) + qrBlock + tabla,
+      cuerpo: barraProgreso(progresoPedido(estado, isPickup)) + parrafo(intro) + qrBlock + tabla,
       boton: { texto: estado === 'entregado' ? 'Calificar mi compra' : 'Ver mi pedido', url: APP_URL },
       destinatario: email
     })
@@ -1202,7 +1203,7 @@ async function startServer() {
         etiqueta: { texto: 'Acción requerida', tono: 'alerta' },
         antetitulo: `Proyecto #${proyectoId.slice(0, 8).toUpperCase()}`,
         titulo: nombreProyecto,
-        cuerpo: parrafo('Revisamos tu proyecto y necesitamos que cambies la imagen para poder continuar con la cotización.')
+        cuerpo: barraProgreso(progresoProyecto('imagen_por_corregir')) + parrafo('Revisamos tu proyecto y necesitamos que cambies la imagen para poder continuar con la cotización.')
           + caja(`<strong>Motivo:</strong> ${esc(motivo)}`, 'alerta'),
         boton: { texto: 'Subir nueva foto', url: APP_URL },
         destinatario: email
@@ -1244,12 +1245,64 @@ async function startServer() {
         etiqueta: { texto: 'En revisión', tono: 'marca' },
         antetitulo: `Proyecto #${proyectoId.slice(0, 8).toUpperCase()}`,
         titulo: nombreProyecto,
-        cuerpo: parrafo('Recibimos tu proyecto y ya está en revisión por nuestro equipo técnico. Un asesor te contactará y te avisaremos por correo y en la campana de notificaciones cada vez que cambie de estado.'),
+        cuerpo: barraProgreso(progresoProyecto('en_revision')) + parrafo('Recibimos tu proyecto y ya está en revisión por nuestro equipo técnico. Un asesor te contactará y te avisaremos por correo y en la campana de notificaciones cada vez que cambie de estado.'),
         boton: { texto: 'Ver mi proyecto', url: APP_URL },
         destinatario: email
       })
     });
   }
+
+  // Aviso por correo cuando un proyecto cambia de etapa, con la barra de progreso
+  async function sendProjectStatusEmail(proyecto: any, estadoAnterior?: string | null) {
+    const estado = proyecto?.estadoPipeline;
+    const email = proyecto?.usuario?.email;
+    if (!estado || !email || estado === estadoAnterior) return;
+    const TEXTOS: Record<string, { etiqueta: string; tono: TonoEtiqueta; texto: string }> = {
+      cotizado: { etiqueta: 'Cotización lista', tono: 'exito', texto: 'Tu asesor preparó la cotización de tu proyecto. Revísala y escríbele si tienes dudas.' },
+      en_peritaje: { etiqueta: 'Revisión técnica', tono: 'info', texto: 'Un perito de calidad está revisando la superficie de tu obra antes de aprobar el sistema de pintura.' },
+      aprobado_calidad: { etiqueta: 'Aprobado', tono: 'exito', texto: 'El perito aprobó tu proyecto. Estamos alistando el material para despacharlo a tu obra.' },
+      rechazado: { etiqueta: 'Requiere ajustes', tono: 'alerta', texto: 'El perito encontró ajustes técnicos que se deben hacer antes de pintar. Tu asesor te contará los detalles.' },
+      despachado: { etiqueta: 'En camino', tono: 'info', texto: 'El material de tu proyecto salió de bodega hacia la obra.' },
+      entregado: { etiqueta: 'Entregado', tono: 'exito', texto: 'El material fue recibido en la obra. ¡Gracias por confiar en ColorLink!' },
+      cancelado: { etiqueta: 'Cancelado', tono: 'alerta', texto: 'Tu proyecto fue cancelado. Si tienes dudas, escríbenos desde la plataforma.' }
+    };
+    const t = TEXTOS[estado];
+    if (!t) return;
+    if (!process.env.SMTP_HOST) {
+      console.warn(`[EMAIL] SMTP no configurado. Proyecto ${proyecto.proyectoId} de ${email}: ${estado}`);
+      return;
+    }
+    const d = proyecto.despacho;
+    const datosDespacho = estado === 'despachado' && d
+      ? caja([
+          d.numeroGuia ? `<strong>Guía:</strong> ${esc(d.numeroGuia)}` : '',
+          d.placaVehiculo ? `<strong>Vehículo:</strong> ${esc(d.placaVehiculo)}` : '',
+          d.conductorNombre ? `<strong>Conductor:</strong> ${esc(d.conductorNombre)}` : '',
+          d.direccionEntrega ? `<strong>Destino:</strong> ${esc(d.direccionEntrega)}${d.ciudadEntrega ? ` (${esc(d.ciudadEntrega)})` : ''}` : ''
+        ].filter(Boolean).join('<br/>'), 'info')
+      : estado === 'entregado' && d?.recibidoPor
+        ? caja(`<strong>Recibió:</strong> ${esc(d.recibidoPor)}`, 'info')
+        : '';
+    const nombre = String(proyecto.nombreProyecto || 'Tu proyecto').replace(/[\r\n]/g, ' ');
+    const p = progresoProyecto(estado);
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM || '"ColorLink" <no-reply@colorlink.com>',
+      to: email,
+      subject: `${p.titulo.replace(/[¡!]/g, '')} · "${nombre}"`,
+      attachments: adjuntosCorreo(),
+      html: plantillaCorreo({
+        resumen: p.titulo,
+        etiqueta: { texto: t.etiqueta, tono: t.tono },
+        antetitulo: `Proyecto #${String(proyecto.proyectoId).slice(0, 8).toUpperCase()}`,
+        titulo: nombre,
+        cuerpo: barraProgreso(p) + parrafo(t.texto) + datosDespacho,
+        boton: { texto: 'Ver mi proyecto', url: APP_URL },
+        destinatario: email
+      })
+    });
+  }
+  const avisarEstadoProyecto = (proyecto: any, anterior?: string | null) =>
+    sendProjectStatusEmail(proyecto, anterior).catch(err => console.error('[project-status-email]', err));
 
   // Lista los proyectos del usuario autenticado
   app.get('/api/projects', requireAuth, async (req: any, res) => {
@@ -1459,6 +1512,7 @@ async function startServer() {
         include: PROYECTO_STAFF_INCLUDE
       });
 
+      avisarEstadoProyecto(updated, proyectoActual.estadoPipeline);
       res.json({ success: true, project: updated });
     } catch (error: any) {
       console.error('[patch-project]', error);
@@ -1503,6 +1557,7 @@ async function startServer() {
         include: PROYECTO_STAFF_INCLUDE
       });
 
+      avisarEstadoProyecto(updated, proyectoActual.estadoPipeline);
       res.json({ success: true, project: updated });
     } catch (error: any) {
       console.error('[reassign-project]', error);
@@ -2046,6 +2101,7 @@ async function startServer() {
         include: PROYECTO_STAFF_INCLUDE
       });
 
+      avisarEstadoProyecto(project, proyectoActual.estadoPipeline);
       res.json({ success: true, diagnostico: verdict, project });
     } catch (error: any) {
       console.error('[quality-verdict]', error);
@@ -2139,6 +2195,7 @@ async function startServer() {
         include: PROYECTO_STAFF_INCLUDE
       });
 
+      avisarEstadoProyecto(updated, proyecto.estadoPipeline);
       res.json({ success: true, project: updated, quote: updated.cotizaciones[0] });
     } catch (error: any) {
       console.error('[quote-project]', error);
@@ -2207,6 +2264,7 @@ async function startServer() {
         include: PROYECTO_STAFF_INCLUDE
       });
 
+      avisarEstadoProyecto(updated, 'aprobado_calidad');
       res.json({ success: true, project: updated });
     } catch (error: any) {
       console.error('[dispatch-project]', error);
@@ -2257,6 +2315,7 @@ async function startServer() {
         include: PROYECTO_STAFF_INCLUDE
       });
 
+      avisarEstadoProyecto(updated, 'despachado');
       res.json({ success: true, project: updated });
     } catch (error: any) {
       console.error('[delivery-project]', error);

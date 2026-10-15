@@ -2,6 +2,8 @@ import { CITY_NAMES } from '../data/storeProducts';
 import React, { useState, useEffect, useRef } from 'react';
 import { ProjectFormData, CalculationBreakdown, UserProfile, SurfaceType, SpaceEnvironment, SurfaceCondition, ColorTone } from '../types';
 import { ProjectColorPicker, ColorSwatches } from './ProjectColorPicker';
+import { ProgressTracker } from './ProgressTracker';
+import { progresoProyecto } from '../shared/progreso';
 import { ProjectDetailModal } from './ProjectDetailModal';
 import {
   MessageSquare,
@@ -378,6 +380,9 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
                       </span>
                     </div>
 
+                    <div className="py-2">
+                      <ProgressTracker progreso={progresoProyecto(prj.estadoPipeline)} conTitulo={false} compacto />
+                    </div>
                     {estado && <p className="text-[11px] text-slate-500 leading-snug">{estado.detalle}</p>}
 
                     {prj.estadoPipeline === 'imagen_por_corregir' && (

@@ -1,4 +1,6 @@
 import { ColorSwatches } from './ProjectColorPicker';
+import { ProgressTracker } from './ProgressTracker';
+import { progresoProyecto } from '../shared/progreso';
 import React, { useEffect, useRef, useState } from 'react';
 import { ProjectChat, AsesorContacto } from './ProjectChat';
 import { SUPERFICIE_LABEL, AMBIENTE_LABEL } from './ClientProjectsManager';
@@ -105,6 +107,9 @@ ${pasos.length ? `<h2>Sistema recomendado</h2><ol>${pasos.map(x => `<li>${esc(x)
         </div>
 
         <div className="p-4 sm:p-6 space-y-5">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-2 sm:px-4 py-4">
+            <ProgressTracker progreso={progresoProyecto(p.estadoPipeline)} />
+          </div>
           <p className="text-sm text-slate-600">{estado.detalle}</p>
 
           <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-3 text-xs">
