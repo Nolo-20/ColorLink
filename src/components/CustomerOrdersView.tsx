@@ -670,24 +670,14 @@ export const CustomerOrdersView: React.FC<CustomerOrdersViewProps> = ({
                       </>
                     )}
 
-                    {!isCancelled && !isDelivered && (
-                      sePuedeCancelar(order) ? (
-                        <button
-                          type="button"
-                          onClick={() => { setCancelError(''); setCancelId(order.id); }}
-                          className="w-full py-2 px-4 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs rounded-xl border border-rose-200 transition-all text-center cursor-pointer"
-                        >
-                          Cancelar pedido
-                        </button>
-                      ) : (
-                        <p className="p-2 rounded-xl bg-slate-100 border border-slate-200 text-center text-[11px] font-semibold text-slate-500 leading-tight">
-                          {isShipped
-                            ? 'El pedido va en camino: ya no se puede cancelar.'
-                            : order.readyForPickup
-                              ? 'El pedido ya está listo en la tienda: no se puede cancelar.'
-                              : 'El pedido se está preparando en bodega: ya no se puede cancelar.'}
-                        </p>
-                      )
+                    {!isCancelled && !isDelivered && sePuedeCancelar(order) && (
+                      <button
+                        type="button"
+                        onClick={() => { setCancelError(''); setCancelId(order.id); }}
+                        className="w-full py-2 px-4 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs rounded-xl border border-rose-200 transition-all text-center cursor-pointer"
+                      >
+                        Cancelar pedido
+                      </button>
                     )}
 
                     <button
