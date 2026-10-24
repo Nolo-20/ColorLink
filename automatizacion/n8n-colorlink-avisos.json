@@ -1,0 +1,81 @@
+{
+  "name": "ColorLink · Avisos automáticos",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "colorlink",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "40a4b257-a6f9-4e9c-a6f6-8f22b3e595a5",
+      "name": "Evento de ColorLink",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "d667dddc-86b3-4e06-b32d-f7d6f598e1be"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ColorLink → n8n: decide a quién avisar según el evento que envió el backend.\n// Si el evento no requiere aviso, se devuelve una lista vacía y el flujo termina aquí.\nconst entrada = $input.first().json;\nconst headers = entrada.headers || {};\nconst cuerpo = entrada.body || {};\n\n// 1) Seguridad: el token debe coincidir con AUTOMATIZACION_TOKEN del backend\nconst esperado = $env.COLORLINK_TOKEN || '';\nif (esperado && headers['x-colorlink-token'] !== esperado) {\n  throw new Error('Token de ColorLink inválido');\n}\n\nconst d = cuerpo.datos || {};\nconst equipo = $env.COLORLINK_EQUIPO_EMAIL || 'colorlinkpin@gmail.com';\nconst despachos = $env.COLORLINK_DESPACHOS_EMAIL || equipo;\nconst compras = $env.COLORLINK_COMPRAS_EMAIL || equipo;\nconst ESTADOS = {\n  en_revision: 'En revisión', imagen_por_corregir: 'Imagen por corregir', en_peritaje: 'En peritaje',\n  cotizado: 'Cotizado', aprobado_calidad: 'Aprobado por calidad', rechazado: 'Rechazado por calidad',\n  despachado: 'Despachado', entregado: 'Entregado en obra', cancelado: 'Cancelado'\n};\nconst lista = (xs) => '<ul>' + xs.map(x => `<li>${x}</li>`).join('') + '</ul>';\nconst avisos = [];\n\nswitch (cuerpo.evento) {\n  case 'proyecto.creado': {\n    const problemas = [...(d.advertencias || [])];\n    if ((d.posiblesDuplicados || []).length) problemas.push(`Posible duplicado de: ${d.posiblesDuplicados.join(', ')}`);\n    if (d.clasificacion && d.clasificacion.requiereVisita) problemas.push('La IA recomienda visita técnica.');\n    if (d.clasificacion && d.clasificacion.motor === 'colorlink-expert-engine') problemas.push('Clasificado por reglas (la IA no estuvo disponible).');\n    // Todo proyecto nuevo se reparte; si tiene problemas, el asunto lo dice\n    avisos.push({\n      para: equipo,\n      asunto: `${problemas.length ? '⚠️ Revisar' : 'Nuevo'} proyecto: ${d.nombreProyecto} (${d.ciudad})`,\n      html: `<h3>${d.nombreProyecto}</h3>\n        <p><b>Cliente:</b> ${d.clienteEmail}<br><b>Tipo:</b> ${d.tipoProyecto} · <b>Área:</b> ${d.areaM2} m²<br>\n        <b>Material para:</b> ${d.fechaRequerida} · <b>Canal:</b> ${d.canal}<br>\n        <b>Datos completos:</b> ${d.completitudPct}% · <b>Evidencias:</b> ${d.evidencias}</p>\n        ${d.clasificacion ? `<p><b>IA:</b> ${d.clasificacion.categoria} · severidad ${d.clasificacion.severidad} · complejidad ${d.clasificacion.complejidad}${d.clasificacion.confianzaPct != null ? ` · confianza ${d.clasificacion.confianzaPct}%` : ''}</p>` : '<p>Sin clasificación con IA.</p>'}\n        ${problemas.length ? '<p><b>Para revisar:</b></p>' + lista(problemas) : ''}`\n    });\n    break;\n  }\n  case 'proyecto.estado_cambiado': {\n    if (d.estadoNuevo === 'aprobado_calidad') {\n      avisos.push({\n        para: despachos,\n        asunto: `Listo para despacho: ${d.nombreProyecto}`,\n        html: `<p>Calidad aprobó el proyecto <b>${d.nombreProyecto}</b> (${d.ciudad || 'sin ciudad'}). Ya se puede alistar y despachar el material.</p>`\n      });\n    } else if (d.estadoNuevo === 'rechazado') {\n      avisos.push({\n        para: equipo,\n        asunto: `Rechazado por calidad: ${d.nombreProyecto}`,\n        html: `<p>El perito rechazó el sustrato de <b>${d.nombreProyecto}</b>. Asesor: ${d.asesor || 'sin asignar'}. Coordina con el cliente los ajustes.</p>`\n      });\n    } else if (d.estadoNuevo === 'entregado') {\n      avisos.push({\n        para: equipo,\n        asunto: `Entregado en obra: ${d.nombreProyecto}`,\n        html: `<p>El proyecto <b>${d.nombreProyecto}</b> quedó entregado${d.guia ? ` (guía ${d.guia})` : ''}. Estado anterior: ${ESTADOS[d.estadoAnterior] || d.estadoAnterior}.</p>`\n      });\n    }\n    break;\n  }\n  case 'inventario.stock_bajo': {\n    avisos.push({\n      para: compras,\n      asunto: `Stock bajo: ${d.productos.length} presentación(es) con menos de ${d.minimo} unidades`,\n      html: '<p>Estas presentaciones necesitan reabastecimiento:</p>' + lista(d.productos.map(p => `${p.nombre} · ${p.presentacion || ''}: <b>${p.unidades}</b> unidades`))\n    });\n    break;\n  }\n  default:\n    // pedido.creado, pedido.estado_cambiado: quedan registrados en el historial de ejecuciones de n8n\n    break;\n}\n\nreturn avisos.map(a => ({ json: { ...a, de: $env.COLORLINK_REMITENTE || 'ColorLink <colorlinkpin@gmail.com>', evento: cuerpo.evento } }));\n"
+      },
+      "id": "ff4ab9e4-c0ab-4eb4-93c6-dcc68c6d9d9c",
+      "name": "Decidir aviso",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $json.de }}",
+        "toEmail": "={{ $json.para }}",
+        "subject": "={{ $json.asunto }}",
+        "emailFormat": "html",
+        "html": "={{ $json.html }}",
+        "options": {}
+      },
+      "id": "8fa3ebb3-0d58-4a03-b94f-ed1fec2a66dd",
+      "name": "Enviar correo al equipo",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        520,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Evento de ColorLink": {
+      "main": [
+        [
+          {
+            "node": "Decidir aviso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decidir aviso": {
+      "main": [
+        [
+          {
+            "node": "Enviar correo al equipo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}

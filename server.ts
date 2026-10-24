@@ -177,6 +177,43 @@ const transporter = nodemailer.createTransport({
   }
 });
 
+// ---------- Automatización (n8n / Activepieces) ----------
+// Cada hecho importante se envía como evento a un webhook (por ejemplo, un flujo de n8n) si
+// AUTOMATIZACION_WEBHOOK_URL está configurado. No bloquea la respuesta: si falla, solo queda en el log.
+const STOCK_BAJO = 10;
+async function emitirEvento(evento: string, datos: Record<string, any>) {
+  const url = process.env.AUTOMATIZACION_WEBHOOK_URL;
+  if (!url) return;
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-ColorLink-Token': process.env.AUTOMATIZACION_TOKEN || '' },
+      body: JSON.stringify({ evento, fecha: new Date().toISOString(), origen: APP_URL, datos }),
+      signal: AbortSignal.timeout(5000)
+    });
+    if (!r.ok) console.warn(`[automatizacion] ${evento}: el webhook respondió ${r.status}`);
+  } catch (err: any) {
+    console.warn(`[automatizacion] ${evento}: ${err?.message || err}`);
+  }
+}
+const evento = (nombre: string, datos: Record<string, any>) => { emitirEvento(nombre, datos).catch(() => undefined); };
+
+/** Avisa a la automatización si alguna presentación quedó por debajo del stock mínimo. */
+async function revisarStockBajo(productoIds: string[]) {
+  if (!process.env.AUTOMATIZACION_WEBHOOK_URL || !productoIds.length) return;
+  const stock = await stockPorProductoMap(productoIds);
+  const bajos = await prisma.producto.findMany({
+    where: { productoId: { in: productoIds.filter(id => (stock.get(id) || 0) < STOCK_BAJO) } },
+    select: { productoId: true, nombre: true, tamanoNombre: true }
+  });
+  if (bajos.length) {
+    evento('inventario.stock_bajo', {
+      minimo: STOCK_BAJO,
+      productos: bajos.map(b => ({ productoId: b.productoId, nombre: b.nombre, presentacion: b.tamanoNombre, unidades: stock.get(b.productoId) || 0 }))
+    });
+  }
+}
+
 // ---------- WhatsApp: pendiente / desactivado por ahora.
 // Cuando decidas retomarlo (con tu propio WhatsApp personal, sin que nadie más tenga que hacer nada),
 // aquí es donde reconectaríamos sendWhatsAppMessage. Por ahora es un no-op seguro.
@@ -643,6 +680,7 @@ async function startServer() {
         });
       });
 
+      evento('pedido.estado_cambiado', { ordenId: updated.ordenId, estado: 'cancelado', clienteEmail: req.user.email, total: updated.total });
       res.json({ success: true, order: updated });
     } catch (error: any) {
       console.error('[cancel-order]', error);
@@ -1181,6 +1219,21 @@ async function startServer() {
   }
 
   // Valida una imagen enviada como data URI (png/jpg/webp, máx. 8 MB) y la deja lista para guardar
+  // Evidencia de la captura: foto (png/jpg/webp, máx. 8 MB) o documento PDF (máx. 6 MB)
+  const MAX_PDF_MB = 6;
+  function parseEvidencia(raw: any): { dataUri: string; tamanoMb: number; ext: string } | null {
+    if (typeof raw === 'string' && raw.startsWith('data:application/pdf;base64,')) {
+      const b64 = raw.slice('data:application/pdf;base64,'.length);
+      if (!/^[A-Za-z0-9+/=]+$/.test(b64)) return null;
+      const bytes = Math.floor((b64.length * 3) / 4);
+      if (bytes > MAX_PDF_MB * 1024 * 1024) return null;
+      // Debe ser realmente un PDF (empieza por %PDF)
+      if (!Buffer.from(b64.slice(0, 8), 'base64').toString('latin1').startsWith('%PDF')) return null;
+      return { dataUri: raw, tamanoMb: Number((bytes / 1024 / 1024).toFixed(2)), ext: 'pdf' };
+    }
+    return parseImageDataUri(raw);
+  }
+
   function parseImageDataUri(raw: any): { dataUri: string; tamanoMb: number; ext: string } | null {
     if (typeof raw !== 'string' || raw.length > 11_500_000) return null;
     const m = raw.match(/^data:image\/(png|jpe?g|webp);base64,([A-Za-z0-9+/=]+)$/);
@@ -1303,8 +1356,21 @@ async function startServer() {
       })
     });
   }
-  const avisarEstadoProyecto = (proyecto: any, anterior?: string | null) =>
-    sendProjectStatusEmail(proyecto, anterior).catch(err => console.error('[project-status-email]', err));
+  const avisarEstadoProyecto = (proyecto: any, anterior?: string | null) => {
+    if (proyecto?.estadoPipeline && proyecto.estadoPipeline !== anterior) {
+      evento('proyecto.estado_cambiado', {
+        proyectoId: proyecto.proyectoId,
+        nombreProyecto: proyecto.nombreProyecto,
+        clienteEmail: proyecto.usuario?.email || null,
+        estadoAnterior: anterior || null,
+        estadoNuevo: proyecto.estadoPipeline,
+        ciudad: proyecto.ciudad?.ciudad || proyecto.empresa?.ciudad?.ciudad || null,
+        asesor: proyecto.asesorAsignado ? `${proyecto.asesorAsignado.nombre} ${proyecto.asesorAsignado.apellido || ''}`.trim() : null,
+        guia: proyecto.despacho?.numeroGuia || null
+      });
+    }
+    return sendProjectStatusEmail(proyecto, anterior).catch(err => console.error('[project-status-email]', err));
+  };
 
   // Lista los proyectos del usuario autenticado
   app.get('/api/projects', requireAuth, async (req: any, res) => {
@@ -1420,9 +1486,12 @@ async function startServer() {
       if (crudas.length > MAX_FOTOS) {
         return res.status(400).json({ success: false, error: `Puedes adjuntar máximo ${MAX_FOTOS} fotos.` });
       }
-      const evidencias = crudas.map(parseImageDataUri);
+      const evidencias = crudas.map(parseEvidencia);
       if (evidencias.some(f => !f)) {
-        return res.status(400).json({ success: false, error: 'Cada foto debe ser PNG, JPG o WEBP de máximo 8 MB.' });
+        return res.status(400).json({ success: false, error: `Cada archivo debe ser una foto (PNG, JPG o WEBP de máx. 8 MB) o un PDF de máx. ${MAX_PDF_MB} MB.` });
+      }
+      if (evidencias.filter(f => f!.ext === 'pdf').length > 2) {
+        return res.status(400).json({ success: false, error: 'Puedes adjuntar máximo 2 documentos PDF.' });
       }
 
       // Duplicidad: no bloquea, pero queda registrada en la validación del proyecto
@@ -1460,13 +1529,13 @@ async function startServer() {
           canalOrigen: datos.canalOrigen,
           estadoPipeline: 'en_revision',
           evidencias: evidencias.length ? {
-            create: evidencias.map((f, i) => ({ urlAlmacenado: f!.dataUri, nombreArchivo: `foto-${i + 1}.${f!.ext}`, tamanoMb: f!.tamanoMb }))
+            create: evidencias.map((f, i) => ({ urlAlmacenado: f!.dataUri, nombreArchivo: `${f!.ext === 'pdf' ? 'documento' : 'foto'}-${i + 1}.${f!.ext}`, tamanoMb: f!.tamanoMb }))
           } : undefined,
           historial: {
             create: {
               estadoAnterior: null,
               estadoNuevo: 'en_revision',
-              comentario: `Proyecto registrado por el cliente (canal: ${datos.canalOrigen}${evidencias.length ? `, ${evidencias.length} foto(s)` : ''}). Datos completos al ${v.completitudPct}%.${v.advertencias.length ? ' Avisos: ' + v.advertencias.join(' ') : ''}`,
+              comentario: `Proyecto registrado por el cliente (canal: ${datos.canalOrigen}${evidencias.length ? `, ${evidencias.length} evidencia(s)` : ''}). Datos completos al ${v.completitudPct}%.${v.advertencias.length ? ' Avisos: ' + v.advertencias.join(' ') : ''}`,
               ...actor
             }
           },
@@ -1505,6 +1574,26 @@ async function startServer() {
       });
 
       sendProjectCreatedEmail(req.user.email, proyecto.nombreProyecto, proyecto.proyectoId).catch(err => console.error('[project-email]', err));
+      evento('proyecto.creado', {
+        proyectoId: proyecto.proyectoId,
+        nombreProyecto: proyecto.nombreProyecto,
+        clienteEmail: req.user.email,
+        ciudad: ciudadBd!.ciudad,
+        tipoProyecto: proyecto.tipoProyecto,
+        areaM2: proyecto.area,
+        condiciones: proyecto.condiciones,
+        fechaRequerida: datos.fechaRequerida,
+        canal: proyecto.canalOrigen,
+        evidencias: evidencias.length,
+        completitudPct: v.completitudPct,
+        advertencias: v.advertencias,
+        posiblesDuplicados: duplicados.map(d => d.nombreProyecto),
+        clasificacion: proyecto.diagnostico ? {
+          categoria: proyecto.diagnostico.categoria, severidad: proyecto.diagnostico.severidad,
+          complejidad: proyecto.diagnostico.complejidad, confianzaPct: proyecto.diagnostico.confianzaIaPct,
+          requiereVisita: proyecto.diagnostico.requiereVisitaHumana, motor: proyecto.diagnostico.modeloIa
+        } : null
+      });
 
       res.json({ success: true, project: proyecto });
     } catch (error: any) {
@@ -2765,6 +2854,11 @@ async function startServer() {
       });
 
       await sendOrderStatusEmail(req.user.email, orden, 'confirmado');
+      evento('pedido.creado', {
+        ordenId: orden.ordenId, clienteEmail: req.user.email, total: orden.total, metodoEntrega: orden.metodoEntrega,
+        ciudad: orden.ciudadEntrega, items: orden.items.map((i: any) => ({ nombre: i.nombreProducto, presentacion: i.presentacion, cantidad: i.cantidad }))
+      });
+      revisarStockBajo(orden.items.map((i: any) => i.productoId).filter(Boolean)).catch(() => undefined);
 
       res.json({ success: true, order: orden });
     } catch (error: any) {
@@ -3101,6 +3195,7 @@ async function startServer() {
       });
 
       await sendOrderStatusEmail(orden.usuario.email, orden, estado);
+      evento('pedido.estado_cambiado', { ordenId: orden.ordenId, estado, clienteEmail: orden.usuario.email, total: orden.total });
       if (orden.usuario.telefono) {
         const estadoLabels: Record<string, string> = {
           confirmado: 'Pago confirmado', en_alistamiento: 'En alistamiento', en_camino: 'En camino',
@@ -3163,6 +3258,7 @@ async function startServer() {
       });
 
       sendOrderStatusEmail(orden.usuario.email, updated, 'entregado').catch(err => console.error('[pickup-email]', err));
+      evento('pedido.estado_cambiado', { ordenId: orden.ordenId, estado: 'entregado', clienteEmail: orden.usuario.email, total: updated.total });
 
       res.json({ success: true, order: updated, customer: orden.usuario });
     } catch (error) {
@@ -3391,7 +3487,8 @@ ${catalogo || '(catálogo no disponible)'}`;
 
       // Fotos válidas (máx. 5): Gemini las mira todas y lee el texto que aparezca en ellas
       const crudas: any[] = Array.isArray(fotos) && fotos.length ? fotos.slice(0, MAX_FOTOS) : (imageBase64 ? [imageBase64] : []);
-      const imagenes = crudas.map(parseImageDataUri).filter(Boolean) as Array<{ dataUri: string; ext: string }>;
+      const imagenes = crudas.map(parseEvidencia).filter(Boolean) as Array<{ dataUri: string; ext: string }>;
+      const nDocs = imagenes.filter(i => i.ext === 'pdf').length;
       const condiciones = Array.isArray(condicion) ? condicion : condicion ? [condicion] : [];
       const dato = (v: any, sufijo = '') => (v != null && String(v).trim() ? `${String(v).trim()}${sufijo}` : 'No indicado');
 
@@ -3406,7 +3503,8 @@ ${catalogo || '(catálogo no disponible)'}`;
 Analiza la necesidad del cliente y entrega un dictamen técnico en JSON estricto.
 Usa SOLO los datos recibidos: si un dato dice "No indicado", no lo inventes y baja el nivel de confianza.
 Si hay fotos: 1) evalúa si son coherentes con lo descrito (superficie, ambiente, condición); si no lo son, "imagen_coherente": false y explica por qué;
-2) transcribe en "texto_extraido" cualquier texto legible en las fotos (etiquetas, fichas técnicas, medidas, referencias de color, documentos fotografiados). Si no hay texto, cadena vacía.
+2) transcribe en "texto_extraido" el texto útil que aparezca en las fotos y en los documentos PDF adjuntos (etiquetas, fichas técnicas, planos, medidas, referencias de color, especificaciones). Si no hay texto, cadena vacía.
+Los documentos PDF no son fotos de la superficie: úsalos como información técnica, no para decidir "imagen_coherente".
 Si no hay fotos: "imagen_coherente": true y "texto_extraido": "".
 "categoria" debe ser exactamente una de: ${CATEGORIAS_IA.join(', ')}.
 Responde ÚNICAMENTE un objeto JSON válido con esta estructura:
@@ -3442,7 +3540,8 @@ Responde ÚNICAMENTE un objeto JSON válido con esta estructura:
 - Color deseado: ${dato(color)}
 - Fecha requerida: ${dato(fechaRequerida)}
 - Descripción del cliente: ${dato(descripcion)}
-- Fotos adjuntas: ${imagenes.length}`
+- Fotos adjuntas: ${imagenes.length - nDocs}
+- Documentos PDF adjuntos: ${nDocs}`
             }];
             for (const img of imagenes) {
               const m = img.dataUri.match(/^data:([^;]+);base64,(.+)$/);

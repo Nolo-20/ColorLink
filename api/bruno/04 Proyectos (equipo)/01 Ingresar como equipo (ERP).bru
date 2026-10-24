@@ -1,0 +1,36 @@
+meta {
+  name: Ingresar como equipo (ERP)
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/auth/login-password
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "email": "{{emailStaff}}",
+    "password": "{{passwordStaff}}"
+  }
+}
+
+script:post-response {
+  // Guarda la cookie de sesión para las demás solicitudes
+  const cookies = [].concat(res.getHeader('set-cookie') || []);
+  const sesion = cookies.map(c => /session=([^;]+)/.exec(c)).find(Boolean);
+  if (sesion) bru.setVar('session', sesion[1]);
+}
+
+tests {
+  test("responde 200 y success", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().success).to.equal(true);
+  });
+}
+
+docs {
+  Usa un usuario con rol asesor, calidad, despachos o administrador. Reemplaza la sesión del cliente.
+}

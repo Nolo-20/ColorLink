@@ -1,0 +1,26 @@
+meta {
+  name: Todos los proyectos
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/projects/all
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{session}}
+}
+
+tests {
+  test("responde 200 y success", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().success).to.equal(true);
+  });
+}
+
+docs {
+  Requiere sesión del equipo (01 Autenticacion / Ingresar como equipo).
+}

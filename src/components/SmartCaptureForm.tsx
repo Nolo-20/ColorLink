@@ -4,7 +4,7 @@ import { EMPTY_PROJECT_FORM } from '../data/mockData';
 import { ProjectColorPicker } from './ProjectColorPicker';
 import { CIUDADES_PROYECTO, AREA_MAX_M2, errorNombreProyecto, errorArea } from './ClientProjectsManager';
 import { TIPOS_PROYECTO, TIPO_PROYECTO_LABEL, MAX_FOTOS, PLAZO_MIN_DIAS, PLAZO_MAX_DIAS, fechaEnDias, diasHasta } from '../shared/validacionProyecto';
-import { comprimirImagen, validarFormulario } from '../utils/proyectoCaptura';
+import { leerEvidencia, esPdf, validarFormulario, ACCEPT_EVIDENCIAS, MAX_FOTO_MB, MAX_PDF_MB, MAX_PDFS } from '../utils/proyectoCaptura';
 import {
   Building2,
   MapPin,
@@ -13,6 +13,7 @@ import {
   Calendar,
   UploadCloud,
   Trash2,
+  FileText,
   Sparkles,
   ArrowRight,
   Check
@@ -27,8 +28,6 @@ interface SmartCaptureFormProps {
   onLoadHorizontePreset?: () => void;
 }
 
-const TIPOS_FOTO = ['image/png', 'image/jpeg', 'image/webp'];
-const MAX_FOTO_MB = 8;
 const MAX_DESCRIPCION = 1000;
 
 type Foto = ProjectFormData['fotos'][0] & { base64?: string };
@@ -123,39 +122,30 @@ export const SmartCaptureForm: React.FC<SmartCaptureFormProps> = ({
     });
   };
 
-  const processFiles = (files: FileList | null) => {
+  const processFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     setErrorFotos('');
     const disponibles = MAX_FOTOS - formData.fotos.length;
-    if (disponibles <= 0) { setErrorFotos(`Puedes subir máximo ${MAX_FOTOS} fotos.`); return; }
+    if (disponibles <= 0) { setErrorFotos(`Puedes subir máximo ${MAX_FOTOS} archivos.`); return; }
     const lista = Array.from(files);
     const rechazos: string[] = [];
-    const validas = lista.filter(f => {
-      if (!TIPOS_FOTO.includes(f.type)) { rechazos.push(`${f.name}: debe ser PNG, JPG o WEBP`); return false; }
-      if (f.size > MAX_FOTO_MB * 1024 * 1024) { rechazos.push(`${f.name}: pesa más de ${MAX_FOTO_MB} MB`); return false; }
-      return true;
-    });
-    if (validas.length > disponibles) rechazos.push(`Solo se agregaron ${disponibles} foto(s): el máximo es ${MAX_FOTOS}.`);
-    if (rechazos.length) setErrorFotos(rechazos.join(' · '));
-
-    validas.slice(0, disponibles).forEach(async (file, idx) => {
+    if (lista.length > disponibles) rechazos.push(`Solo se agregaron ${disponibles}: el máximo es ${MAX_FOTOS} archivos.`);
+    let pdfs = formData.fotos.filter(f => esPdf(f.url)).length;
+    for (const [idx, file] of lista.slice(0, disponibles).entries()) {
+      if (file.type === 'application/pdf' && pdfs >= MAX_PDFS) { rechazos.push(`${file.name}: máximo ${MAX_PDFS} documentos PDF`); continue; }
       try {
-        const base64 = await comprimirImagen(file);
+        const base64 = await leerEvidencia(file);
+        if (esPdf(base64)) pdfs++;
         const mb = (base64.length * 0.75) / (1024 * 1024);
         setFormData(prev => prev.fotos.length >= MAX_FOTOS ? prev : ({
           ...prev,
-          fotos: [...prev.fotos, {
-            id: `foto-${Date.now()}-${idx}`,
-            url: base64,
-            base64,
-            name: file.name,
-            size: `${mb.toFixed(1)} MB`
-          } as Foto]
+          fotos: [...prev.fotos, { id: `foto-${Date.now()}-${idx}`, url: base64, base64, name: file.name, size: `${mb.toFixed(1)} MB` } as Foto]
         }));
-      } catch {
-        setErrorFotos(`No se pudo leer ${file.name}.`);
+      } catch (e: any) {
+        rechazos.push(e?.message || `No se pudo leer ${file.name}.`);
       }
-    });
+    }
+    if (rechazos.length) setErrorFotos(rechazos.join(' · '));
   };
 
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -502,7 +492,7 @@ export const SmartCaptureForm: React.FC<SmartCaptureFormProps> = ({
           <div
             role="button"
             tabIndex={0}
-            aria-label="Subir fotos"
+            aria-label="Subir fotos o documentos"
             onClick={() => fileInputRef.current?.click()}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInputRef.current?.click(); } }}
             onDrop={(e) => { e.preventDefault(); setIsDraggingOver(false); processFiles(e.dataTransfer.files); }}
@@ -514,15 +504,15 @@ export const SmartCaptureForm: React.FC<SmartCaptureFormProps> = ({
               ref={fileInputRef}
               type="file"
               multiple
-              accept="image/png,image/jpeg,image/webp"
+              accept={ACCEPT_EVIDENCIAS}
               className="hidden"
               onChange={(e) => { processFiles(e.target.files); e.target.value = ''; }}
             />
             <div className="w-12 h-12 rounded-2xl bg-cyan-100 text-cyan-600 mx-auto flex items-center justify-center mb-3 shadow-inner">
               <UploadCloud className="w-6 h-6" />
             </div>
-            <p className="text-xs font-bold text-slate-800">Toca para subir fotos o arrástralas aquí</p>
-            <p className="text-[11px] text-slate-500 mt-1">PNG, JPG o WEBP · máximo {MAX_FOTO_MB} MB por foto · hasta {MAX_FOTOS} fotos</p>
+            <p className="text-xs font-bold text-slate-800">Toca para subir fotos o documentos, o arrástralos aquí</p>
+            <p className="text-[11px] text-slate-500 mt-1">Fotos PNG, JPG o WEBP (máx. {MAX_FOTO_MB} MB) · PDF de fichas técnicas o planos (máx. {MAX_PDF_MB} MB, hasta {MAX_PDFS}) · hasta {MAX_FOTOS} archivos. La IA lee el texto que contengan.</p>
           </div>
           {errorFotos && <p role="alert" className="text-[11px] font-semibold text-red-600 mt-2">{errorFotos}</p>}
 
@@ -530,10 +520,17 @@ export const SmartCaptureForm: React.FC<SmartCaptureFormProps> = ({
             <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
               {formData.fotos.map((photo, i) => (
                 <div key={photo.id} className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-900 aspect-video">
-                  <img src={photo.url} alt={photo.name} className="w-full h-full object-cover" />
+                  {esPdf(photo.url) ? (
+                    <div className="w-full h-full flex flex-col items-center justify-center bg-slate-800 text-white">
+                      <FileText className="w-8 h-8 text-red-400" />
+                      <span className="text-[10px] font-black mt-1">PDF</span>
+                    </div>
+                  ) : (
+                    <img src={photo.url} alt={photo.name} className="w-full h-full object-cover" />
+                  )}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent p-2 flex flex-col justify-between">
                     <div className="flex items-start justify-between gap-1">
-                      {i === 0 ? <span className="text-[9px] font-black uppercase bg-cyan-500 text-slate-950 px-1.5 py-0.5 rounded">Principal</span> : <span />}
+                      {i === formData.fotos.findIndex(f => !esPdf(f.url)) ? <span className="text-[9px] font-black uppercase bg-cyan-500 text-slate-950 px-1.5 py-0.5 rounded">Principal</span> : <span />}
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); handleRemovePhoto(photo.id); }}

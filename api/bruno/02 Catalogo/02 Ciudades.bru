@@ -1,0 +1,18 @@
+meta {
+  name: Ciudades
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/cities
+  body: none
+  auth: none
+}
+
+tests {
+  test("responde 200 y success", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().success).to.equal(true);
+  });
+}

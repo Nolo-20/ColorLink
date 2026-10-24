@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ProjectFormData } from '../types';
 import { CheckCircle2, AlertCircle, ShieldCheck, ArrowRight, XCircle } from 'lucide-react';
 import { SUPERFICIE_LABEL, AMBIENTE_LABEL } from './ClientProjectsManager';
-import { datosProyecto, validarFormulario } from '../utils/proyectoCaptura';
+import { datosProyecto, validarFormulario, esPdf } from '../utils/proyectoCaptura';
 
 interface AutoValidationStepProps {
   formData: ProjectFormData;
@@ -76,7 +76,11 @@ export const AutoValidationStep: React.FC<AutoValidationStepProps> = ({
       id: 'foto',
       title: 'Evidencias',
       desc: formData.fotos.length
-        ? `${formData.fotos.length} foto(s) adjunta(s); la IA las revisa todas.`
+        ? (() => {
+            const docs = formData.fotos.filter(f => esPdf(f.url)).length;
+            const fotos = formData.fotos.length - docs;
+            return `${fotos} foto(s)${docs ? ` y ${docs} documento(s) PDF` : ''}; la IA los revisa todos y lee el texto que contengan.`;
+          })()
         : 'Sin fotos: el diagnóstico será menos preciso. Puedes continuar o volver a agregar una.',
       nivel: formData.fotos.length ? 'ok' : 'aviso'
     },

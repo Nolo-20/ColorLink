@@ -1,0 +1,46 @@
+meta {
+  name: Validación - formato y rangos (debe fallar)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/projects
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{session}}
+}
+
+body:json {
+  {
+    "nombreProyecto": "Fachada edificio Bruno",
+    "ciudad": "Medellín",
+    "tipoProyecto": "residencial",
+    "area": 0,
+    "tipoSuperficie": "marmol",
+    "ambiente": "exterior_fachada",
+    "condiciones": [
+      "humedad",
+      "fisuras"
+    ],
+    "fechaRequerida": "2020-01-01",
+    "descripcion": "Humedad en la fachada norte durante las lluvias.",
+    "consentimientoDatos": true,
+    "canalOrigen": "web_portal",
+    "color": "Blanco Nieve",
+    "colorHex": "#FFFFFF"
+  }
+}
+
+tests {
+  test("formato: área, fecha y superficie inválidas", function() {
+    expect(res.getStatus()).to.equal(400);
+    const e = res.getBody().errores;
+    expect(e).to.have.property('area');
+    expect(e).to.have.property('fechaRequerida');
+    expect(e).to.have.property('tipoSuperficie');
+  });
+}

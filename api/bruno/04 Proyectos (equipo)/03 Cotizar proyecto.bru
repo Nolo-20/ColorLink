@@ -1,0 +1,35 @@
+meta {
+  name: Cotizar proyecto
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/projects/{{proyectoId}}/quote
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{session}}
+}
+
+body:json {
+  {
+    "productoId": "",
+    "area": 180,
+    "manos": 2,
+    "descuentoPct": 0
+  }
+}
+
+tests {
+  test("responde 200 y success", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().success).to.equal(true);
+  });
+}
+
+docs {
+  Pon en productoId el id de un cuñete de pintura (lo ves en 02 Catalogo o en el ERP).
+}

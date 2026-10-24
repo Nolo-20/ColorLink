@@ -59,3 +59,27 @@ export const validarFormulario = (f: ProjectFormData): ResultadoValidacion => {
   const d = datosProyecto(f);
   return validarProyecto({ ...d, colorHex: d.colorHex || '', descripcion: d.descripcion });
 };
+
+// ---------------- Evidencias: fotos y documentos PDF ----------------
+export const TIPOS_FOTO = ['image/png', 'image/jpeg', 'image/webp'];
+export const MAX_FOTO_MB = 8;
+export const MAX_PDF_MB = 6;
+export const MAX_PDFS = 2;
+export const ACCEPT_EVIDENCIAS = 'image/png,image/jpeg,image/webp,application/pdf';
+export const esPdf = (dataUri?: string) => !!dataUri && dataUri.startsWith('data:application/pdf');
+
+/** Valida y lee una evidencia: las fotos se reducen; los PDF se envían tal cual. Lanza un Error con el motivo. */
+export async function leerEvidencia(file: File): Promise<string> {
+  if (file.type === 'application/pdf') {
+    if (file.size > MAX_PDF_MB * 1024 * 1024) throw new Error(`${file.name}: el PDF pesa más de ${MAX_PDF_MB} MB`);
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result as string);
+      r.onerror = () => reject(new Error(`No se pudo leer ${file.name}.`));
+      r.readAsDataURL(file);
+    });
+  }
+  if (!TIPOS_FOTO.includes(file.type)) throw new Error(`${file.name}: debe ser una foto (PNG, JPG, WEBP) o un PDF`);
+  if (file.size > MAX_FOTO_MB * 1024 * 1024) throw new Error(`${file.name}: pesa más de ${MAX_FOTO_MB} MB`);
+  return comprimirImagen(file);
+}

@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ProjectFormData, CalculationBreakdown, UserProfile, SurfaceType, SpaceEnvironment, SurfaceCondition, ColorTone } from '../types';
 import { ProjectColorPicker, ColorSwatches } from './ProjectColorPicker';
 import { TIPOS_PROYECTO, TIPO_PROYECTO_LABEL, CONDICION_LABEL, CONDICIONES, MAX_FOTOS, PLAZO_MIN_DIAS, PLAZO_MAX_DIAS, DESCRIPCION_MAX, fechaEnDias, diasHasta } from '../shared/validacionProyecto';
-import { comprimirImagen, datosProyecto, fotosDe, validarFormulario } from '../utils/proyectoCaptura';
+import { leerEvidencia, esPdf, ACCEPT_EVIDENCIAS, MAX_PDFS, datosProyecto, fotosDe, validarFormulario } from '../utils/proyectoCaptura';
 import { ProgressTracker } from './ProgressTracker';
 import { progresoProyecto } from '../shared/progreso';
 import { ProjectDetailModal } from './ProjectDetailModal';
@@ -259,20 +259,23 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
     setErrorFotos('');
     const libres = MAX_FOTOS - formData.fotos.length;
     const lista = Array.from(files);
-    const validas = lista.filter(f => TIPOS_IMAGEN.includes(f.type) && f.size <= MAX_IMAGEN_MB * 1024 * 1024);
-    if (validas.length < lista.length) setErrorFotos(`Solo se aceptan fotos PNG, JPG o WEBP de máximo ${MAX_IMAGEN_MB} MB.`);
-    if (validas.length > libres) setErrorFotos(`Puedes adjuntar máximo ${MAX_FOTOS} fotos.`);
-    for (const [i, f] of validas.slice(0, Math.max(0, libres)).entries()) {
+    const errores: string[] = [];
+    if (lista.length > libres) errores.push(`Puedes adjuntar máximo ${MAX_FOTOS} archivos.`);
+    let pdfs = formData.fotos.filter(f => esPdf(f.url)).length;
+    for (const [i, f] of lista.slice(0, Math.max(0, libres)).entries()) {
+      if (f.type === 'application/pdf' && pdfs >= MAX_PDFS) { errores.push(`${f.name}: máximo ${MAX_PDFS} documentos PDF`); continue; }
       try {
-        const base64 = await comprimirImagen(f);
+        const base64 = await leerEvidencia(f);
+        if (esPdf(base64)) pdfs++;
         setFormData(prev => prev.fotos.length >= MAX_FOTOS ? prev : ({
           ...prev,
           fotos: [...prev.fotos, { id: `foto-${Date.now()}-${i}`, url: base64, base64, name: f.name, size: `${((base64.length * 0.75) / 1048576).toFixed(1)} MB` } as any]
         }));
-      } catch {
-        setErrorFotos(`No se pudo leer ${f.name}.`);
+      } catch (e: any) {
+        errores.push(e?.message || `No se pudo leer ${f.name}.`);
       }
     }
+    if (errores.length) setErrorFotos(errores.join(' · '));
   };
 
   const cambiarArea = (texto: string) => {
@@ -821,11 +824,13 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
               </div>
 
               <div className="space-y-2">
-                <span className="text-xs font-bold text-slate-700 block">Fotos del estado actual <span className="font-normal text-slate-400">(opcional, hasta {MAX_FOTOS})</span></span>
+                <span className="text-xs font-bold text-slate-700 block">Fotos y documentos <span className="font-normal text-slate-400">(opcional, hasta {MAX_FOTOS}: fotos del estado actual o PDF de fichas técnicas / planos)</span></span>
                 <div className="flex flex-wrap gap-2">
                   {formData.fotos.map(f => (
                     <div key={f.id} className="relative w-20 h-20 rounded-xl overflow-hidden border border-slate-200 bg-slate-100">
-                      <img src={f.url} alt={f.name} className="w-full h-full object-cover" />
+                      {esPdf(f.url)
+                        ? <div className="w-full h-full flex flex-col items-center justify-center text-red-500 px-1"><FileText className="w-6 h-6" /><span className="text-[8px] font-bold text-slate-600 truncate max-w-full">{f.name}</span></div>
+                        : <img src={f.url} alt={f.name} className="w-full h-full object-cover" />}
                       <button
                         type="button"
                         onClick={() => setFormData(prev => ({ ...prev, fotos: prev.fotos.filter(x => x.id !== f.id) }))}
@@ -838,7 +843,7 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
                     <label className="w-20 h-20 rounded-xl border-2 border-dashed border-slate-300 hover:border-emerald-500 text-slate-400 hover:text-emerald-600 flex flex-col items-center justify-center cursor-pointer text-[10px] font-bold">
                       <UploadCloud className="w-5 h-5" />
                       Agregar
-                      <input type="file" accept="image/png,image/jpeg,image/webp" multiple className="sr-only" onChange={(e) => { agregarFotos(e.target.files); e.target.value = ''; }} />
+                      <input type="file" accept={ACCEPT_EVIDENCIAS} multiple className="sr-only" onChange={(e) => { agregarFotos(e.target.files); e.target.value = ''; }} />
                     </label>
                   )}
                 </div>

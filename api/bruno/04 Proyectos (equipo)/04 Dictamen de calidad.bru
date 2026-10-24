@@ -1,0 +1,31 @@
+meta {
+  name: Dictamen de calidad
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{baseUrl}}/api/projects/{{proyectoId}}/quality-verdict
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{session}}
+}
+
+body:json {
+  {
+    "humedadRelativa": 6,
+    "severidadFisuras": "Sin fisuras (Sustrato liso y firme)",
+    "sistemaRecomendado": "Sellador + 2 manos de elastomérico",
+    "aprobadoCalidad": true
+  }
+}
+
+tests {
+  test("responde 200 y success", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().success).to.equal(true);
+  });
+}

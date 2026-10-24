@@ -1,0 +1,57 @@
+meta {
+  name: Crear proyecto completo
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/projects
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{session}}
+}
+
+body:json {
+  {
+    "nombreProyecto": "Fachada edificio Bruno",
+    "ciudad": "Medellín",
+    "tipoProyecto": "residencial",
+    "area": 180,
+    "tipoSuperficie": "concreto",
+    "ambiente": "exterior_fachada",
+    "condiciones": [
+      "humedad",
+      "fisuras"
+    ],
+    "fechaRequerida": "{{fechaRequerida}}",
+    "descripcion": "Humedad en la fachada norte durante las lluvias.",
+    "consentimientoDatos": true,
+    "canalOrigen": "web_portal",
+    "color": "Blanco Nieve",
+    "colorHex": "#FFFFFF",
+    "fotos": [],
+    "clasificacionToken": "{{clasificacionToken}}"
+  }
+}
+
+script:post-response {
+  bru.setVar('proyectoId', res.getBody().project.proyectoId);
+}
+
+tests {
+  test("responde 200 y success", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().success).to.equal(true);
+  });
+  test("queda guardado con ID único, datos completos y trazabilidad", function() {
+    const p = res.getBody().project;
+    expect(p.proyectoId).to.be.a('string');
+    expect(p.consentimientoDatos).to.equal(true);
+    expect(p.condiciones).to.include('humedad');
+    expect(p.validacionCaptura.completitudPct).to.be.at.least(80);
+    expect(p.diagnostico.categoria).to.be.a('string');
+  });
+}

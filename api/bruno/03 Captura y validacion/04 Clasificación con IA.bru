@@ -1,0 +1,52 @@
+meta {
+  name: Clasificación con IA
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/classify-project
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{session}}
+}
+
+body:json {
+  {
+    "proyecto": "Fachada edificio Bruno",
+    "ciudad": "Medellín",
+    "tipoProyecto": "residencial",
+    "area": 180,
+    "superficie": "concreto",
+    "ambiente": "exterior_fachada",
+    "condicion": [
+      "humedad",
+      "fisuras"
+    ],
+    "fechaRequerida": "{{fechaRequerida}}",
+    "descripcion": "Humedad en la fachada norte durante las lluvias.",
+    "fotos": []
+  }
+}
+
+script:post-response {
+  bru.setVar('clasificacionToken', res.getBody().clasificacionToken);
+}
+
+tests {
+  test("responde 200 y success", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().success).to.equal(true);
+  });
+  test("JSON estructurado: categoría, condición, complejidad y confianza", function() {
+    const d = res.getBody().data;
+    expect(d).to.have.property('categoria');
+    expect(d).to.have.property('diagnostico_patologia');
+    expect(['Baja', 'Media', 'Alta']).to.include(d.complejidad);
+    expect(d).to.have.property('nivel_confianza_ia_pct');
+    expect(d).to.have.property('texto_extraido');
+  });
+}

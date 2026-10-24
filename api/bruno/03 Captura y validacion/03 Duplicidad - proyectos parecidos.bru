@@ -1,0 +1,35 @@
+meta {
+  name: Duplicidad - proyectos parecidos
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/projects/check-duplicates
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{session}}
+}
+
+body:json {
+  {
+    "nombreProyecto": "Fachada edificio Bruno",
+    "ciudad": "Medellín",
+    "area": 180,
+    "fechaRequerida": "{{fechaRequerida}}",
+    "descripcion": "Humedad en la fachada norte durante las lluvias."
+  }
+}
+
+tests {
+  test("responde 200 y success", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().success).to.equal(true);
+  });
+  test("devuelve coincidencias con motivos", function() {
+    expect(res.getBody().coincidencias).to.be.an('array');
+  });
+}

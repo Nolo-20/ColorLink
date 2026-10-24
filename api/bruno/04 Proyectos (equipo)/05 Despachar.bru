@@ -1,0 +1,31 @@
+meta {
+  name: Despachar
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{baseUrl}}/api/projects/{{proyectoId}}/dispatch
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{session}}
+}
+
+body:json {
+  {
+    "placaVehiculo": "ABC123",
+    "conductorNombre": "Carlos Ruiz",
+    "conductorTelefono": "3001234567",
+    "transportador": "Flota ColorLink"
+  }
+}
+
+tests {
+  test("responde 200 y success", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().success).to.equal(true);
+  });
+}
