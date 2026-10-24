@@ -56,6 +56,8 @@ export interface ProjectFormData {
   telefonoContacto: string;
   ciudad: string;
   proyecto: string;
+  /** residencial | comercial | industrial | institucional | otro */
+  tipoProyecto: string;
   areaM2: number;
   superficie: SurfaceType;
   ambiente: SpaceEnvironment;

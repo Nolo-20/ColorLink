@@ -227,7 +227,7 @@ export const RoleDashboard: React.FC<RoleDashboardProps> = ({
                           </span>
                         </div>
                         <span className="text-xs font-bold text-slate-500">
-                          {p.empresa?.ciudad?.ciudad || '—'}
+                          {p.ciudad?.ciudad || p.empresa?.ciudad?.ciudad || '—'}
                         </span>
                       </div>
 

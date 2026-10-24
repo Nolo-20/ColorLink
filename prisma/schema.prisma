@@ -24,6 +24,7 @@ model Ciudad {
   inventarios  InventarioProducto[]
   sucursales   Sucursal[]
   usuarios     Usuario[]
+  proyectos    Proyecto[]
 
   @@map("ciudad")
 }
@@ -166,6 +167,17 @@ model Proyecto {
   color          String?
   colorHex       String?         @map("color_hex")
   canalOrigen    String?         @map("canal_origen")
+  // Captura inteligente: ciudad de la obra, tipo, estado de la superficie, plazo y autorización de datos
+  ciudadId       Int?            @map("ciudad_id")
+  ciudad         Ciudad?         @relation(fields: [ciudadId], references: [ciudadId])
+  tipoProyecto   String?         @map("tipo_proyecto")
+  condiciones    String[]        @default([])
+  fechaRequerida DateTime?       @map("fecha_requerida") @db.Date
+  descripcion    String?
+  consentimientoDatos Boolean    @default(false) @map("consentimiento_datos")
+  consentimientoFecha DateTime?  @map("consentimiento_fecha")
+  /// Resultado de la validación al capturar: { advertencias: string[], completitudPct: number }
+  validacionCaptura   Json?      @map("validacion_captura")
   estadoPipeline String?         @map("estado_pipeline")
   createdAt      DateTime        @default(now()) @map("created_at")
   updatedAt      DateTime        @default(now()) @updatedAt @map("updated_at")
@@ -183,6 +195,7 @@ model Proyecto {
   despacho         DespachoProyecto?
   mensajes         MensajeProyecto[]
 
+  @@index([usuarioId])
   @@map("proyecto")
 }
 
@@ -350,6 +363,15 @@ model DiagnosticoIA {
   rendimientoEstimado  Float?    @map("rendimiento_estimado")
   confianzaIaPct       Float?    @map("confianza_ia_pct")
   requiereVisitaHumana Boolean   @default(false) @map("requiere_visita_humana")
+  // Clasificación con IA: categoría, complejidad, texto leído de la foto y respuesta completa
+  categoria            String?
+  complejidad          String?
+  textoExtraido        String?   @map("texto_extraido")
+  imagenCoherente      Boolean?  @map("imagen_coherente")
+  imagenObservacion    String?   @map("imagen_observacion")
+  modeloIa             String?   @map("modelo_ia")
+  resultadoIa          Json?     @map("resultado_ia")
+  fechaClasificacion   DateTime? @map("fecha_clasificacion")
   humedadRelativa      Float?    @map("humedad_relativa")
   severidadFisuras     String?   @map("severidad_fisuras")
   notasPerito          String?   @map("notas_perito")

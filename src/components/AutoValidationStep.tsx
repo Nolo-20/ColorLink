@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { ProjectFormData } from '../types';
 import { CheckCircle2, AlertCircle, ShieldCheck, ArrowRight, XCircle } from 'lucide-react';
-import { errorNombreProyecto, errorArea, SUPERFICIE_LABEL, AMBIENTE_LABEL } from './ClientProjectsManager';
+import { SUPERFICIE_LABEL, AMBIENTE_LABEL } from './ClientProjectsManager';
+import { datosProyecto, validarFormulario } from '../utils/proyectoCaptura';
 
 interface AutoValidationStepProps {
   formData: ProjectFormData;
@@ -16,76 +17,87 @@ export const AutoValidationStep: React.FC<AutoValidationStepProps> = ({
   onProceedToAi,
   onBackToCapture
 }) => {
-  const [duplicateFound, setDuplicateFound] = useState(false);
+  const [coincidencias, setCoincidencias] = useState<Array<{ nombreProyecto: string; motivos: string[]; ciudad: string | null; area: number | null }>>([]);
   const [checkingDuplicates, setCheckingDuplicates] = useState(true);
   const [duplicadosError, setDuplicadosError] = useState(false);
 
+  // Duplicidad: el servidor compara con los proyectos del cliente (nombre, ciudad, área, fechas y descripción)
   useEffect(() => {
     let cancel = false;
-    const nombre = (formData.proyecto || '').toLowerCase().trim();
-    fetch('/api/projects')
+    setCheckingDuplicates(true);
+    fetch('/api/projects/check-duplicates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datosProyecto(formData))
+    })
       .then(res => res.json())
       .then(data => {
         if (cancel) return;
-        if (data.success && Array.isArray(data.projects)) {
-          setDuplicateFound(data.projects.some((p: any) => String(p.nombreProyecto || '').toLowerCase().trim() === nombre));
-        } else setDuplicadosError(true);
+        if (data.success && Array.isArray(data.coincidencias)) setCoincidencias(data.coincidencias);
+        else setDuplicadosError(true);
       })
       .catch(() => { if (!cancel) setDuplicadosError(true); })
       .finally(() => { if (!cancel) setCheckingDuplicates(false); });
     return () => { cancel = true; };
-  }, [formData.proyecto]);
+  }, [formData.proyecto, formData.ciudad, formData.areaM2, formData.fechaRequeridaDias, formData.descripcion]);
 
-  const errNombre = errorNombreProyecto(formData.proyecto);
-  const errArea = errorArea(formData.areaM2);
+  // Mismas reglas que aplica el servidor al guardar
+  const v = validarFormulario(formData);
+  const NOMBRE_CAMPO: Record<string, string> = {
+    nombreProyecto: 'nombre del proyecto', ciudad: 'ciudad', tipoProyecto: 'tipo de proyecto', area: 'área',
+    tipoSuperficie: 'superficie', ambiente: 'ambiente', condiciones: 'estado de la superficie', fechaRequerida: 'fecha requerida',
+    descripcion: 'descripción', consentimientoDatos: 'autorización de datos', colorHex: 'colores', canalOrigen: 'canal'
+  };
   const faltantes = [
     !(formData.cliente || '').trim() && 'cliente',
-    !formData.ciudad && 'ciudad',
-    errNombre && 'nombre del proyecto',
-    errArea && 'área',
-    !formData.superficie && 'superficie',
-    !formData.color && 'color'
+    !formData.color && 'color',
+    ...Object.keys(v.errores).filter(k => k !== 'consentimientoDatos').map(k => NOMBRE_CAMPO[k] || k)
   ].filter(Boolean) as string[];
+  const primerError = Object.entries(v.errores).find(([k]) => k !== 'consentimientoDatos')?.[1];
 
   const checks: Array<{ id: string; title: string; desc: string; nivel: Nivel }> = [
     {
       id: 'completitud',
-      title: 'Datos completos',
-      desc: faltantes.length ? `Falta: ${faltantes.join(', ')}.` : 'Cliente, ciudad, proyecto, área, superficie y color están definidos.',
+      title: 'Completitud y formato',
+      desc: faltantes.length
+        ? `Revisa: ${faltantes.join(', ')}.${primerError ? ` ${primerError}` : ''}`
+        : `Todos los campos obligatorios están completos y con el formato correcto. Datos completos al ${v.completitudPct}%.`,
       nivel: faltantes.length ? 'error' : 'ok'
     },
     {
       id: 'coherencia',
-      title: 'Valores coherentes',
-      desc: errArea
-        ? errArea
-        : `Área de ${formData.areaM2.toLocaleString('es-CO')} m² y plazo de ${formData.fechaRequeridaDias} días.`,
-      nivel: errArea ? 'error' : 'ok'
+      title: 'Coherencia',
+      desc: v.advertencias.length
+        ? v.advertencias.join(' ')
+        : `${formData.areaM2.toLocaleString('es-CO')} m², ${SUPERFICIE_LABEL[formData.superficie] || formData.superficie} en ${(AMBIENTE_LABEL[formData.ambiente] || formData.ambiente).toLowerCase()}, para dentro de ${formData.fechaRequeridaDias} días.`,
+      nivel: v.advertencias.length ? 'aviso' : 'ok'
     },
     {
       id: 'foto',
-      title: 'Foto de la superficie',
+      title: 'Evidencias',
       desc: formData.fotos.length
-        ? `${formData.fotos.length} foto(s) adjunta(s). La principal se usará en el diagnóstico.`
+        ? `${formData.fotos.length} foto(s) adjunta(s); la IA las revisa todas.`
         : 'Sin fotos: el diagnóstico será menos preciso. Puedes continuar o volver a agregar una.',
       nivel: formData.fotos.length ? 'ok' : 'aviso'
     },
     {
       id: 'duplicidad',
-      title: 'Proyectos repetidos',
+      title: 'Duplicidad',
       desc: checkingDuplicates
-        ? 'Revisando tus proyectos…'
+        ? 'Comparando con tus proyectos…'
         : duplicadosError
           ? 'No pudimos revisar tus proyectos anteriores. Puedes continuar.'
-          : duplicateFound
-            ? 'Ya tienes un proyecto con este mismo nombre. Puedes continuar o cambiarle el nombre.'
-            : 'No tienes otro proyecto con este nombre.',
-      nivel: checkingDuplicates ? 'cargando' : duplicateFound || duplicadosError ? 'aviso' : 'ok'
+          : coincidencias.length
+            ? `Se parece a "${coincidencias[0].nombreProyecto}" (${coincidencias[0].motivos.join(', ')}). Si es el mismo, escríbele a tu asesor desde ese proyecto en vez de crear otro.`
+            : 'No encontramos un proyecto parecido.',
+      nivel: checkingDuplicates ? 'cargando' : coincidencias.length || duplicadosError ? 'aviso' : 'ok'
     },
     {
       id: 'consentimiento',
-      title: 'Autorización de datos',
-      desc: formData.consentimientoDatos ? 'Autorizaste el tratamiento de datos.' : 'Debes autorizar el tratamiento de datos.',
+      title: 'Autorización y trazabilidad',
+      desc: formData.consentimientoDatos
+        ? 'Autorizaste el tratamiento de datos. Se registra la fecha, tu usuario y el canal (portal web).'
+        : 'Debes autorizar el tratamiento de datos.',
       nivel: formData.consentimientoDatos ? 'ok' : 'error'
     }
   ];

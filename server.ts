@@ -1,5 +1,6 @@
 import { plantillaCorreo, adjuntosCorreo, parrafo, caja, esc, MARCA, barraProgreso, type TonoEtiqueta } from './emailTemplate';
 import { progresoPedido, progresoProyecto } from './src/shared/progreso';
+import { validarProyecto, MAX_FOTOS } from './src/shared/validacionProyecto';
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
@@ -11,7 +12,7 @@ import cookieParser from 'cookie-parser';
 import nodemailer from 'nodemailer';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import QRCode from 'qrcode';
 import { registerVisualizerRoutes, startVisualizerAutogen } from './visualizerGen';
 
@@ -130,6 +131,7 @@ const PROYECTO_STAFF_INCLUDE = {
   diagnostico: true,
   cotizaciones: { orderBy: { createdAt: 'desc' }, include: { items: { include: { producto: true } } } },
   empresa: { include: { ciudad: true } },
+  ciudad: true,
   usuario: { select: { usuarioId: true, nombre: true, apellido: true, email: true, telefono: true, company: true, documentId: true } },
   asesorAsignado: { select: { usuarioId: true, nombre: true, apellido: true, email: true, telefono: true, avatarUrl: true } },
   peritoAsignado: { select: { usuarioId: true, nombre: true, apellido: true, email: true, telefono: true, avatarUrl: true } },
@@ -1315,6 +1317,7 @@ async function startServer() {
           cotizaciones: { orderBy: { createdAt: 'desc' }, include: { items: { include: { producto: { select: { nombre: true, presentacion: true } } } } } },
           despacho: true,
           empresa: { include: { ciudad: true } },
+          ciudad: true,
           historial: { orderBy: { fecha: 'desc' } },
           asesorAsignado: { select: { nombre: true, apellido: true, email: true, telefono: true, avatarUrl: true } },
           _count: { select: { mensajes: { where: { leidoCliente: false, autorRol: { not: 'cliente' } } } } }
@@ -1337,62 +1340,133 @@ async function startServer() {
     }
   });
 
+  // ---------------- Duplicidad: proyectos parecidos del mismo cliente ----------------
+  const palabras = (t: any) => new Set(String(t ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/[^a-z0-9ñ]+/).filter(w => w.length > 2));
+  const parecido = (a: Set<string>, b: Set<string>) => {
+    if (!a.size || !b.size) return 0;
+    let comun = 0; for (const w of a) if (b.has(w)) comun++;
+    return comun / (a.size + b.size - comun);
+  };
+  async function buscarDuplicados(usuarioId: string, d: { nombreProyecto?: string; ciudad?: string; area?: any; fechaRequerida?: string; descripcion?: string }) {
+    const previos = await prisma.proyecto.findMany({
+      where: { usuarioId, NOT: { estadoPipeline: 'cancelado' } },
+      select: { proyectoId: true, nombreProyecto: true, area: true, fechaRequerida: true, descripcion: true, createdAt: true, estadoPipeline: true, ciudad: { select: { ciudad: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 200
+    });
+    const nombre = palabras(d.nombreProyecto);
+    const desc = palabras(d.descripcion);
+    const area = Number(d.area);
+    const fecha = d.fechaRequerida ? new Date(`${d.fechaRequerida}T00:00:00Z`) : null;
+    const ciudad = String(d.ciudad ?? '').trim().toLowerCase();
+    return previos.map(p => {
+      const motivos: string[] = [];
+      let puntos = 0;
+      const simNombre = parecido(nombre, palabras(p.nombreProyecto));
+      if (String(p.nombreProyecto).trim().toLowerCase() === String(d.nombreProyecto ?? '').trim().toLowerCase()) { puntos += 50; motivos.push('mismo nombre'); }
+      else if (simNombre >= 0.5) { puntos += 30; motivos.push('nombre parecido'); }
+      if (ciudad && p.ciudad?.ciudad.toLowerCase() === ciudad) { puntos += 15; motivos.push('misma ciudad'); }
+      if (Number.isFinite(area) && p.area && Math.abs(p.area - area) <= Math.max(1, area * 0.1)) { puntos += 20; motivos.push('área similar'); }
+      if (fecha && p.fechaRequerida && Math.abs(p.fechaRequerida.getTime() - fecha.getTime()) <= 7 * 86400000) { puntos += 10; motivos.push('fecha requerida cercana'); }
+      if (Date.now() - p.createdAt.getTime() <= 30 * 86400000) { puntos += 10; motivos.push('creado hace menos de 30 días'); }
+      if (desc.size && parecido(desc, palabras(p.descripcion)) >= 0.4) { puntos += 15; motivos.push('descripción parecida'); }
+      return { proyectoId: p.proyectoId, nombreProyecto: p.nombreProyecto, ciudad: p.ciudad?.ciudad || null, area: p.area, estadoPipeline: p.estadoPipeline, createdAt: p.createdAt, puntos, motivos };
+    }).filter(c => c.puntos >= 45).sort((a, b) => b.puntos - a.puntos).slice(0, 3);
+  }
+
+  // Revisa si el cliente ya tiene un proyecto parecido (se usa antes de guardar, para sugerirlo)
+  app.post('/api/projects/check-duplicates', requireAuth, async (req: any, res) => {
+    try {
+      const coincidencias = await buscarDuplicados(req.user.id, req.body || {});
+      res.json({ success: true, coincidencias });
+    } catch (error: any) {
+      console.error('[check-duplicates]', error);
+      res.status(500).json({ success: false, error: 'No se pudo revisar si hay proyectos repetidos.' });
+    }
+  });
+
   // Crea un proyecto nuevo (y opcionalmente su cotización y diagnóstico de IA) para el usuario autenticado
   app.post('/api/projects', requireAuth, async (req: any, res) => {
     try {
       const {
-        nombreProyecto, ciudad, area, tipoSuperficie, ambiente, color, colorHex,
+        nombreProyecto: nombreCrudo, ciudad, area, tipoSuperficie, ambiente, color, colorHex,
+        tipoProyecto, condiciones, fechaRequerida, descripcion, consentimientoDatos, canalOrigen,
         cunetes5g, galones1g, subtotal, iva, total,
-        // Campos opcionales del diagnóstico de IA (Gemini), si el wizard completo lo generó
-        diagnosticoPatologia, severidad, sistemaRecomendado, manoRecomendada,
-        rendimientoEstimado, confianzaIaPct, requiereVisitaHumana,
-        imageBase64
+        // Clasificación con IA hecha por el servidor (ver /api/classify-project)
+        clasificacionToken,
+        imageBase64, fotos
       } = req.body;
 
-      // Hasta 3 colores: nombres separados por coma y hex "#RRGGBB" separados por coma
-      if (colorHex != null && colorHex !== '' && !/^#[0-9a-f]{6}(,#[0-9a-f]{6}){0,2}$/i.test(String(colorHex))) {
-        return res.status(400).json({ success: false, error: 'Puedes elegir máximo 3 colores.' });
-      }
-      if (color != null && String(color).length > 200) {
-        return res.status(400).json({ success: false, error: 'Los nombres de los colores son demasiado largos.' });
-      }
-      if (!nombreProyecto) {
-        return res.status(400).json({ success: false, error: 'El nombre del proyecto es requerido' });
+      // 1) Validación con las mismas reglas del formulario (completitud, formato y coherencia)
+      const nombreProyecto = String(nombreCrudo ?? '').trim().replace(/\s+/g, ' ');
+      const datos = {
+        nombreProyecto, ciudad, tipoProyecto, area, tipoSuperficie, ambiente,
+        condiciones: Array.isArray(condiciones) ? condiciones.map(String) : [],
+        fechaRequerida: String(fechaRequerida ?? ''), descripcion: String(descripcion ?? ''),
+        consentimientoDatos: consentimientoDatos === true,
+        canalOrigen: canalOrigen || 'web_portal', colorHex: colorHex || ''
+      };
+      const v = validarProyecto(datos);
+      if (color != null && String(color).length > 200) v.errores.color = 'Los nombres de los colores son demasiado largos.';
+      const ciudadBd = await ciudadPorNombre(ciudad);
+      if (!v.errores.ciudad && !ciudadBd) v.errores.ciudad = 'Elige una ciudad de la lista.';
+      const camposConError = Object.keys(v.errores);
+      if (camposConError.length) {
+        return res.status(400).json({ success: false, error: v.errores[camposConError[0]], errores: v.errores });
       }
 
-      let foto: ReturnType<typeof parseImageDataUri> = null;
-      if (imageBase64) {
-        foto = parseImageDataUri(imageBase64);
-        if (!foto) {
-          return res.status(400).json({ success: false, error: 'La imagen debe ser PNG, JPG o WEBP de máximo 8 MB.' });
-        }
+      // 2) Evidencias: hasta MAX_FOTOS imágenes (png/jpg/webp de máx. 8 MB)
+      const crudas: any[] = Array.isArray(fotos) && fotos.length ? fotos : (imageBase64 ? [imageBase64] : []);
+      if (crudas.length > MAX_FOTOS) {
+        return res.status(400).json({ success: false, error: `Puedes adjuntar máximo ${MAX_FOTOS} fotos.` });
+      }
+      const evidencias = crudas.map(parseImageDataUri);
+      if (evidencias.some(f => !f)) {
+        return res.status(400).json({ success: false, error: 'Cada foto debe ser PNG, JPG o WEBP de máximo 8 MB.' });
       }
 
-      const empresa = await findOrCreateEmpresaForUser(req.user.id, ciudad);
+      // Duplicidad: no bloquea, pero queda registrada en la validación del proyecto
+      const duplicados = await buscarDuplicados(req.user.id, datos);
+      if (duplicados.length) {
+        v.advertencias.push(`Posible duplicado de "${duplicados[0].nombreProyecto}" (${duplicados[0].motivos.join(', ')}).`);
+      }
+
+      const empresa = await findOrCreateEmpresaForUser(req.user.id, ciudadBd!.ciudad);
       const actor = await actorSnapshot(req.user);
 
-      const tieneDiagnostico = diagnosticoPatologia != null;
+      // 3) Resultado de la IA guardado por el servidor (el cliente no puede alterarlo)
+      const ia = clasificacionToken ? tomarClasificacion(req.user.id, String(clasificacionToken)) : null;
+      const tieneDiagnostico = !!ia;
+      const condicionesLimpias = datos.condiciones;
 
       const proyecto = await prisma.proyecto.create({
         data: {
           usuarioId: req.user.id,
           empresaId: empresa.empresaId,
+          ciudadId: ciudadBd!.ciudadId,
           nombreProyecto,
-          area: area ? Number(area) : null,
-          tipoSuperficie: tipoSuperficie || null,
-          ambiente: ambiente || null,
+          tipoProyecto,
+          area: Number(area),
+          tipoSuperficie,
+          ambiente,
+          condiciones: condicionesLimpias,
+          fechaRequerida: new Date(`${datos.fechaRequerida}T00:00:00Z`),
+          descripcion: datos.descripcion.trim() || null,
+          consentimientoDatos: true,
+          consentimientoFecha: new Date(),
+          validacionCaptura: { advertencias: v.advertencias, completitudPct: v.completitudPct, duplicados: duplicados.map(d => ({ proyectoId: d.proyectoId, nombreProyecto: d.nombreProyecto, motivos: d.motivos })) },
           color: color || null,
           colorHex: colorHex || null,
-          canalOrigen: 'web_portal',
+          canalOrigen: datos.canalOrigen,
           estadoPipeline: 'en_revision',
-          evidencias: foto ? {
-            create: { urlAlmacenado: foto.dataUri, nombreArchivo: `foto-proyecto.${foto.ext}`, tamanoMb: foto.tamanoMb }
+          evidencias: evidencias.length ? {
+            create: evidencias.map((f, i) => ({ urlAlmacenado: f!.dataUri, nombreArchivo: `foto-${i + 1}.${f!.ext}`, tamanoMb: f!.tamanoMb }))
           } : undefined,
           historial: {
             create: {
               estadoAnterior: null,
               estadoNuevo: 'en_revision',
-              comentario: foto ? 'Proyecto registrado por el cliente con imagen adjunta.' : 'Proyecto registrado por el cliente.',
+              comentario: `Proyecto registrado por el cliente (canal: ${datos.canalOrigen}${evidencias.length ? `, ${evidencias.length} foto(s)` : ''}). Datos completos al ${v.completitudPct}%.${v.advertencias.length ? ' Avisos: ' + v.advertencias.join(' ') : ''}`,
               ...actor
             }
           },
@@ -1409,13 +1483,21 @@ async function startServer() {
           } : undefined,
           diagnostico: tieneDiagnostico ? {
             create: {
-              patologiaDetectada: diagnosticoPatologia || null,
-              severidad: severidad || null,
-              sistemaRecomendado: sistemaRecomendado ? JSON.stringify(sistemaRecomendado) : null,
-              manoRecomendada: manoRecomendada != null ? String(manoRecomendada) : null,
-              rendimientoEstimado: rendimientoEstimado != null ? Number(rendimientoEstimado) : null,
-              confianzaIaPct: confianzaIaPct != null ? Number(confianzaIaPct) : null,
-              requiereVisitaHumana: Boolean(requiereVisitaHumana)
+              patologiaDetectada: ia!.data.diagnostico_patologia || null,
+              severidad: ia!.data.severidad || null,
+              categoria: ia!.data.categoria || null,
+              complejidad: ia!.data.complejidad || null,
+              sistemaRecomendado: ia!.data.sistema_recomendado ? JSON.stringify(ia!.data.sistema_recomendado) : null,
+              manoRecomendada: ia!.data.manos_recomendadas != null ? String(ia!.data.manos_recomendadas) : null,
+              rendimientoEstimado: ia!.data.rendimiento_estimado_m2_gal ?? null,
+              confianzaIaPct: ia!.data.nivel_confianza_ia_pct ?? null,
+              requiereVisitaHumana: Boolean(ia!.data.requiere_visita_especialista_human_in_the_loop),
+              textoExtraido: ia!.data.texto_extraido || null,
+              imagenCoherente: typeof ia!.data.imagen_coherente === 'boolean' ? ia!.data.imagen_coherente : null,
+              imagenObservacion: ia!.data.imagen_observacion || null,
+              modeloIa: ia!.source,
+              resultadoIa: ia!.data,
+              fechaClasificacion: ia!.at
             }
           } : undefined
         },
@@ -1841,16 +1923,16 @@ async function startServer() {
       if (!proyecto || (!esStaff && proyecto.usuarioId !== req.user.id)) {
         return res.status(404).json({ success: false, error: 'Proyecto no encontrado' });
       }
-      const ev = await prisma.evidenciaFoto.findFirst({
+      // Todas las fotos del proyecto (la más reciente primero); `evidence` se mantiene por compatibilidad
+      const todas = await prisma.evidenciaFoto.findMany({
         where: { proyectoId: req.params.id },
-        orderBy: { fechaRegistro: 'desc' }
+        orderBy: [{ fechaRegistro: 'desc' }, { nombreArchivo: 'asc' }],
+        take: 10
       });
-      if (!ev) return res.status(404).json({ success: false, error: 'Este proyecto no tiene imagen.' });
+      if (!todas.length) return res.status(404).json({ success: false, error: 'Este proyecto no tiene imagen.' });
+      const forma = (ev: typeof todas[number]) => ({ evidenciaId: ev.evidenciaId, nombreArchivo: ev.nombreArchivo, fechaRegistro: ev.fechaRegistro, imageDataUri: ev.urlAlmacenado });
 
-      res.json({
-        success: true,
-        evidence: { evidenciaId: ev.evidenciaId, nombreArchivo: ev.nombreArchivo, fechaRegistro: ev.fechaRegistro, imageDataUri: ev.urlAlmacenado }
-      });
+      res.json({ success: true, evidence: forma(todas[0]), evidences: todas.map(forma) });
     } catch (error: any) {
       console.error('[get-evidence]', error);
       res.status(500).json({ success: false, error: 'No se pudo cargar la imagen' });
@@ -2208,7 +2290,7 @@ async function startServer() {
     try {
       const proyecto = await prisma.proyecto.findUnique({
         where: { proyectoId: req.params.id },
-        include: { empresa: { include: { ciudad: true } } }
+        include: { empresa: { include: { ciudad: true } }, ciudad: true }
       });
       if (!proyecto) return res.status(404).json({ success: false, error: 'Proyecto no encontrado' });
       if (proyecto.estadoPipeline !== 'aprobado_calidad') {
@@ -2231,7 +2313,7 @@ async function startServer() {
       const conductor = txt(b.conductorNombre, 60);
       if (conductor && !/^[A-Za-zÁÉÍÓÚÜáéíóúüÑñ ]{3,60}$/.test(conductor)) return malo('El nombre del conductor debe tener solo letras.');
       const direccion = txt(b.direccionEntrega) || proyecto.empresa?.direccionDespacho || null;
-      const ciudad = txt(b.ciudadEntrega) || proyecto.empresa?.ciudad?.ciudad || null;
+      const ciudad = txt(b.ciudadEntrega) || proyecto.ciudad?.ciudad || proyecto.empresa?.ciudad?.ciudad || null;
       const actor = await actorSnapshot(req.user);
 
       const updated = await prisma.proyecto.update({
@@ -3254,15 +3336,66 @@ ${catalogo || '(catálogo no disponible)'}`;
     }
   });
 
-  app.post('/api/classify-project', requireAuth, async (req, res) => {
+  // ---------------- Clasificación con IA ----------------
+  // El resultado queda guardado en el servidor (1 hora) y el proyecto lo toma con un token:
+  // así lo que se almacena es exactamente lo que respondió la IA, no lo que mande el navegador.
+  const CATEGORIAS_IA = ['arquitectonico_interior', 'arquitectonico_exterior', 'impermeabilizacion', 'pisos_industriales', 'metal_anticorrosivo', 'madera', 'otro'];
+  const NIVELES = ['Baja', 'Media', 'Alta'];
+  const clasificaciones = new Map<string, { userId: string; source: string; data: any; at: Date }>();
+  function guardarClasificacion(userId: string, source: string, data: any) {
+    const ahora = Date.now();
+    for (const [k, v] of clasificaciones) if (ahora - v.at.getTime() > 3600_000) clasificaciones.delete(k);
+    const token = randomUUID();
+    clasificaciones.set(token, { userId, source, data, at: new Date() });
+    return token;
+  }
+  function tomarClasificacion(userId: string, token: string) {
+    const c = clasificaciones.get(token);
+    if (!c || c.userId !== userId || Date.now() - c.at.getTime() > 3600_000) return null;
+    clasificaciones.delete(token);
+    return c;
+  }
+
+  /** Deja el JSON de la IA con los tipos y valores esperados (lo que no cumple, se descarta). */
+  function normalizarClasificacion(raw: any) {
+    const t = (v: any, max = 2000) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+    const nivel = (v: any) => (NIVELES.includes(v) ? v : null);
+    const num = (v: any, min: number, max: number) => { if (v == null || v === '') return null; const n = Number(v); return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : null; };
+    const sr = raw?.sistema_recomendado || {};
+    return {
+      categoria: CATEGORIAS_IA.includes(raw?.categoria) ? raw.categoria : 'otro',
+      diagnostico_patologia: t(raw?.diagnostico_patologia, 500),
+      severidad: nivel(raw?.severidad),
+      complejidad: nivel(raw?.complejidad),
+      sistema_recomendado: { paso1_preparacion: t(sr.paso1_preparacion, 400), paso2_imprimante_sellador: t(sr.paso2_imprimante_sellador, 400), paso3_acabado: t(sr.paso3_acabado, 400) },
+      linea_producto_sugerida: t(raw?.linea_producto_sugerida, 200),
+      manos_recomendadas: num(raw?.manos_recomendadas, 1, 5),
+      rendimiento_estimado_m2_gal: num(raw?.rendimiento_estimado_m2_gal, 1, 100),
+      factor_desperdicio_pct: num(raw?.factor_desperdicio_pct, 0, 50),
+      observaciones_tecnicas: Array.isArray(raw?.observaciones_tecnicas) ? raw.observaciones_tecnicas.map((o: any) => t(o, 300)).filter(Boolean).slice(0, 8) : [],
+      requiere_visita_especialista_human_in_the_loop: raw?.requiere_visita_especialista_human_in_the_loop === true,
+      nivel_confianza_ia_pct: num(raw?.nivel_confianza_ia_pct, 0, 100),
+      resumen_ejecutivo: t(raw?.resumen_ejecutivo, 600),
+      imagen_coherente: typeof raw?.imagen_coherente === 'boolean' ? raw.imagen_coherente : true,
+      imagen_observacion: t(raw?.imagen_observacion, 400),
+      texto_extraido: t(raw?.texto_extraido, 1500)
+    };
+  }
+
+  app.post('/api/classify-project', requireAuth, async (req: any, res) => {
     try {
       const {
-        cliente, ciudad, proyecto, area, superficie, condicion,
-        color, fechaRequerida, descripcion, ambiente, imageBase64
+        cliente, ciudad, proyecto, tipoProyecto, area, superficie, condicion,
+        color, fechaRequerida, descripcion, ambiente, imageBase64, fotos
       } = req.body;
 
-      const apiKey = process.env.GEMINI_API_KEY;
+      // Fotos válidas (máx. 5): Gemini las mira todas y lee el texto que aparezca en ellas
+      const crudas: any[] = Array.isArray(fotos) && fotos.length ? fotos.slice(0, MAX_FOTOS) : (imageBase64 ? [imageBase64] : []);
+      const imagenes = crudas.map(parseImageDataUri).filter(Boolean) as Array<{ dataUri: string; ext: string }>;
+      const condiciones = Array.isArray(condicion) ? condicion : condicion ? [condicion] : [];
+      const dato = (v: any, sufijo = '') => (v != null && String(v).trim() ? `${String(v).trim()}${sufijo}` : 'No indicado');
 
+      const apiKey = process.env.GEMINI_API_KEY;
       if (apiKey) {
         const modelsToTry = ['gemini-3.7-flash', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'];
         const ai = new GoogleGenAI({ apiKey });
@@ -3270,13 +3403,15 @@ ${catalogo || '(catálogo no disponible)'}`;
         for (const modelName of modelsToTry) {
           try {
             const systemPrompt = `Eres el Asistente Técnico y Clasificador de Patologías en Pintura y Recubrimientos de COLORLINK.
-Tu trabajo es analizar la necesidad del cliente y entregar un dictamen técnico formal en formato JSON estricto.
-Si se te proporciona una imagen, evalúa además si esa fotografía es coherente con el contexto descrito por el cliente
-(tipo de superficie, ambiente y condición reportada) — por ejemplo, si el cliente describe una fachada exterior con
-humedad pero la foto muestra un interior sin ningún problema visible, márcala como NO coherente y explica por qué.
-Si no se te proporciona ninguna imagen, usa "imagen_coherente": true por defecto (no hay nada que contradecir).
-Responde ÚNICAMENTE un objeto JSON válido con la siguiente estructura:
+Analiza la necesidad del cliente y entrega un dictamen técnico en JSON estricto.
+Usa SOLO los datos recibidos: si un dato dice "No indicado", no lo inventes y baja el nivel de confianza.
+Si hay fotos: 1) evalúa si son coherentes con lo descrito (superficie, ambiente, condición); si no lo son, "imagen_coherente": false y explica por qué;
+2) transcribe en "texto_extraido" cualquier texto legible en las fotos (etiquetas, fichas técnicas, medidas, referencias de color, documentos fotografiados). Si no hay texto, cadena vacía.
+Si no hay fotos: "imagen_coherente": true y "texto_extraido": "".
+"categoria" debe ser exactamente una de: ${CATEGORIAS_IA.join(', ')}.
+Responde ÚNICAMENTE un objeto JSON válido con esta estructura:
 {
+  "categoria": "string",
   "diagnostico_patologia": "string",
   "severidad": "Baja" | "Media" | "Alta",
   "complejidad": "Baja" | "Media" | "Alta",
@@ -3290,83 +3425,80 @@ Responde ÚNICAMENTE un objeto JSON válido con la siguiente estructura:
   "nivel_confianza_ia_pct": number,
   "resumen_ejecutivo": "string",
   "imagen_coherente": boolean,
-  "imagen_observacion": "string"
+  "imagen_observacion": "string",
+  "texto_extraido": "string"
 }`;
 
-            const userContent: any[] = [
-              `Datos del proyecto:
-- Cliente: ${cliente || 'Constructora Horizonte'}
-- Ciudad: ${ciudad || 'Medellín'}
-- Tipo de Proyecto: ${proyecto || 'Fachada edificio residencial'}
-- Área: ${area || 85} m²
-- Sustrato/Superficie: ${superficie || 'Concreto'}
-- Ambiente: ${ambiente || 'Exterior Fachada'}
-- Condición reportada: ${Array.isArray(condicion) ? condicion.join(', ') : condicion || 'Humedad + Fisuras'}
-- Color deseado: ${color || 'Gris'}
-- Plazo requerido: ${fechaRequerida || '20 días'}
-- Descripción adicional: ${descripcion || 'Muro exterior con humedad y grietas'}`
-            ];
-
-            if (imageBase64 && imageBase64.includes('base64,')) {
-              const base64Data = imageBase64.split('base64,')[1];
-              const mimeMatch = imageBase64.match(/data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,/);
-              const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
-              userContent.push({ inlineData: { data: base64Data, mimeType } });
+            const parts: any[] = [{
+              text: `Datos del proyecto:
+- Cliente: ${dato(cliente)}
+- Ciudad: ${dato(ciudad)}
+- Nombre del proyecto: ${dato(proyecto)}
+- Tipo de proyecto: ${dato(tipoProyecto)}
+- Área: ${dato(area, ' m²')}
+- Sustrato/Superficie: ${dato(superficie)}
+- Ambiente: ${dato(ambiente)}
+- Condición reportada: ${condiciones.length ? condiciones.join(', ') : 'No indicado'}
+- Color deseado: ${dato(color)}
+- Fecha requerida: ${dato(fechaRequerida)}
+- Descripción del cliente: ${dato(descripcion)}
+- Fotos adjuntas: ${imagenes.length}`
+            }];
+            for (const img of imagenes) {
+              const m = img.dataUri.match(/^data:([^;]+);base64,(.+)$/);
+              if (m) parts.push({ inlineData: { mimeType: m[1], data: m[2] } });
             }
 
             const response = await ai.models.generateContent({
               model: modelName,
-              contents: [{ role: 'user', parts: userContent.map(c => typeof c === 'string' ? { text: c } : c) }],
+              contents: [{ role: 'user', parts }],
               config: { systemInstruction: systemPrompt, responseMimeType: 'application/json' }
             });
 
-            const parsed = JSON.parse(response.text || '{}');
-            return res.json({ success: true, source: modelName, data: parsed });
+            const data = normalizarClasificacion(JSON.parse(response.text || '{}'));
+            if (!data.diagnostico_patologia) throw new Error('Respuesta de la IA incompleta');
+            const clasificacionToken = guardarClasificacion(req.user.id, modelName, data);
+            return res.json({ success: true, source: modelName, data, clasificacionToken });
           } catch (geminiError: any) {
             console.error(`[GEMINI-ERROR] Modelo ${modelName} falló:`, geminiError?.message || geminiError);
-            if (modelName === modelsToTry[modelsToTry.length - 1]) {
-              console.info('Switching to ColorLink Expert Engineering Engine.');
-            }
           }
         }
       }
 
-      const areaNum = Number(area) || 85;
-      const isConcreto = String(superficie || '').toLowerCase().includes('concreto');
-      const hasHumedad = String(condicion || '').toLowerCase().includes('humedad');
-      const hasFisuras = String(condicion || '').toLowerCase().includes('fisura');
-
-      const fallbackResult = {
+      // Respaldo por reglas (sin IA): solo usa lo que marcó el cliente y lo dice claramente
+      const texto = condiciones.join(' ').toLowerCase();
+      const hasHumedad = texto.includes('humedad');
+      const hasFisuras = texto.includes('fisura');
+      const areaNum = Number(area) || 0;
+      const exterior = String(ambiente || '').includes('exterior') || String(ambiente || '').includes('cubierta');
+      const piso = String(ambiente || '').includes('piso');
+      const metal = String(superficie || '') === 'metal';
+      const madera = String(superficie || '') === 'madera';
+      const fallbackResult = normalizarClasificacion({
+        categoria: piso ? 'pisos_industriales' : metal ? 'metal_anticorrosivo' : madera ? 'madera' : hasHumedad && exterior ? 'impermeabilizacion' : exterior ? 'arquitectonico_exterior' : 'arquitectonico_interior',
         diagnostico_patologia: hasHumedad && hasFisuras
-          ? 'Presencia combinada de humedad capilar y microfisuras estructurales activas.'
-          : hasHumedad ? 'Humedad superficial por intemperismo.' : 'Sustrato con desgaste normal.',
-        severidad: (hasHumedad && hasFisuras) ? 'Alta' : hasHumedad ? 'Media' : 'Baja',
-        complejidad: (hasHumedad && hasFisuras) ? 'Alta' : 'Media',
+          ? 'Humedad y fisuras reportadas por el cliente: se requiere tratamiento previo antes de pintar.'
+          : hasHumedad ? 'Humedad reportada por el cliente.' : hasFisuras ? 'Fisuras reportadas por el cliente.' : 'Sin daños reportados por el cliente.',
+        severidad: hasHumedad && hasFisuras ? 'Alta' : hasHumedad || hasFisuras ? 'Media' : 'Baja',
+        complejidad: hasHumedad && hasFisuras ? 'Alta' : hasHumedad || hasFisuras ? 'Media' : 'Baja',
         sistema_recomendado: {
-          paso1_preparacion: 'Limpieza mecánica con hidrolavado a 2000 PSI y apertura en V de fisuras > 0.5mm.',
-          paso2_imprimante_sellador: 'Sellador Antialcalino Hidrófugo ColorLink Pro Shield + masilla elastomérica.',
-          paso3_acabado: 'Recubrimiento Fachada Elastomérico 100% Acrílico Premium ColorLink Koraza Tech.'
+          paso1_preparacion: hasFisuras ? 'Limpieza y apertura de fisuras; resanar con masilla elastomérica.' : 'Limpieza de polvo, grasa y pintura suelta.',
+          paso2_imprimante_sellador: hasHumedad ? 'Sellador antialcalino hidrófugo.' : 'Sellador acrílico.',
+          paso3_acabado: exterior ? 'Dos manos de recubrimiento para fachada.' : 'Dos manos de vinilo para interior.'
         },
-        linea_producto_sugerida: 'ColorLink Pro Fachada Impermeabilizante & Anti-Fisuras',
         manos_recomendadas: 2,
-        rendimiento_estimado_m2_gal: 28.5,
-        factor_desperdicio_pct: 10,
-        observaciones_tecnicas: [
-          'Verificar humedad del concreto inferior al 12% antes de aplicar el sellador.',
-          'Curado mínimo de la masilla elastomérica de 4 a 6 horas.',
-          'Aplicar con rodillo de felpa 3/8" o Airless con boquilla 517.'
-        ],
-        requiere_visita_especialista_human_in_the_loop: (hasHumedad && hasFisuras && areaNum > 50),
-        imagen_coherente: true, // el motor de respaldo no analiza imágenes reales, así que no puede contradecir nada
-        imagen_observacion: '',
-        nivel_confianza_ia_pct: 96.5,
-        resumen_ejecutivo: `Proyecto evaluado para ${cliente || 'Constructora Horizonte'} en ${ciudad || 'Medellín'}.`
-      };
-
-      return res.json({ success: true, source: 'colorlink-expert-engine', data: fallbackResult });
+        observaciones_tecnicas: ['Diagnóstico por reglas: la IA no estuvo disponible y no se analizaron las fotos. El asesor debe confirmarlo.'],
+        requiere_visita_especialista_human_in_the_loop: (hasHumedad && hasFisuras) || areaNum > 500,
+        nivel_confianza_ia_pct: null,
+        resumen_ejecutivo: 'Clasificación preliminar generada con reglas a partir de los datos marcados por el cliente.',
+        imagen_coherente: true,
+        texto_extraido: ''
+      });
+      const clasificacionToken = guardarClasificacion(req.user.id, 'colorlink-expert-engine', fallbackResult);
+      return res.json({ success: true, source: 'colorlink-expert-engine', data: fallbackResult, clasificacionToken });
     } catch (error: any) {
       console.error('Error in classify-project endpoint:', error);
-      res.status(500).json({ success: false, error: error.message || 'Error procesando la clasificación' });
+      res.status(500).json({ success: false, error: 'Error procesando la clasificación' });
     }
   });
 

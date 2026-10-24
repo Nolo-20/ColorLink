@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ProjectFormData, AiDiagnosisResult } from '../types';
+import { datosProyecto, fotosDe } from '../utils/proyectoCaptura';
 import { Sparkles, Cpu, AlertTriangle, CheckCircle2, ArrowRight, UserCheck, RefreshCw, XCircle } from 'lucide-react';
 
 interface AiClassificationStepProps {
@@ -15,7 +16,7 @@ type Resultado = AiDiagnosisResult & { imagen_coherente?: boolean; imagen_observ
 
 /** Huella de los datos que se analizaron: si el cliente cambia el proyecto, el diagnóstico anterior ya no sirve. */
 const huellaDe = (f: ProjectFormData) =>
-  JSON.stringify([f.cliente, f.ciudad, f.proyecto, f.areaM2, f.superficie, f.ambiente, f.condiciones, f.color, f.descripcion, f.fotos[0]?.id || '']);
+  JSON.stringify([f.cliente, f.ciudad, f.proyecto, f.tipoProyecto, f.areaM2, f.superficie, f.ambiente, f.condiciones, f.color, f.descripcion, f.fechaRequeridaDias, f.fotos.map(x => x.id)]);
 let ultimaHuella = '';
 
 const MOTOR_REGLAS = 'colorlink-expert-engine';
@@ -45,23 +46,18 @@ export const AiClassificationStep: React.FC<AiClassificationStepProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          ...datosProyecto(formData),
           cliente: formData.cliente,
-          ciudad: formData.ciudad,
           proyecto: formData.proyecto,
-          area: formData.areaM2,
           superficie: formData.superficie,
           condicion: formData.condiciones,
-          color: formData.color,
-          fechaRequerida: `${formData.fechaRequeridaDias} días`,
-          descripcion: formData.descripcion,
-          ambiente: formData.ambiente,
-          imageBase64: (formData.fotos[0] as any)?.base64 || null
+          fotos: fotosDe(formData)
         })
       });
       const json = await response.json().catch(() => ({}));
       if (!montado.current) return;
       if (json.success && json.data && typeof json.data === 'object') {
-        setAiResult({ ...json.data, source: json.source });
+        setAiResult({ ...json.data, source: json.source, clasificacionToken: json.clasificacionToken });
         ultimaHuella = huella;
       } else {
         setAiResult(null);

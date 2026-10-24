@@ -1,4 +1,5 @@
 import { ColorSwatches } from './ProjectColorPicker';
+import { TIPO_PROYECTO_LABEL, CONDICION_LABEL } from '../shared/validacionProyecto';
 import { ProgressTracker } from './ProgressTracker';
 import { progresoProyecto } from '../shared/progreso';
 import React, { useEffect, useRef, useState } from 'react';
@@ -47,7 +48,7 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({ project:
   }, [onClose]);
   const cot = p.cotizaciones?.[0];
   const items: any[] = cot?.items || [];
-  const ciudad = p.empresa?.ciudad?.ciudad || '';
+  const ciudad = p.ciudad?.ciudad || p.empresa?.ciudad?.ciudad || '';
   const codigo = `PRY-${String(p.proyectoId || '').slice(0, 8).toUpperCase()}`;
   const sistema = (() => {
     try { return p.diagnostico?.sistemaRecomendado ? JSON.parse(p.diagnostico.sistemaRecomendado) : null; } catch { return null; }
@@ -120,6 +121,15 @@ ${pasos.length ? `<h2>Sistema recomendado</h2><ol>${pasos.map(x => `<li>${esc(x)
               <ColorSwatches color={p.color} colorHex={p.colorHex} />{p.color || 'Por definir'}
             </div>
           </div>
+
+          {(p.tipoProyecto || p.fechaRequerida || (p.condiciones || []).length > 0 || p.descripcion) && (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3.5 space-y-1.5 text-xs text-slate-700">
+              {p.tipoProyecto && <p><span className="font-bold text-slate-900">Tipo:</span> {TIPO_PROYECTO_LABEL[p.tipoProyecto] || p.tipoProyecto}</p>}
+              {p.fechaRequerida && <p><span className="font-bold text-slate-900">Material requerido para:</span> {new Date(p.fechaRequerida).toLocaleDateString('es-CO', { timeZone: 'UTC', day: 'numeric', month: 'long', year: 'numeric' })}</p>}
+              {(p.condiciones || []).length > 0 && <p><span className="font-bold text-slate-900">Estado de la superficie:</span> {(p.condiciones as string[]).map(c => CONDICION_LABEL[c] || c).join(', ')}</p>}
+              {p.descripcion && <p className="break-words whitespace-pre-wrap"><span className="font-bold text-slate-900">Descripción:</span> {p.descripcion}</p>}
+            </div>
+          )}
 
           {pasos.length > 0 && (
             <div>

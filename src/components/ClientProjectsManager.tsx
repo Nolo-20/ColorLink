@@ -2,6 +2,8 @@ import { CITY_NAMES } from '../data/storeProducts';
 import React, { useState, useEffect, useRef } from 'react';
 import { ProjectFormData, CalculationBreakdown, UserProfile, SurfaceType, SpaceEnvironment, SurfaceCondition, ColorTone } from '../types';
 import { ProjectColorPicker, ColorSwatches } from './ProjectColorPicker';
+import { TIPOS_PROYECTO, TIPO_PROYECTO_LABEL, CONDICION_LABEL, CONDICIONES, MAX_FOTOS, PLAZO_MIN_DIAS, PLAZO_MAX_DIAS, DESCRIPCION_MAX, fechaEnDias, diasHasta } from '../shared/validacionProyecto';
+import { comprimirImagen, datosProyecto, fotosDe, validarFormulario } from '../utils/proyectoCaptura';
 import { ProgressTracker } from './ProgressTracker';
 import { progresoProyecto } from '../shared/progreso';
 import { ProjectDetailModal } from './ProjectDetailModal';
@@ -197,29 +199,80 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
       id: '',
       proyecto: '',
       ciudad: ciudadUsuario,
+      tipoProyecto: '',
       areaM2: 0,
+      condiciones: ['buen_estado'],
+      fechaRequeridaDias: 15,
+      descripcion: '',
+      consentimientoDatos: false,
+      canalOrigen: 'web_portal',
       color: '',
       colorHex: '',
       fotos: []
     }));
     setAreaTexto('');
+    setCoincidencias([]);
     setTocado({});
     setErrorGuardar('');
     setActiveStep(1);
     setViewMode('create');
   };
 
+  // Mismas reglas que aplica el servidor al guardar (completitud, formato y coherencia)
+  const validacion = validarFormulario(formData);
   const errores = {
     proyecto: errorNombreProyecto(formData.proyecto),
     ciudad: formData.ciudad ? '' : 'Elige la ciudad del proyecto.',
-    area: errorArea(formData.areaM2)
+    tipoProyecto: validacion.errores.tipoProyecto || '',
+    fecha: validacion.errores.fechaRequerida || '',
+    area: errorArea(formData.areaM2),
+    condiciones: validacion.errores.condiciones || '',
+    descripcion: validacion.errores.descripcion || '',
+    consentimiento: validacion.errores.consentimientoDatos || ''
   };
-  const paso1Ok = !errores.proyecto && !errores.ciudad;
-  const paso2Ok = !errores.area && !!formData.superficie;
+  const paso1Ok = !errores.proyecto && !errores.ciudad && !errores.tipoProyecto && !errores.fecha;
+  const paso2Ok = !errores.area && !!formData.superficie && !!formData.ambiente && !errores.condiciones;
+  const paso3Ok = !errores.descripcion && !errores.consentimiento;
   const irAPaso = (n: 1 | 2 | 3) => {
-    if (n >= 2 && !paso1Ok) { setTocado(t => ({ ...t, proyecto: true, ciudad: true })); setActiveStep(1); return; }
-    if (n === 3 && !paso2Ok) { setTocado(t => ({ ...t, area: true })); setActiveStep(2); return; }
+    if (n >= 2 && !paso1Ok) { setTocado(t => ({ ...t, proyecto: true, ciudad: true, tipoProyecto: true, fecha: true })); setActiveStep(1); return; }
+    if (n === 3 && !paso2Ok) { setTocado(t => ({ ...t, area: true, condiciones: true })); setActiveStep(2); return; }
     setActiveStep(n);
+  };
+
+  // Duplicidad: al llegar al último paso se compara con los proyectos del cliente
+  const [coincidencias, setCoincidencias] = useState<Array<{ nombreProyecto: string; motivos: string[] }>>([]);
+  useEffect(() => {
+    if (viewMode !== 'create' || activeStep !== 3) return;
+    let cancel = false;
+    fetch('/api/projects/check-duplicates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datosProyecto(formData)) })
+      .then(r => r.json())
+      .then(d => { if (!cancel && d.success) setCoincidencias(d.coincidencias || []); })
+      .catch(() => undefined);
+    return () => { cancel = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, activeStep]);
+
+  // Fotos del estado actual (se reducen antes de enviarlas)
+  const [errorFotos, setErrorFotos] = useState('');
+  const agregarFotos = async (files: FileList | null) => {
+    if (!files?.length) return;
+    setErrorFotos('');
+    const libres = MAX_FOTOS - formData.fotos.length;
+    const lista = Array.from(files);
+    const validas = lista.filter(f => TIPOS_IMAGEN.includes(f.type) && f.size <= MAX_IMAGEN_MB * 1024 * 1024);
+    if (validas.length < lista.length) setErrorFotos(`Solo se aceptan fotos PNG, JPG o WEBP de máximo ${MAX_IMAGEN_MB} MB.`);
+    if (validas.length > libres) setErrorFotos(`Puedes adjuntar máximo ${MAX_FOTOS} fotos.`);
+    for (const [i, f] of validas.slice(0, Math.max(0, libres)).entries()) {
+      try {
+        const base64 = await comprimirImagen(f);
+        setFormData(prev => prev.fotos.length >= MAX_FOTOS ? prev : ({
+          ...prev,
+          fotos: [...prev.fotos, { id: `foto-${Date.now()}-${i}`, url: base64, base64, name: f.name, size: `${((base64.length * 0.75) / 1048576).toFixed(1)} MB` } as any]
+        }));
+      } catch {
+        setErrorFotos(`No se pudo leer ${f.name}.`);
+      }
+    }
   };
 
   const cambiarArea = (texto: string) => {
@@ -235,9 +288,10 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
   const calculoAlDia = calculation.areaM2 === formData.areaM2;
 
   const handleSaveAndCalculate = async () => {
-    setTocado({ proyecto: true, ciudad: true, area: true });
+    setTocado({ proyecto: true, ciudad: true, tipoProyecto: true, fecha: true, area: true, condiciones: true, descripcion: true, consentimiento: true });
     if (!paso1Ok) { setActiveStep(1); return; }
     if (!paso2Ok) { setActiveStep(2); return; }
+    if (!paso3Ok) return;
     if (guardandoRef.current) return;
     guardandoRef.current = true;
     setGuardando(true);
@@ -247,21 +301,15 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          nombreProyecto: formData.proyecto.trim().replace(/\s+/g, ' '),
-          ciudad: formData.ciudad,
-          area: formData.areaM2,
-          tipoSuperficie: formData.superficie,
-          ambiente: formData.ambiente,
-          color: formData.color || null,
-          colorHex: formData.colorHex || null,
+          ...datosProyecto(formData),
+          fotos: fotosDe(formData),
           ...(calculoAlDia ? {
             cunetes5g: calculation.cunetesPintura5Gal,
             galones1g: calculation.galonesPintura1Gal,
             subtotal: calculation.costoEstimadoCOP.subtotal,
             iva: calculation.costoEstimadoCOP.iva19,
             total: calculation.costoEstimadoCOP.totalCOP
-          } : {}),
-          imageBase64: (formData.fotos?.[0] as any)?.base64 || null
+          } : {})
         })
       });
       const data = await response.json().catch(() => ({}));
@@ -367,7 +415,7 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
             {clientProjects.map((prj, idx) => {
               const cot = prj.cotizaciones?.[0]; // cotización más reciente
               const estado = ESTADO_CLIENTE[prj.estadoPipeline];
-              const ubicacion = [prj.empresa?.ciudad?.ciudad, SUPERFICIE_LABEL[prj.tipoSuperficie] || prj.tipoSuperficie].filter(Boolean).join(' • ');
+              const ubicacion = [(prj.ciudad?.ciudad || prj.empresa?.ciudad?.ciudad), SUPERFICIE_LABEL[prj.tipoSuperficie] || prj.tipoSuperficie].filter(Boolean).join(' • ');
               return (
                 <div key={prj.proyectoId || idx} className="bg-white rounded-2xl p-5 shadow-xs border border-slate-200/80 hover:shadow-md transition-all flex flex-col justify-between gap-4 min-w-0">
                   <div className="space-y-2 min-w-0">
@@ -555,6 +603,37 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
                   </select>
                   {inputErr('ciudad') && <p className="text-[11px] font-semibold text-red-600">{inputErr('ciudad')}</p>}
                 </div>
+
+                <div className="space-y-1.5">
+                  <label htmlFor="cpm-tipo" className="text-xs font-bold text-slate-700 block">Tipo de proyecto *</label>
+                  <select
+                    id="cpm-tipo"
+                    value={formData.tipoProyecto}
+                    onChange={(e) => { setTocado(t => ({ ...t, tipoProyecto: true })); setFormData(prev => ({ ...prev, tipoProyecto: e.target.value })); }}
+                    onBlur={() => setTocado(t => ({ ...t, tipoProyecto: true }))}
+                    aria-invalid={!!inputErr('tipoProyecto')}
+                    className={`w-full px-3.5 py-2.5 bg-slate-50 text-slate-900 rounded-xl text-sm border focus:outline-none focus:ring-2 focus:ring-emerald-500 ${inputErr('tipoProyecto') ? 'border-red-400' : 'border-slate-300'}`}
+                  >
+                    <option value="">Selecciona el tipo</option>
+                    {TIPOS_PROYECTO.map(t => <option key={t} value={t}>{TIPO_PROYECTO_LABEL[t]}</option>)}
+                  </select>
+                  {inputErr('tipoProyecto') && <p className="text-[11px] font-semibold text-red-600">{inputErr('tipoProyecto')}</p>}
+                </div>
+
+                <div className="space-y-1.5">
+                  <label htmlFor="cpm-fecha" className="text-xs font-bold text-slate-700 block">¿Para cuándo necesitas el material? *</label>
+                  <input
+                    id="cpm-fecha"
+                    type="date"
+                    min={fechaEnDias(PLAZO_MIN_DIAS)}
+                    max={fechaEnDias(PLAZO_MAX_DIAS)}
+                    value={fechaEnDias(formData.fechaRequeridaDias)}
+                    onChange={(e) => { setTocado(t => ({ ...t, fecha: true })); const d = diasHasta(e.target.value); if (Number.isFinite(d)) setFormData(prev => ({ ...prev, fechaRequeridaDias: d })); }}
+                    aria-invalid={!!inputErr('fecha')}
+                    className={`w-full px-3.5 py-2.5 bg-slate-50 text-slate-900 rounded-xl text-sm border focus:outline-none focus:ring-2 focus:ring-emerald-500 ${inputErr('fecha') ? 'border-red-400' : 'border-slate-300'}`}
+                  />
+                  {inputErr('fecha') ? <p className="text-[11px] font-semibold text-red-600">{inputErr('fecha')}</p> : <p className="text-[11px] text-slate-400">Entre {PLAZO_MIN_DIAS} días y 6 meses desde hoy.</p>}
+                </div>
               </div>
 
               <fieldset className="space-y-1.5">
@@ -636,6 +715,41 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
                 </div>
               </fieldset>
 
+              <fieldset>
+                <legend className="text-xs font-bold text-slate-700 block mb-1.5">Estado actual de la superficie * <span className="font-normal text-slate-400">(marca todo lo que veas)</span></legend>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {CONDICIONES.map((c) => {
+                    const activo = formData.condiciones.includes(c);
+                    return (
+                      <button
+                        key={c}
+                        type="button"
+                        role="checkbox"
+                        aria-checked={activo}
+                        onClick={() => {
+                          setTocado(t => ({ ...t, condiciones: true }));
+                          setFormData(prev => {
+                            if (c === 'buen_estado') return { ...prev, condiciones: ['buen_estado'] };
+                            const sin = prev.condiciones.filter(x => x !== 'buen_estado');
+                            const next = sin.includes(c) ? sin.filter(x => x !== c) : [...sin, c];
+                            return { ...prev, condiciones: next.length ? next : ['buen_estado'] };
+                          });
+                        }}
+                        className={`p-2.5 rounded-xl border text-left text-xs font-bold cursor-pointer transition-all flex items-center gap-2 ${activo
+                          ? (c === 'buen_estado' ? 'border-emerald-500 bg-emerald-50 text-emerald-950' : 'border-amber-500 bg-amber-50 text-amber-950')
+                          : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'}`}
+                      >
+                        <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${activo ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-300'}`}>
+                          {activo && <CheckCircle2 className="w-3 h-3" />}
+                        </span>
+                        {CONDICION_LABEL[c]}
+                      </button>
+                    );
+                  })}
+                </div>
+                {inputErr('condiciones') && <p className="text-[11px] font-semibold text-red-600 mt-1">{inputErr('condiciones')}</p>}
+              </fieldset>
+
               <div className="flex justify-between pt-4 gap-2">
                 <button type="button" onClick={() => setActiveStep(1)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer">Atrás</button>
                 <button type="button" onClick={() => irAPaso(3)} className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl shadow cursor-pointer flex items-center gap-1.5">
@@ -690,6 +804,72 @@ export const ClientProjectsManager: React.FC<ClientProjectsManagerProps> = ({
                 <p className="text-[11px] text-slate-400">
                   Es un valor de referencia. Tu asesor revisa el proyecto y te envía la cotización definitiva con disponibilidad y tiempos de entrega.
                 </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="cpm-descripcion" className="text-xs font-bold text-slate-700 block">Descripción <span className="font-normal text-slate-400">(opcional: qué quieres hacer, desde cuándo está el daño…)</span></label>
+                <textarea
+                  id="cpm-descripcion"
+                  rows={3}
+                  maxLength={DESCRIPCION_MAX}
+                  value={formData.descripcion}
+                  onChange={(e) => setFormData(prev => ({ ...prev, descripcion: e.target.value.slice(0, DESCRIPCION_MAX) }))}
+                  placeholder="Ej: la humedad aparece en temporada de lluvias; queremos repintar antes de diciembre."
+                  className="w-full px-3.5 py-2.5 bg-slate-50 text-slate-900 placeholder-slate-400 rounded-xl text-sm border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-y"
+                />
+                <p className="text-[10px] text-slate-400 text-right">{formData.descripcion.length}/{DESCRIPCION_MAX}</p>
+              </div>
+
+              <div className="space-y-2">
+                <span className="text-xs font-bold text-slate-700 block">Fotos del estado actual <span className="font-normal text-slate-400">(opcional, hasta {MAX_FOTOS})</span></span>
+                <div className="flex flex-wrap gap-2">
+                  {formData.fotos.map(f => (
+                    <div key={f.id} className="relative w-20 h-20 rounded-xl overflow-hidden border border-slate-200 bg-slate-100">
+                      <img src={f.url} alt={f.name} className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, fotos: prev.fotos.filter(x => x.id !== f.id) }))}
+                        aria-label={`Quitar ${f.name}`}
+                        className="absolute top-1 right-1 w-5 h-5 rounded-full bg-white/90 text-slate-700 text-xs font-black flex items-center justify-center cursor-pointer"
+                      >×</button>
+                    </div>
+                  ))}
+                  {formData.fotos.length < MAX_FOTOS && (
+                    <label className="w-20 h-20 rounded-xl border-2 border-dashed border-slate-300 hover:border-emerald-500 text-slate-400 hover:text-emerald-600 flex flex-col items-center justify-center cursor-pointer text-[10px] font-bold">
+                      <UploadCloud className="w-5 h-5" />
+                      Agregar
+                      <input type="file" accept="image/png,image/jpeg,image/webp" multiple className="sr-only" onChange={(e) => { agregarFotos(e.target.files); e.target.value = ''; }} />
+                    </label>
+                  )}
+                </div>
+                {errorFotos && <p className="text-[11px] font-semibold text-red-600">{errorFotos}</p>}
+              </div>
+
+              {(validacion.advertencias.length > 0 || coincidencias.length > 0) && (
+                <div className="rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-3 space-y-1">
+                  <p className="text-xs font-black text-amber-900">Revisa antes de guardar</p>
+                  {coincidencias.length > 0 && (
+                    <p className="text-[11px] text-amber-900">
+                      Ya tienes un proyecto parecido: <strong>{coincidencias[0].nombreProyecto}</strong> ({coincidencias[0].motivos.join(', ')}). Si es el mismo, escríbele a tu asesor desde ese proyecto.
+                    </p>
+                  )}
+                  {validacion.advertencias.map((a, i) => <p key={i} className="text-[11px] text-amber-900">{a}</p>)}
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.consentimientoDatos}
+                    onChange={(e) => { setTocado(t => ({ ...t, consentimiento: true })); setFormData(prev => ({ ...prev, consentimientoDatos: e.target.checked })); }}
+                    className="mt-0.5 w-4 h-4 accent-emerald-600"
+                  />
+                  <span className="text-[11px] text-slate-600">
+                    Autorizo a ColorLink a usar estos datos y fotos para cotizar y hacer seguimiento de mi proyecto (Ley 1581 de 2012). *
+                  </span>
+                </label>
+                {inputErr('consentimiento') && <p className="text-[11px] font-semibold text-red-600">{inputErr('consentimiento')}</p>}
               </div>
 
               {errorGuardar && <p role="alert" className="text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">{errorGuardar}</p>}

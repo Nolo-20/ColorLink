@@ -15,6 +15,7 @@ import {
 } from './types';
 import { INITIAL_USER, EMPTY_PROJECT_FORM, SAMPLE_CALCULATION, DEMO_PROFILES } from './data/mockData';
 import { STORE_PRODUCTS, cargarDatosTienda, maxPedible } from './data/storeProducts';
+import { datosProyecto, fotosDe } from './utils/proyectoCaptura';
 import { Navbar } from './components/Navbar';
 import { ModernLoginScreen } from './components/ModernLoginScreen';
 import { BrandLogo } from './components/BrandLogo';
@@ -289,26 +290,15 @@ function TiendaApp() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          nombreProyecto: formData.proyecto,
-          ciudad: formData.ciudad,
-          area: formData.areaM2,
-          tipoSuperficie: formData.superficie,
-          ambiente: formData.ambiente,
-          color: formData.color,
-          colorHex: formData.colorHex,
+          ...datosProyecto(formData),
+          fotos: fotosDe(formData),
           cunetes5g: calculation.cunetesPintura5Gal,
           galones1g: calculation.galonesPintura1Gal,
           subtotal: calculation.costoEstimadoCOP.subtotal,
           iva: calculation.costoEstimadoCOP.iva19,
           total: calculation.costoEstimadoCOP.totalCOP,
-          diagnosticoPatologia: aiResult?.diagnostico_patologia,
-          severidad: aiResult?.severidad,
-          sistemaRecomendado: aiResult?.sistema_recomendado,
-          manoRecomendada: aiResult?.manos_recomendadas,
-          rendimientoEstimado: aiResult?.rendimiento_estimado_m2_gal,
-          confianzaIaPct: (aiResult as any)?.source === 'colorlink-expert-engine' ? undefined : aiResult?.nivel_confianza_ia_pct,
-          requiereVisitaHumana: aiResult?.requiere_visita_especialista_human_in_the_loop,
-          imageBase64: formData.fotos[0]?.base64 || null
+          // El diagnóstico lo guarda el servidor tal como lo respondió la IA
+          clasificacionToken: (aiResult as any)?.clasificacionToken
         })
       });
       const data = await response.json();

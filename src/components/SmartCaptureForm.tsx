@@ -3,6 +3,8 @@ import { ProjectFormData, SurfaceType, SpaceEnvironment, SurfaceCondition, Color
 import { EMPTY_PROJECT_FORM } from '../data/mockData';
 import { ProjectColorPicker } from './ProjectColorPicker';
 import { CIUDADES_PROYECTO, AREA_MAX_M2, errorNombreProyecto, errorArea } from './ClientProjectsManager';
+import { TIPOS_PROYECTO, TIPO_PROYECTO_LABEL, MAX_FOTOS, PLAZO_MIN_DIAS, PLAZO_MAX_DIAS, fechaEnDias, diasHasta } from '../shared/validacionProyecto';
+import { comprimirImagen, validarFormulario } from '../utils/proyectoCaptura';
 import {
   Building2,
   MapPin,
@@ -27,7 +29,6 @@ interface SmartCaptureFormProps {
 
 const TIPOS_FOTO = ['image/png', 'image/jpeg', 'image/webp'];
 const MAX_FOTO_MB = 8;
-const MAX_FOTOS = 3;
 const MAX_DESCRIPCION = 1000;
 
 type Foto = ProjectFormData['fotos'][0] & { base64?: string };
@@ -66,6 +67,7 @@ export const SmartCaptureForm: React.FC<SmartCaptureFormProps> = ({
 
   const set = (patch: Partial<ProjectFormData>) => setFormData(prev => ({ ...prev, ...patch }));
 
+  const validacion = validarFormulario(formData);
   const errores = {
     cliente: (() => {
       const t = (formData.cliente || '').trim();
@@ -77,7 +79,12 @@ export const SmartCaptureForm: React.FC<SmartCaptureFormProps> = ({
     ciudad: formData.ciudad ? '' : 'Elige la ciudad del proyecto.',
     area: errorArea(formData.areaM2),
     color: formData.color ? '' : 'Elige un color de referencia.',
-    consentimiento: formData.consentimientoDatos ? '' : 'Debes aceptar el tratamiento de datos para continuar.'
+    consentimiento: formData.consentimientoDatos ? '' : 'Debes aceptar el tratamiento de datos para continuar.',
+    // Mismas reglas que aplica el servidor al guardar
+    tipoProyecto: validacion.errores.tipoProyecto || '',
+    fecha: validacion.errores.fechaRequerida || '',
+    condiciones: validacion.errores.condiciones || '',
+    descripcion: validacion.errores.descripcion || ''
   };
   const err = (k: keyof typeof errores) => (tocado[k] ? errores[k] : '');
   const formValido = Object.values(errores).every(e => !e);
@@ -131,10 +138,10 @@ export const SmartCaptureForm: React.FC<SmartCaptureFormProps> = ({
     if (validas.length > disponibles) rechazos.push(`Solo se agregaron ${disponibles} foto(s): el máximo es ${MAX_FOTOS}.`);
     if (rechazos.length) setErrorFotos(rechazos.join(' · '));
 
-    validas.slice(0, disponibles).forEach((file, idx) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const base64 = reader.result as string;
+    validas.slice(0, disponibles).forEach(async (file, idx) => {
+      try {
+        const base64 = await comprimirImagen(file);
+        const mb = (base64.length * 0.75) / (1024 * 1024);
         setFormData(prev => prev.fotos.length >= MAX_FOTOS ? prev : ({
           ...prev,
           fotos: [...prev.fotos, {
@@ -142,12 +149,12 @@ export const SmartCaptureForm: React.FC<SmartCaptureFormProps> = ({
             url: base64,
             base64,
             name: file.name,
-            size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+            size: `${mb.toFixed(1)} MB`
           } as Foto]
         }));
-      };
-      reader.onerror = () => setErrorFotos(`No se pudo leer ${file.name}.`);
-      reader.readAsDataURL(file);
+      } catch {
+        setErrorFotos(`No se pudo leer ${file.name}.`);
+      }
     });
   };
 
@@ -169,9 +176,9 @@ export const SmartCaptureForm: React.FC<SmartCaptureFormProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setTocado({ cliente: true, proyecto: true, ciudad: true, area: true, color: true, consentimiento: true });
+    setTocado({ cliente: true, proyecto: true, ciudad: true, tipoProyecto: true, fecha: true, area: true, condiciones: true, color: true, descripcion: true, consentimiento: true });
     if (!formValido) {
-      const primero = (['cliente', 'proyecto', 'ciudad', 'area', 'color', 'consentimiento'] as const).find(k => errores[k]);
+      const primero = (['cliente', 'ciudad', 'proyecto', 'tipoProyecto', 'fecha', 'area', 'condiciones', 'color', 'descripcion', 'consentimiento'] as const).find(k => errores[k]);
       if (primero) document.getElementById(`campo-${primero}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
@@ -281,22 +288,40 @@ export const SmartCaptureForm: React.FC<SmartCaptureFormProps> = ({
             </div>
           </div>
 
-          <div className="mt-4 pt-4 border-t border-slate-100">
-            <label htmlFor="input-fecha-dias" className="block text-xs font-semibold text-slate-700 mb-1">
-              ¿En cuánto tiempo necesitas el material? <span className="font-bold text-cyan-700">{formData.fechaRequeridaDias} días</span>
-            </label>
-            <div className="flex items-center gap-3">
-              <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
-              <input
-                id="input-fecha-dias"
-                type="range"
-                min={3}
-                max={60}
-                step={1}
-                value={Math.min(60, Math.max(3, formData.fechaRequeridaDias || 15))}
-                onChange={(e) => set({ fechaRequeridaDias: Math.min(60, Math.max(3, Number(e.target.value) || 15)) })}
-                className="w-full accent-cyan-600 cursor-pointer"
-              />
+          <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-5">
+            <div id="campo-tipoProyecto">
+              <label htmlFor="input-tipo-proyecto" className="block text-xs font-semibold text-slate-700 mb-1">Tipo de proyecto *</label>
+              <select
+                id="input-tipo-proyecto"
+                value={formData.tipoProyecto}
+                onChange={(e) => { setTocado(t => ({ ...t, tipoProyecto: true })); set({ tipoProyecto: e.target.value }); }}
+                onBlur={() => setTocado(t => ({ ...t, tipoProyecto: true }))}
+                aria-invalid={!!err('tipoProyecto')}
+                className={`${campo(err('tipoProyecto'))} px-3`}
+              >
+                <option value="">Selecciona el tipo</option>
+                {TIPOS_PROYECTO.map(t => <option key={t} value={t}>{TIPO_PROYECTO_LABEL[t]}</option>)}
+              </select>
+              <ErrorTxt msg={err('tipoProyecto')} />
+            </div>
+            <div id="campo-fecha">
+              <label htmlFor="input-fecha" className="block text-xs font-semibold text-slate-700 mb-1">
+                ¿Para cuándo necesitas el material? * <span className="font-normal text-slate-400">({formData.fechaRequeridaDias} días)</span>
+              </label>
+              <div className="relative">
+                <Calendar className="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none" />
+                <input
+                  id="input-fecha"
+                  type="date"
+                  min={fechaEnDias(PLAZO_MIN_DIAS)}
+                  max={fechaEnDias(PLAZO_MAX_DIAS)}
+                  value={fechaEnDias(formData.fechaRequeridaDias)}
+                  onChange={(e) => { setTocado(t => ({ ...t, fecha: true })); const d = diasHasta(e.target.value); if (Number.isFinite(d)) set({ fechaRequeridaDias: d }); }}
+                  aria-invalid={!!err('fecha')}
+                  className={`${campo(err('fecha'))} pl-9 pr-3`}
+                />
+              </div>
+              <ErrorTxt msg={err('fecha')} />
             </div>
           </div>
         </div>
@@ -388,7 +413,7 @@ export const SmartCaptureForm: React.FC<SmartCaptureFormProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div id="campo-condiciones" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {conditionsList.map((cond) => {
               const isSelected = formData.condiciones.includes(cond.id);
               return (
@@ -404,6 +429,8 @@ export const SmartCaptureForm: React.FC<SmartCaptureFormProps> = ({
               );
             })}
           </div>
+
+          <ErrorTxt msg={err('condiciones')} />
 
           {(formData.condiciones.includes('humedad') || formData.condiciones.includes('fisuras')) && (
             <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3 text-amber-900 text-xs">
@@ -540,6 +567,7 @@ export const SmartCaptureForm: React.FC<SmartCaptureFormProps> = ({
               className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 focus:bg-white focus:ring-2 focus:ring-cyan-500 focus:outline-none"
             ></textarea>
             <p className="text-[10px] text-slate-400 text-right">{formData.descripcion.length}/{MAX_DESCRIPCION}</p>
+            <ErrorTxt msg={err('descripcion')} />
           </div>
 
           <div id="campo-consentimiento" className="mt-4 pt-3 border-t border-slate-100">
